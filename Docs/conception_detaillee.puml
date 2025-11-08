@@ -1,0 +1,100 @@
+@startuml
+left to right direction
+
+class Tensor {
+  +data: Matrix
+  +shape(): Shape
+  +zeros()
+  +randomInit()
+  +transpose()
+}
+
+interface ActivationFunction {
+  +forward(x: Tensor): Tensor
+  +backward(x: Tensor, gradOut: Tensor): Tensor
+}
+class ReLU
+class Sigmoid
+class Tanh
+ActivationFunction <|.. ReLU
+ActivationFunction <|.. Sigmoid
+ActivationFunction <|.. Tanh
+
+class LinearLayer {
+  -weights: Tensor
+  -bias: Tensor
+  -activation: ActivationFunction
+  +forward(input: Tensor): Tensor
+  +parameters(): list~Node~
+}
+LinearLayer o-- ActivationFunction
+
+class MLPNetwork {
+  -layers: list~LinearLayer~
+  +addLayer(layer: LinearLayer)
+  +forward(input: Tensor): Tensor
+  +parameters(): list~Node~
+}
+MLPNetwork *-- LinearLayer
+
+class Node {
+  +value: Tensor
+  +grad: Tensor
+  +parents: list~Node~
+  +backwardFn(): void
+  +backward(): void
+}
+
+class OperationNode {
+  +opType: OpKind
+  +compute(): Tensor
+  +registerBackward(): void
+}
+OperationNode --|> Node
+OperationNode --> Node : parents
+
+interface LossFunction {
+  +forward(pred: Node, target: Node): Node
+}
+class MSELoss
+class CrossEntropyLoss
+LossFunction <|.. MSELoss
+LossFunction <|.. CrossEntropyLoss
+
+abstract Optimizer {
+  +parameters: list~Node~
+  +lr: float
+  +step(): void
+  +zeroGrad(): void
+}
+class SGDOptimizer {
+  -momentum?: float
+  +step(): void
+}
+SGDOptimizer --|> Optimizer
+
+class MNISTDataset {
+  +load(): void
+  +normalize(): void
+}
+
+class DataLoader {
+  -dataset: MNISTDataset
+  -batchSize: int
+  +nextBatch(): tuple~Tensor, Tensor~
+}
+DataLoader --> MNISTDataset
+
+class Trainer {
+  -model: MLPNetwork
+  -lossFn: LossFunction
+  -optimizer: Optimizer
+  -dataLoader: DataLoader
+  +trainEpoch(): void
+  +evaluate(): Metrics
+}
+Trainer --> MLPNetwork
+Trainer --> LossFunction
+Trainer --> Optimizer
+Trainer --> DataLoader
+@enduml
