@@ -3,12 +3,14 @@
 #include <algorithm>
 #include <stdexcept>
 
+// Constructeur : stocke la valeur et crée un gradient de même taille initialisé à zéro
 Node::Node(const Matrix& v)
     : value_(v), grad_(v.rows, v.cols, 0.0) {}
 
+// Ajoute un gradient au gradient actuel : grad_ += g
 void Node::addGrad(const Matrix& g) {
     if (g.rows != grad_.rows || g.cols != grad_.cols) {
-        throw std::invalid_argument("Gradient shape mismatch in Node::addGrad");
+        throw std::invalid_argument("Dimensions incompatibles dans addGrad.");
     }
     const std::size_t n = grad_.data.size();
     for (std::size_t i = 0; i < n; ++i) {
@@ -16,10 +18,12 @@ void Node::addGrad(const Matrix& g) {
     }
 }
 
+// Met le gradient à zéro
 void Node::zeroGrad() {
     std::fill(grad_.data.begin(), grad_.data.end(), 0.0);
 }
 
+// Effectue un tri topologique en DFS : parents d'abord, puis le nœud courant
 std::vector<Node::Ptr> Node::topoSort(const Ptr& root) {
     std::vector<Ptr> order;
     std::unordered_set<const Node*> vis;
@@ -28,37 +32,40 @@ std::vector<Node::Ptr> Node::topoSort(const Ptr& root) {
         if (!u || vis.count(u.get())) return;
         vis.insert(u.get());
 
-        // Traversez d'abord le nœud parent, puis insérez-vous dans la file d'attente.
+        // Visite des parents en premier
         for (auto &wp : u->parents_) {
             if (auto p = wp.lock()) dfs(p);
         }
+
+        // Ajout du nœud après ses parents
         order.push_back(u);
     };
 
     dfs(root);
-    // Comme nous effectuons d'abord la récursivité du parent, nous nous ajoutons ensuite à la pile.
-    // L'ordre obtenu est intrinsèquement le suivant : tous les nœuds parents d'abord, suivis des nœuds enfants, ce qui ne nécessite donc aucun renversement.
-    return order;
+    return order;  // ordre : [parents ..., root]
 }
 
+// Lance la rétropropagation du gradient
 void Node::backward() {
     auto self  = shared_from_this();
-    auto order = topoSort(self);
+    auto order = topoSort(self);  // ordre : parents → enfants
 
-    // 1) Réinitialiser tous les dégradés
-    for (auto &n : order) n->zeroGrad();
+    // Si le gradient du nœud racine est entièrement nul, on le remplace par 1
+    Matrix &rootGrad = self->grad();
+    bool allZero = true;
+    for (double v : rootGrad.data) {
+        if (v != 0.0) { allZero = false; break; }
+    }
+    if (allZero) {
+        for (double &v : rootGrad.data) v = 1.0;  // gradient initial
+    }
 
-    // 2) Injection de gradients de graines dans le nœud racine :
-    //    Scalaire -> 1 ; sinon -> tous les 1
-    if (value_.rows == 1 && value_.cols == 1)
-        order.back()->grad_ = Matrix(1, 1, 1.0);
-    else
-        order.back()->grad_ = Matrix(value_.rows, value_.cols, 1.0);
-
-    // 3) Exécutez la fonction arrière propre à chaque nœud dans l'ordre topologique.
-    for (auto &n : order) {
-        if (n->backwardFn_) n->backwardFn_(n->grad_);
+    // Rétropropagation en ordre inverse : root → parents
+    for (auto it = order.rbegin(); it != order.rend(); ++it) {
+        auto &n = *it;
+        if (n->backwardFn_) {
+            n->backwardFn_(n->grad());
+        }
     }
 }
-
 
