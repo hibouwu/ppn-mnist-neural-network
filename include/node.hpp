@@ -45,4 +45,9 @@ private:
 // 便捷工厂：创建常量/叶子节点
 inline std::shared_ptr<Node> constant(const Tensor& t){
     return std::make_shared<Node>(t);
+<<<<<<< HEAD
 }
+=======
+}
+
+>>>>>>> abc8f7a32d989b621489b44e985e04ef80e680d5
