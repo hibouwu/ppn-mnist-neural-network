@@ -28,7 +28,7 @@ std::vector<Node::Ptr> Node::topoSort(const Ptr& root) {
         if (!u || vis.count(u.get())) return;
         vis.insert(u.get());
 
-        // 先走父节点，再把自己 push 进去
+        // Traversez d'abord le nœud parent, puis insérez-vous dans la file d'attente.
         for (auto &wp : u->parents_) {
             if (auto p = wp.lock()) dfs(p);
         }
@@ -36,8 +36,8 @@ std::vector<Node::Ptr> Node::topoSort(const Ptr& root) {
     };
 
     dfs(root);
-    // 由于我们是“父先递归，后 push 自己”，
-    // 得到的顺序本身就是：所有父节点在前，子节点在后，不需要 reverse。
+    // Comme nous effectuons d'abord la récursivité du parent, nous nous ajoutons ensuite à la pile.
+    // L'ordre obtenu est intrinsèquement le suivant : tous les nœuds parents d'abord, suivis des nœuds enfants, ce qui ne nécessite donc aucun renversement.
     return order;
 }
 
@@ -45,17 +45,17 @@ void Node::backward() {
     auto self  = shared_from_this();
     auto order = topoSort(self);
 
-    // 1) 清零所有梯度
+    // 1) Réinitialiser tous les dégradés
     for (auto &n : order) n->zeroGrad();
 
-    // 2) 根节点注入种子梯度：
-    //    标量 -> 1；否则 -> 全 1
+    // 2) Injection de gradients de graines dans le nœud racine :
+    //    Scalaire -> 1 ; sinon -> tous les 1
     if (value_.rows == 1 && value_.cols == 1)
         order.back()->grad_ = Matrix(1, 1, 1.0);
     else
         order.back()->grad_ = Matrix(value_.rows, value_.cols, 1.0);
 
-    // 3) 按拓扑顺序执行每个节点自己的 backward 函数
+    // 3) Exécutez la fonction arrière propre à chaque nœud dans l'ordre topologique.
     for (auto &n : order) {
         if (n->backwardFn_) n->backwardFn_(n->grad_);
     }
