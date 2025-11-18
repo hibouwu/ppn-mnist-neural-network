@@ -18,17 +18,17 @@ public:
 
     void addParent(const Ptr& p) { parents_.push_back(p); }
 
-    // 反向传播函数：输入是当前节点的梯度
+    // Fonction de rétropropagation : l'entrée est le gradient du nœud actuel.
     void setBackwardFn(std::function<void(const Matrix&)> fn) {
         backwardFn_ = std::move(fn);
     }
 
-    // 梯度操作
+    // Fonctionnement en gradient
     void addGrad(const Matrix& g);
     void zeroGrad();
     void backward();
 
-    // 计算图拓扑排序（父在前，子在后）
+    // Tri topologique des graphes computationnels (parents d'abord, enfants ensuite)
     static std::vector<Ptr> topoSort(const Ptr& root);
 
 private:
@@ -38,7 +38,6 @@ private:
     std::function<void(const Matrix&)> backwardFn_;
 };
 
-// 便捷工厂
 inline std::shared_ptr<Node> constant(const Matrix& t){
     return std::make_shared<Node>(t);
 }
