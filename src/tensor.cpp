@@ -3,13 +3,16 @@
 #include <iostream>
 #include <random>
 
-Matrix::Matrix(size_t r, size_t c) : rows(r), cols(c), data(r * c) {}
+Tensor::Tensor(size_t r, size_t c)
+    : rows(r), cols(c), data(r * c) {}
 
-Matrix::Matrix(size_t r, size_t c, double init_value) : rows(r), cols(c), data(r * c, init_value) {}
+Tensor::Tensor(size_t r, size_t c, double init_value)
+    : rows(r), cols(c), data(r * c, init_value) {}
 
-Matrix::Matrix(const Matrix& other) : rows(other.rows), cols(other.cols), data(other.data) {}
+Tensor::Tensor(const Tensor& other)
+    : rows(other.rows), cols(other.cols), data(other.data) {}
 
-Matrix& Matrix::operator=(const Matrix& other) {
+Tensor& Tensor::operator=(const Tensor& other) {
     if (this != &other) {
         rows = other.rows;
         cols = other.cols;
@@ -18,43 +21,45 @@ Matrix& Matrix::operator=(const Matrix& other) {
     return *this;
 }
 
-double& Matrix::operator()(size_t r, size_t c) {
-    if (r >= rows || c >= cols) throw std::out_of_range("Index out of bounds");
+double& Tensor::operator()(size_t r, size_t c) {
+    if (r >= rows || c >= cols)
+        throw std::out_of_range("Index out of bounds");
     return data[r * cols + c];
 }
 
-const double& Matrix::operator()(size_t r, size_t c) const {
-    if (r >= rows || c >= cols) throw std::out_of_range("Index out of bounds");
+const double& Tensor::operator()(size_t r, size_t c) const {
+    if (r >= rows || c >= cols)
+        throw std::out_of_range("Index out of bounds");
     return data[r * cols + c];
 }
 
-Matrix Matrix::add(const Matrix& other) const {
+Tensor Tensor::add(const Tensor& other) const {
     if (rows != other.rows || cols != other.cols) {
         throw std::invalid_argument("Matrix dimensions must match for addition");
     }
-    Matrix result(rows, cols);
+    Tensor result(rows, cols);
     for (size_t i = 0; i < data.size(); ++i) {
         result.data[i] = data[i] + other.data[i];
     }
     return result;
 }
 
-Matrix Matrix::mul(const Matrix& other) const {
+Tensor Tensor::mul(const Tensor& other) const {
     if (rows != other.rows || cols != other.cols) {
         throw std::invalid_argument("Matrix dimensions must match for element-wise multiplication");
     }
-    Matrix result(rows, cols);
+    Tensor result(rows, cols);
     for (size_t i = 0; i < data.size(); ++i) {
         result.data[i] = data[i] * other.data[i];
     }
     return result;
 }
 
-Matrix Matrix::matmul(const Matrix& other) const {
+Tensor Tensor::matmul(const Tensor& other) const {
     if (cols != other.rows) {
-        throw std::invalid_argument("Cannot multiply matrices: incompatible dimensions");
+        throw std::invalid_argument("Cannot multiply tensors: incompatible dimensions");
     }
-    Matrix result(rows, other.cols);
+    Tensor result(rows, other.cols);
     for (size_t i = 0; i < rows; ++i) {
         for (size_t j = 0; j < other.cols; ++j) {
             double sum = 0.0;
@@ -67,8 +72,8 @@ Matrix Matrix::matmul(const Matrix& other) const {
     return result;
 }
 
-Matrix Matrix::transpose() const {
-    Matrix result(cols, rows);
+Tensor Tensor::transpose() const {
+    Tensor result(cols, rows);
     for (size_t i = 0; i < rows; ++i) {
         for (size_t j = 0; j < cols; ++j) {
             result(j, i) = (*this)(i, j);
@@ -77,7 +82,7 @@ Matrix Matrix::transpose() const {
     return result;
 }
 
-void Matrix::randomInit(double min, double max) {
+void Tensor::randomInit(double min, double max) {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(min, max);
@@ -86,7 +91,7 @@ void Matrix::randomInit(double min, double max) {
     }
 }
 
-void Matrix::print() const {
+void Tensor::print() const {
     for (size_t i = 0; i < rows; ++i) {
         for (size_t j = 0; j < cols; ++j) {
             std::cout << (*this)(i, j) << "\t";
@@ -95,3 +100,4 @@ void Matrix::print() const {
     }
     std::cout << "\n";
 }
+

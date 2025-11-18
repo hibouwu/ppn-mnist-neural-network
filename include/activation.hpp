@@ -7,30 +7,33 @@ class ActivationFunction {
 public:
     virtual ~ActivationFunction() = default;
 
-    // Propagation avant
-    virtual Matrix forward(const Matrix& input) const = 0;
+    // Avant : propagation (Tensor in → Tensor out)
+    virtual Tensor forward(const Tensor& input) const = 0;
 
-    // Rétropropagation (gradient de la fonction d'activation)
-    virtual Matrix backward(const Matrix& input, const Matrix& grad_output) const = 0;
+    // Arrière : rétropropagation (Tensor in, Tensor grad_out → Tensor grad_in)
+    virtual Tensor backward(const Tensor& input, const Tensor& grad_output) const = 0;
 };
 
-// Implémentations concrètes
+// Implémentation ReLU
 class ReLU : public ActivationFunction {
 public:
-    Matrix forward(const Matrix& input) const override;
-    Matrix backward(const Matrix& input, const Matrix& grad_output) const override;
+    Tensor forward(const Tensor& input) const override;
+    Tensor backward(const Tensor& input, const Tensor& grad_output) const override;
 };
 
+// Implémentation Sigmoid
 class Sigmoid : public ActivationFunction {
 public:
-    Matrix forward(const Matrix& input) const override;
-    Matrix backward(const Matrix& input, const Matrix& grad_output) const override;
+    Tensor forward(const Tensor& input) const override;
+    Tensor backward(const Tensor& input, const Tensor& grad_output) const override;
 };
 
+// Implémentation Tanh
 class Tanh : public ActivationFunction {
 public:
-    Matrix forward(const Matrix& input) const override;
-    Matrix backward(const Matrix& input, const Matrix& grad_output) const override;
+    Tensor forward(const Tensor& input) const override;
+    Tensor backward(const Tensor& input, const Tensor& grad_output) const override;
 };
 
 #endif
+

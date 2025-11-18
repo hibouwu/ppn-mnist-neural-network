@@ -23,7 +23,8 @@ public:
     void addLayer(std::unique_ptr<LinearLayer> linear, std::unique_ptr<ActivationFunction> activation);
 
     // Propagation avant
-    Matrix forward(const Matrix& input) const;
+    Tensor forward(const Tensor&) const;
+
 };
 
 #endif
