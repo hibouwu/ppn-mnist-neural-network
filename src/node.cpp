@@ -71,9 +71,8 @@ void Node::backward() {
             n->backwardFn_(n->grad_);
         }
     }
-<<<<<<< HEAD
-}
-=======
+
 }
 
->>>>>>> abc8f7a32d989b621489b44e985e04ef80e680d5
+
+

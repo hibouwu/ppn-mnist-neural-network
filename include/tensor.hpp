@@ -4,33 +4,33 @@
 #include <vector>
 #include <cstddef>  // size_t
 
-class Tensor {
+class Matrix {
 public:
-    // Stockage : data flattenée + tailles
-    std::vector<double> data;
-    size_t rows;
-    size_t cols;
+    // ✅ Ordre : data, rows, cols (dans le même ordre que dans les constructeurs)
+    std::vector<double> data;  // 1er
+    size_t rows;               // 2ème
+    size_t cols;               // 3ème
 
     // Constructeurs
-    Tensor(size_t r, size_t c);
-    Tensor(size_t r, size_t c, double init_value);
+    Matrix(size_t r, size_t c);
+    Matrix(size_t r, size_t c, double init_value);
 
     // Constructeur de copie, opérateur d'assignation
-    Tensor(const Tensor& other);
-    Tensor& operator=(const Tensor& other);
+    Matrix(const Matrix& other);
+    Matrix& operator=(const Matrix& other);
 
     // Destructeur
-    ~Tensor() = default;
+    ~Matrix() = default;
 
-    // Accès aux éléments (r, c)
+    // Accès à un élément (ligne, colonne)
     double& operator()(size_t r, size_t c);
     const double& operator()(size_t r, size_t c) const;
 
     // Opérations de base
-    Tensor add(const Tensor& other) const;     // élément par élément : +
-    Tensor mul(const Tensor& other) const;     // élément par élément : *
-    Tensor matmul(const Tensor& other) const;  // produit matriciel
-    Tensor transpose() const;
+    Matrix add(const Matrix& other) const;
+    Matrix mul(const Matrix& other) const;        // multiplication élément par élément
+    Matrix matmul(const Matrix& other) const;     // produit matriciel
+    Matrix transpose() const;
 
     // Initialisation aléatoire
     void randomInit(double min = -1.0, double max = 1.0);
@@ -40,4 +40,3 @@ public:
 };
 
 #endif
-
