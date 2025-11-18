@@ -3,22 +3,19 @@
 #include <algorithm>
 #include <stdexcept>
 
-Node::Node(const Tensor& v)
+Node::Node(const Matrix& v)
     : value_(v), grad_(v.rows, v.cols, 0.0) {}
 
-// grad_ += g
-void Node::addGrad(const Tensor& g) {
+void Node::addGrad(const Matrix& g) {
     if (g.rows != grad_.rows || g.cols != grad_.cols) {
         throw std::invalid_argument("Gradient shape mismatch in Node::addGrad");
     }
-
     const std::size_t n = grad_.data.size();
     for (std::size_t i = 0; i < n; ++i) {
         grad_.data[i] += g.data[i];
     }
 }
 
-// grad_ = 0
 void Node::zeroGrad() {
     std::fill(grad_.data.begin(), grad_.data.end(), 0.0);
 }
@@ -31,19 +28,16 @@ std::vector<Node::Ptr> Node::topoSort(const Ptr& root) {
         if (!u || vis.count(u.get())) return;
         vis.insert(u.get());
 
-        // 先遍历所有父节点
+        // 先走父节点，再把自己 push 进去
         for (auto &wp : u->parents_) {
-            if (auto p = wp.lock()) {
-                dfs(p);
-            }
+            if (auto p = wp.lock()) dfs(p);
         }
-        // 后序：父节点在前，子节点在后
         order.push_back(u);
     };
 
     dfs(root);
-    // dfs 是「父 -> 子」后序，所以这里 reverse 保证 parents 在前
-    std::reverse(order.begin(), order.end());
+    // 由于我们是“父先递归，后 push 自己”，
+    // 得到的顺序本身就是：所有父节点在前，子节点在后，不需要 reverse。
     return order;
 }
 
@@ -51,28 +45,20 @@ void Node::backward() {
     auto self  = shared_from_this();
     auto order = topoSort(self);
 
-    // 1) 清零所有节点的梯度
+    // 1) 清零所有梯度
+    for (auto &n : order) n->zeroGrad();
+
+    // 2) 根节点注入种子梯度：
+    //    标量 -> 1；否则 -> 全 1
+    if (value_.rows == 1 && value_.cols == 1)
+        order.back()->grad_ = Matrix(1, 1, 1.0);
+    else
+        order.back()->grad_ = Matrix(value_.rows, value_.cols, 1.0);
+
+    // 3) 按拓扑顺序执行每个节点自己的 backward 函数
     for (auto &n : order) {
-        n->zeroGrad();
+        if (n->backwardFn_) n->backwardFn_(n->grad_);
     }
-
-    // 2) 对根节点注入种子梯度：
-    //    如果是标量（1x1），种子梯度为 1
-    //    否则就注入全 1 的张量
-    if (value_.rows == 1 && value_.cols == 1) {
-        order.back()->grad_ = Tensor(1, 1, 1.0);
-    } else {
-        order.back()->grad_ = Tensor(value_.rows, value_.cols, 1.0);
-    }
-
-    // 3) 按拓扑顺序执行每个节点的 backwardFn
-    for (auto &n : order) {
-        if (n->backwardFn_) {
-            n->backwardFn_(n->grad_);
-        }
-    }
-
 }
-
 
 
