@@ -1,0 +1,7 @@
+/home/bianxiang/ppn-mnist-neural-network/build/CMakeFiles/test_matrix.dir
+/home/bianxiang/ppn-mnist-neural-network/build/CMakeFiles/test_activations.dir
+/home/bianxiang/ppn-mnist-neural-network/build/CMakeFiles/test_linear.dir
+/home/bianxiang/ppn-mnist-neural-network/build/CMakeFiles/test_mlp.dir
+/home/bianxiang/ppn-mnist-neural-network/build/CMakeFiles/test_autodiff.dir
+/home/bianxiang/ppn-mnist-neural-network/build/CMakeFiles/edit_cache.dir
+/home/bianxiang/ppn-mnist-neural-network/build/CMakeFiles/rebuild_cache.dir

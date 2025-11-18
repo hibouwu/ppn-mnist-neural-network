@@ -15,3 +15,5 @@ add_executable(test_matrix tests/test_matrix.cpp ${SOURCES})
 add_executable(test_activations tests/test_activations.cpp ${SOURCES})
 add_executable(test_linear tests/test_linear.cpp ${SOURCES})
 add_executable(test_mlp tests/test_mlp.cpp ${SOURCES})
+
+add_executable(test_autodiff tests/test_autodiff.cpp ${SOURCES})
