@@ -9,5 +9,9 @@ namespace MathOps {
     Node::Ptr mul(const Node::Ptr& a, const Node::Ptr& b);
 
     Node::Ptr matmul(const Node::Ptr& a, const Node::Ptr& b);
+    
+    Node::Ptr sum(const Node::Ptr& x); 
+    
+    Node::Ptr mean(const Node::Ptr& x);
 
 }
