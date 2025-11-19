@@ -3,6 +3,7 @@ Implementation of a neural network from scratch in C++ for the MNIST dataset (PP
 
 
 //build
+
 rm -rf build          
 mkdir build          
 cd build              
@@ -11,4 +12,5 @@ make -j
 
 
 //test après build
+
 ./build/test_autodiff
