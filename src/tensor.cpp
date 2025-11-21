@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <random>
+#include <cblas.h>
 
 Matrix::Matrix(size_t r, size_t c) : rows(r), cols(c), data(r * c) {}
 
@@ -55,15 +56,25 @@ Matrix Matrix::matmul(const Matrix& other) const {
         throw std::invalid_argument("Cannot multiply matrices: incompatible dimensions");
     }
     Matrix result(rows, other.cols);
-    for (size_t i = 0; i < rows; ++i) {
-        for (size_t j = 0; j < other.cols; ++j) {
-            double sum = 0.0;
-            for (size_t k = 0; k < cols; ++k) {
-                sum += (*this)(i, k) * other(k, j);
-            }
-            result(i, j) = sum;
-        }
-    }
+    
+    // Row-major layout: result = this * other
+    cblas_dgemm(
+        CblasRowMajor,
+        CblasNoTrans,
+        CblasNoTrans,
+        static_cast<int>(rows),
+        static_cast<int>(other.cols),
+        static_cast<int>(cols),
+        1.0,
+        data.data(),
+        static_cast<int>(cols),
+        other.data.data(),
+        static_cast<int>(other.cols),
+        0.0,
+        result.data.data(),
+        static_cast<int>(other.cols)
+    );
+
     return result;
 }
 
