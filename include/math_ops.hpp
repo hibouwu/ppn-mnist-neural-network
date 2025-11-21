@@ -14,4 +14,8 @@ namespace MathOps {
     
     Node::Ptr mean(const Node::Ptr& x);
 
+    Node::Ptr relu(const Node::Ptr& x);
+    Node::Ptr sigmoid(const Node::Ptr& x);
+    Node::Ptr tanh(const Node::Ptr& x);
+
 }

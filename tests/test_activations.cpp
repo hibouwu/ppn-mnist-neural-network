@@ -1,41 +1,56 @@
 #include "activation.hpp"
+#include "node.hpp"
 #include <iostream>
 
 int main() {
-    Matrix input(2, 3);
-    input(0, 0) = -1.0; input(0, 1) = 0.0; input(0, 2) = 1.0;
-    input(1, 0) = -2.0; input(1, 1) = 0.5; input(1, 2) = 2.0;
+    Matrix input_val(2, 3);
+    input_val(0, 0) = -1.0; input_val(0, 1) = 0.0; input_val(0, 2) = 1.0;
+    input_val(1, 0) = -2.0; input_val(1, 1) = 0.5; input_val(1, 2) = 2.0;
 
     std::cout << "Input:\n";
-    input.print();
+    input_val.print();
 
-    ReLU relu;
-    Matrix out_relu = relu.forward(input);
-    std::cout << "ReLU Forward:\n";
-    out_relu.print();
+    // ReLU
+    {
+        Node::Ptr input = std::make_shared<Node>(input_val);
+        ReLU relu;
+        Node::Ptr out_relu = relu.forward(input);
+        std::cout << "ReLU Forward:\n";
+        out_relu->value().print();
 
-    Matrix grad_out(2, 3, 1.0);  // gradient d'entrée artificiel
-    Matrix grad_relu = relu.backward(input, grad_out);
-    std::cout << "ReLU Backward:\n";
-    grad_relu.print();
+        // Backward
+        out_relu->backward();
+        std::cout << "ReLU Backward (Input Grad):\n";
+        input->grad().print();
+    }
 
-    Sigmoid sigmoid;
-    Matrix out_sigmoid = sigmoid.forward(input);
-    std::cout << "Sigmoid Forward:\n";
-    out_sigmoid.print();
+    // Sigmoid
+    {
+        Node::Ptr input = std::make_shared<Node>(input_val);
+        Sigmoid sigmoid;
+        Node::Ptr out_sigmoid = sigmoid.forward(input);
+        std::cout << "Sigmoid Forward:\n";
+        out_sigmoid->value().print();
 
-    Matrix grad_sigmoid = sigmoid.backward(input, grad_out);
-    std::cout << "Sigmoid Backward:\n";
-    grad_sigmoid.print();
+        // Backward
+        out_sigmoid->backward();
+        std::cout << "Sigmoid Backward (Input Grad):\n";
+        input->grad().print();
+    }
 
-    Tanh tanh;
-    Matrix out_tanh = tanh.forward(input);
-    std::cout << "Tanh Forward:\n";
-    out_tanh.print();
+    // Tanh
+    {
+        Node::Ptr input = std::make_shared<Node>(input_val);
+        Tanh tanh;
+        Node::Ptr out_tanh = tanh.forward(input);
+        std::cout << "Tanh Forward:\n";
+        out_tanh->value().print();
 
-    Matrix grad_tanh = tanh.backward(input, grad_out);
-    std::cout << "Tanh Backward:\n";
-    grad_tanh.print();
+        // Backward
+        out_tanh->backward();
+        std::cout << "Tanh Backward (Input Grad):\n";
+        input->grad().print();
+    }
 
     std::cout << "All activation tests passed!\n";
     return 0;

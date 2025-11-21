@@ -1,7 +1,6 @@
 @startuml
 skinparam classAttributeIconSize 0
 left to right direction
-
 class Matrix {
   +data: vector<double>
   +rows: size_t
@@ -13,30 +12,23 @@ class Matrix {
   +randomInit(min: double, max: double): void
   +print(): void
 }
-
 class Node {
-  -value_: Matrix
-  -grad_: Matrix
-  -parents_: vector~shared_ptr<Node>~
-  -backwardFn_: function<void(const Matrix&)>
-  +value(): const Matrix&
-  +grad(): Matrix&
-  +addParent(p: shared_ptr<Node>): void
-  +setBackwardFn(fn: function<void(const Matrix&)>): void
+  -value: Matrix
+  -grad: Matrix
+  -parents: vector~shared_ptr<Node>~
+  -backwardFn_: function
+  +value(): Matrix
+  +grad(): Matrix
+  +setBackwardFn(fn: function): void
   +backward(): void
   +addGrad(g: Matrix): void
-  +zeroGrad(): void
-  {static} +topoSort(root: shared_ptr<Node>): vector~shared_ptr<Node>~
-  {static} +constant(t: Matrix): shared_ptr<Node>
 }
 Node *-- Matrix : value, grad
-
 class OperationNode {
   -opType_: OpKind
   +opType(): OpKind
 }
 OperationNode --|> Node
-
 class MathOps <<Utility>> {
   {static} +add(a: Node, b: Node): Node
   {static} +matmul(a: Node, b: Node): Node
@@ -48,7 +40,6 @@ class MathOps <<Utility>> {
   {static} +tanh(x: Node): Node
 }
 MathOps ..> Node : creates >
-
 interface ActivationFunction {
   +forward(input: Node): Node
 }
@@ -61,24 +52,18 @@ ActivationFunction <|.. Tanh
 ReLU ..> MathOps : uses >
 Sigmoid ..> MathOps : uses >
 Tanh ..> MathOps : uses >
-
 class LinearLayer {
-  -in_dim: size_t
-  -out_dim: size_t
   -weights_: Node
   -bias_: Node
   +forward(input: Node): Node
-  +randomInit(min: double, max: double): void
   +parameters(): vector~shared_ptr<Node>~
 }
 LinearLayer o-- Node : weights, bias
 LinearLayer ..> MathOps : uses >
-
 class LayerNode {
   +linear: unique_ptr<LinearLayer>
   +activation: unique_ptr<ActivationFunction>
 }
-
 class MLPNetwork {
   -layers: vector~LayerNode~
   +forward(input: Node): Node
@@ -86,48 +71,4 @@ class MLPNetwork {
 MLPNetwork *-- LayerNode
 LayerNode *-- LinearLayer
 LayerNode *-- ActivationFunction
-
-interface LossFunction {
-  +forward(pred: Node, target: Node): Node
-}
-class MSELoss
-class CrossEntropyLoss
-LossFunction <|.. MSELoss
-LossFunction <|.. CrossEntropyLoss
-
-abstract Optimizer {
-  +parameters: vector~shared_ptr<Node>~
-  +lr: double
-  +step(): void
-  +zeroGrad(): void
-}
-class SGDOptimizer {
-  +step(): void
-}
-SGDOptimizer --|> Optimizer
-
-class MNISTDataset {
-  +load(): void
-  +normalize(): void
-}
-
-class DataLoader {
-  -dataset: MNISTDataset
-  -batchSize: int
-  +nextBatch(): pair~Matrix, Matrix~
-}
-DataLoader --> MNISTDataset
-
-class Trainer {
-  -model: MLPNetwork
-  -lossFn: LossFunction
-  -optimizer: Optimizer
-  -dataLoader: DataLoader
-  +trainEpoch(): void
-  +evaluate(): Metrics
-}
-Trainer --> MLPNetwork
-Trainer --> LossFunction
-Trainer --> Optimizer
-Trainer --> DataLoader
 @enduml

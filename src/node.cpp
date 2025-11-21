@@ -33,8 +33,8 @@ std::vector<Node::Ptr> Node::topoSort(const Ptr& root) {
         vis.insert(u.get());
 
         // Visite des parents en premier
-        for (auto &wp : u->parents_) {
-            if (auto p = wp.lock()) dfs(p);
+        for (auto &p : u->parents_) {
+            dfs(p);
         }
 
         // Ajout du nœud après ses parents

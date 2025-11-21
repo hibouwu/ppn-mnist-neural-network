@@ -5,7 +5,6 @@
 
 #include "node.hpp"
 #include "math_ops.hpp"
-#include "activation_ops.hpp"
 
 using NodePtr = std::shared_ptr<Node>;
 
@@ -94,7 +93,7 @@ void test_relu() {
     Matrix x(1,3); x.data = {-1, 2, -3};
     NodePtr X = std::make_shared<Node>(x);
 
-    NodePtr Y = ActivationOps::relu(X);
+    NodePtr Y = MathOps::relu(X);
 
     Y->zeroGrad();
     Y->addGrad(Matrix(1,3,1.0));
@@ -119,7 +118,7 @@ void test_chain() {
 
     auto M = MathOps::matmul(A, B);
     auto T = MathOps::add(M, C);
-    auto Z = ActivationOps::relu(T);
+    auto Z = MathOps::relu(T);
 
     Z->zeroGrad();
     Z->addGrad(Matrix(1,1,1.0));
@@ -214,12 +213,12 @@ void test_num_sigmoid() {
 
     auto build = [](const Matrix& m) {
         NodePtr X = std::make_shared<Node>(m);
-        NodePtr Y = ActivationOps::sigmoid(X);
+        NodePtr Y = MathOps::sigmoid(X);
         return MathOps::sum(Y);
     };
 
     NodePtr X = std::make_shared<Node>(x);
-    NodePtr Y = ActivationOps::sigmoid(X);
+    NodePtr Y = MathOps::sigmoid(X);
     NodePtr S = MathOps::sum(Y);
 
     S->zeroGrad();
@@ -242,12 +241,12 @@ void test_num_tanh() {
 
     auto build = [](const Matrix& m) {
         NodePtr X = std::make_shared<Node>(m);
-        NodePtr Y = ActivationOps::tanh(X);
+        NodePtr Y = MathOps::tanh(X);
         return MathOps::sum(Y);
     };
 
     NodePtr X = std::make_shared<Node>(x);
-    NodePtr Y = ActivationOps::tanh(X);
+    NodePtr Y = MathOps::tanh(X);
     NodePtr S = MathOps::sum(Y);
 
     S->zeroGrad();
@@ -331,4 +330,3 @@ int main() {
 
     return 0;
 }
-

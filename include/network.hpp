@@ -1,7 +1,7 @@
 #ifndef NETWORK_HPP
 #define NETWORK_HPP
 
-#include "tensor.hpp"
+#include "node.hpp"
 #include "layer.hpp"
 #include "activation.hpp"
 #include <vector>
@@ -23,7 +23,7 @@ public:
     void addLayer(std::unique_ptr<LinearLayer> linear, std::unique_ptr<ActivationFunction> activation);
 
     // Propagation avant
-    Matrix forward(const Matrix& input) const;
+    Node::Ptr forward(const Node::Ptr& input) const;
 };
 
 #endif

@@ -34,7 +34,7 @@ public:
 private:
     Matrix value_;
     Matrix grad_;
-    std::vector<std::weak_ptr<Node>> parents_;
+    std::vector<std::shared_ptr<Node>> parents_;
     std::function<void(const Matrix&)> backwardFn_;
 };
 

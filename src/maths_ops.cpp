@@ -1,16 +1,50 @@
 #include "math_ops.hpp"
+#include <cmath>
+#include <algorithm>
 
 namespace MathOps {
 
 using NodePtr = std::shared_ptr<Node>;
 
 Node::Ptr add(const Node::Ptr& a, const Node::Ptr& b) {
-    Matrix out = a->value().add(b->value());
+    const Matrix& val_a = a->value();
+    const Matrix& val_b = b->value();
+    
+    // Check for broadcasting: (N, M) + (1, M)
+    bool broadcast_b = (val_b.rows == 1 && val_b.cols == val_a.cols && val_a.rows > 1);
+    
+    Matrix out(val_a.rows, val_a.cols);
+    
+    if (broadcast_b) {
+        for (size_t i = 0; i < val_a.rows; ++i) {
+            for (size_t j = 0; j < val_a.cols; ++j) {
+                out(i, j) = val_a(i, j) + val_b(0, j);
+            }
+        }
+    } else {
+        // Standard addition
+        out = val_a.add(val_b);
+    }
+
     auto node = std::make_shared<OperationNode>(OpKind::ADD, out, std::vector<Node::Ptr>{a, b});
 
-    node->setBackwardFn([a_ptr=a, b_ptr=b](const Matrix& grad){
+    node->setBackwardFn([a_ptr=a, b_ptr=b, broadcast_b](const Matrix& grad){
         a_ptr->addGrad(grad);
-        b_ptr->addGrad(grad);
+        
+        if (broadcast_b) {
+            // If b was broadcasted, we sum gradients along rows
+            Matrix grad_b(1, grad.cols);
+            for (size_t j = 0; j < grad.cols; ++j) {
+                double sum = 0.0;
+                for (size_t i = 0; i < grad.rows; ++i) {
+                    sum += grad(i, j);
+                }
+                grad_b(0, j) = sum;
+            }
+            b_ptr->addGrad(grad_b);
+        } else {
+            b_ptr->addGrad(grad);
+        }
     });
 
     return node;
@@ -98,5 +132,56 @@ Node::Ptr mean(const Node::Ptr& x) {
     return node;
 }
 
+Node::Ptr relu(const Node::Ptr& x) {
+    Matrix out = x->value();
+    for (size_t i = 0; i < out.data.size(); ++i)
+        out.data[i] = std::max(0.0, out.data[i]);
+
+    auto node = std::make_shared<OperationNode>(OpKind::RELU, out, std::vector<Node::Ptr>{x});
+
+    node->setBackwardFn([x,out](const Matrix& grad){
+        Matrix gx(grad.rows, grad.cols);
+        for (size_t i = 0; i < out.data.size(); ++i)
+            gx.data[i] = (out.data[i] > 0) ? grad.data[i] : 0.0;
+        x->addGrad(gx);
+    });
+
+    return node;
+}
+
+Node::Ptr sigmoid(const Node::Ptr& x) {
+    Matrix out = x->value();
+    for (size_t i = 0; i < out.data.size(); ++i)
+        out.data[i] = 1.0 / (1.0 + std::exp(-out.data[i]));
+
+    auto node = std::make_shared<OperationNode>(OpKind::SIGMOID, out, std::vector<Node::Ptr>{x});
+
+    node->setBackwardFn([x,out](const Matrix& grad){
+        Matrix gx(grad.rows, grad.cols);
+        for (size_t i = 0; i < out.data.size(); ++i)
+            gx.data[i] = grad.data[i] * out.data[i] * (1 - out.data[i]);
+        x->addGrad(gx);
+    });
+
+    return node;
+}
+
+Node::Ptr tanh(const Node::Ptr& x) {
+    Matrix out = x->value();
+    for (size_t i = 0; i < out.data.size(); ++i)
+        out.data[i] = std::tanh(out.data[i]);
+
+    auto node = std::make_shared<OperationNode>(OpKind::TANH, out, std::vector<Node::Ptr>{x});
+
+    node->setBackwardFn([x,out](const Matrix& grad){
+        Matrix gx(grad.rows, grad.cols);
+        for (size_t i = 0; i < out.data.size(); ++i)
+            gx.data[i] =
+                grad.data[i] * (1 - out.data[i] * out.data[i]);
+        x->addGrad(gx);
+    });
+
+    return node;
+}
 
 } // namespace MathOps

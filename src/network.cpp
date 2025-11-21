@@ -4,8 +4,8 @@ void MLPNetwork::addLayer(std::unique_ptr<LinearLayer> linear, std::unique_ptr<A
     layers.emplace_back(std::move(linear), std::move(activation));
 }
 
-Matrix MLPNetwork::forward(const Matrix& input) const {
-    Matrix current = input;
+Node::Ptr MLPNetwork::forward(const Node::Ptr& input) const {
+    Node::Ptr current = input;
     for (const auto& layer : layers) {
         current = layer.linear->forward(current);
         current = layer.activation->forward(current);

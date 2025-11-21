@@ -16,4 +16,14 @@ add_executable(test_activations tests/test_activations.cpp ${SOURCES})
 add_executable(test_linear tests/test_linear.cpp ${SOURCES})
 add_executable(test_mlp tests/test_mlp.cpp ${SOURCES})
 
+enable_testing()
+
 add_executable(test_autodiff tests/test_autodiff.cpp ${SOURCES})
+add_executable(test_gradient_check tests/test_gradient_check.cpp ${SOURCES})
+
+add_test(NAME MatrixTest COMMAND test_matrix)
+add_test(NAME ActivationsTest COMMAND test_activations)
+add_test(NAME LinearTest COMMAND test_linear)
+add_test(NAME MLPTest COMMAND test_mlp)
+add_test(NAME AutodiffTest COMMAND test_autodiff)
+add_test(NAME GradientCheckTest COMMAND test_gradient_check)
