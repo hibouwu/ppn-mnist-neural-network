@@ -1,3 +1,7 @@
+/**
+ * @file network.hpp
+ * @brief Simple MLP network composition helpers.
+ */
 #ifndef NETWORK_HPP
 #define NETWORK_HPP
 
@@ -19,10 +23,16 @@ public:
 
     std::vector<LayerNode> layers;
 
-    // Ajouter une couche linéaire + activation
+    /**
+     * @brief Append a linear layer followed by an activation.
+     */
     void addLayer(std::unique_ptr<LinearLayer> linear, std::unique_ptr<ActivationFunction> activation);
 
-    // Propagation avant
+    /**
+     * @brief Forward pass through all layers.
+     * @param input Input node (batch, in_dim of first layer).
+     * @return Output node after the last activation.
+     */
     Node::Ptr forward(const Node::Ptr& input) const;
 };
 

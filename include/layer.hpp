@@ -1,3 +1,7 @@
+/**
+ * @file layer.hpp
+ * @brief Linear layer definition.
+ */
 #ifndef LAYER_HPP
 #define LAYER_HPP
 
@@ -5,16 +9,31 @@
 
 class LinearLayer {
 public:
-    // Constructeur
+    /**
+     * @brief Create a linear layer y = x @ W + b.
+     * @param in  Input dimension.
+     * @param out Output dimension.
+     */
     LinearLayer(size_t in, size_t out);
 
-    // Propagation avant
+    /**
+     * @brief Forward pass.
+     * @param input Input node shaped (batch, in_dim).
+     * @return Output node shaped (batch, out_dim).
+     */
     Node::Ptr forward(const Node::Ptr& input) const;
 
-    // Initialisation aléatoire
+    /**
+     * @brief Randomly initialize weights and bias.
+     * @param min Minimum value.
+     * @param max Maximum value.
+     */
     void randomInit(double min = -1.0, double max = 1.0);
 
-    // Récupérer les paramètres (pour l'optimiseur)
+    /**
+     * @brief Return trainable parameters.
+     * @return {weights, bias}.
+     */
     std::vector<Node::Ptr> parameters() const;
 
 private:
