@@ -1,6 +1,19 @@
 # ppn-mnist-neural-network
 Implementation of a neural network from scratch in C++ for the MNIST dataset (PPN project, M1 CHPS)
 
+## Séparation des phrase
+
+[Docs/demande_fr.md](Docs/demande_fr.md)
+
+## Diagramme de classe
+
+- La partie des phases de propagation avant et arrière.
+
+![](Docs/Images/phase3.png)
+
+- La partie entraînement.
+
+![](Docs/Images/phase4.png)
 
 //build
 
