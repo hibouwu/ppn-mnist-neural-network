@@ -118,11 +118,19 @@ class DataLoader {
 }
 DataLoader --> MNISTDataset
 
+struct TrainingConfig {
+  +epochs: int
+  +batchSize: int
+  +logInterval: int
+}
+
 class Trainer {
   -model: MLPNetwork
   -lossFn: LossFunction
   -optimizer: Optimizer
   -dataLoader: DataLoader
+  -config: TrainingConfig
+  +Trainer(model: MLPNetwork, loss: LossFunction, opt: Optimizer, loader: DataLoader, cfg: TrainingConfig)
   +trainEpoch(): void
   +evaluate(): Metrics
 }
