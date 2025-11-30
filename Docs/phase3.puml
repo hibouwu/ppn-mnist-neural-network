@@ -1,6 +1,5 @@
 @startuml
 skinparam classAttributeIconSize 0
-left to right direction
 class Matrix {
   +data: vector<double>
   +rows: size_t
