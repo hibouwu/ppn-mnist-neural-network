@@ -5,6 +5,8 @@
 
 #include "node.hpp"
 #include "math_ops.hpp"
+#include "loss.hpp"
+
 
 using NodePtr = std::shared_ptr<Node>;
 
@@ -313,6 +315,51 @@ void test_num_mean() {
 
 // Main : exécute tous les tests
 
+// Test de MSELoss : L = mean( (pred - target)^2 )
+void test_mse_loss() {
+    std::cout << "===== TEST MSE LOSS =====\n";
+
+    Matrix p(1,3); p.data = {1.0, 2.0, 3.0};
+    Matrix t(1,3); t.data = {1.0, 2.0, 4.0};
+
+    NodePtr P = std::make_shared<Node>(p);
+    NodePtr T = std::make_shared<Node>(t);
+
+    NodePtr L = Loss::MSELoss(P, T);
+
+    L->zeroGrad();
+    L->addGrad(Matrix(1,1,1.0));
+    L->backward();
+
+    std::cout << "Loss value = " << L->value().data[0] << " (attendu : 0.333333)\n";
+    std::cout << "dL/dpred = ";
+    printMatrix(P->grad());   // attendu : [0, 0, -2/3]
+}
+
+// Test de CrossEntropyLoss sur un cas très simple
+void test_ce_loss() {
+    std::cout << "===== TEST CROSS ENTROPY LOSS =====\n";
+
+    // Un exemple, deux classes
+    // pred = [0.8, 0.2], target = [1, 0]
+    Matrix p(1,2); p.data = {0.8, 0.2};
+    Matrix t(1,2); t.data = {1.0, 0.0};
+
+    NodePtr P = std::make_shared<Node>(p);
+    NodePtr T = std::make_shared<Node>(t);
+
+    NodePtr L = Loss::CrossEntropyLoss(P, T);
+
+    L->zeroGrad();
+    L->addGrad(Matrix(1,1,1.0));
+    L->backward();
+
+    std::cout << "Loss value = " << L->value().data[0] << " (attendu : -log(0.8))\n";
+    std::cout << "dL/dpred = ";
+    printMatrix(P->grad());   // attendu : [-1/0.8, 0]
+}
+
+
 int main() {
     test_add();
     test_mul();
@@ -327,6 +374,9 @@ int main() {
     test_num_tanh();
     test_num_sum();
     test_num_mean();
+    
+    test_mse_loss();    
+    test_ce_loss();
 
     return 0;
 }
