@@ -313,51 +313,55 @@ void test_num_mean() {
     compare(auto_grad, num_grad, "mean");
 }
 
-// Main : exécute tous les tests
-
-// Test de MSELoss : L = mean( (pred - target)^2 )
+// Test de MSELoss via l’interface (classe)
 void test_mse_loss() {
-    std::cout << "===== TEST MSE LOSS =====\n";
+    std::cout << "===== TEST MSE LOSS (interface) =====\n";
 
     Matrix p(1,3); p.data = {1.0, 2.0, 3.0};
     Matrix t(1,3); t.data = {1.0, 2.0, 4.0};
 
-    NodePtr P = std::make_shared<Node>(p);
-    NodePtr T = std::make_shared<Node>(t);
+    // On construit des nœuds constants (même style que Trainer)
+    auto P = Node::constant(p);
+    auto T = Node::constant(t);
 
-    NodePtr L = Loss::MSELoss(P, T);
+    // Interface LossFunction
+    MSELoss loss_fn;
+    auto L = loss_fn.forward(P, T);
 
-    L->zeroGrad();
-    L->addGrad(Matrix(1,1,1.0));
+    // backward() injecte automatiquement grad=1 au nœud racine
+    P->zeroGrad();
     L->backward();
 
-    std::cout << "Loss value = " << L->value().data[0] << " (attendu : 0.333333)\n";
+    std::cout << "Loss value = " << L->value().data[0] << " (attendu : 0.333333 si version mean)\n";
     std::cout << "dL/dpred = ";
-    printMatrix(P->grad());   // attendu : [0, 0, -2/3]
+    printMatrix(P->grad());
 }
 
-// Test de CrossEntropyLoss sur un cas très simple
+// Test de CrossEntropyLoss sur logits (stable)
 void test_ce_loss() {
-    std::cout << "===== TEST CROSS ENTROPY LOSS =====\n";
+    std::cout << "===== TEST CROSS ENTROPY LOSS (logits) =====\n";
 
-    // Un exemple, deux classes
-    // pred = [0.8, 0.2], target = [1, 0]
-    Matrix p(1,2); p.data = {0.8, 0.2};
-    Matrix t(1,2); t.data = {1.0, 0.0};
+    // logits = [0, 0] => softmax = [0.5, 0.5]
+    // target = [1, 0]
+    // loss = -log(0.5) = 0.693147...
+    // grad = probs - target = [-0.5, 0.5]
+    Matrix z(1,2); z.data = {0.0, 0.0};
+    Matrix y(1,2); y.data = {1.0, 0.0};
 
-    NodePtr P = std::make_shared<Node>(p);
-    NodePtr T = std::make_shared<Node>(t);
+    auto Z = Node::constant(z);
+    auto Y = Node::constant(y);
 
-    NodePtr L = Loss::CrossEntropyLoss(P, T);
+    CrossEntropyLoss loss_fn;
+    auto L = loss_fn.forward(Z, Y);
 
-    L->zeroGrad();
-    L->addGrad(Matrix(1,1,1.0));
+    Z->zeroGrad();
     L->backward();
 
-    std::cout << "Loss value = " << L->value().data[0] << " (attendu : -log(0.8))\n";
-    std::cout << "dL/dpred = ";
-    printMatrix(P->grad());   // attendu : [-1/0.8, 0]
+    std::cout << "Loss value = " << L->value().data[0] << " (attendu ~ 0.693147)\n";
+    std::cout << "dL/dlogits = ";
+    printMatrix(Z->grad());
 }
+
 
 
 int main() {
