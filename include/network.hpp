@@ -34,6 +34,11 @@ public:
      * @return Output node after the last activation.
      */
     Node::Ptr forward(const Node::Ptr& input) const;
+
+    /**
+     * @brief Get all trainable parameters (weights and biases) from all layers.
+     */
+    std::vector<Node::Ptr> getParameters() const;
 };
 
 #endif

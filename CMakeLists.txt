@@ -42,6 +42,11 @@ add_executable(test_gradient_check tests/test_gradient_check.cpp ${SOURCES})
 
 
 add_executable(test_dataloader tests/test_dataloader.cpp ${SOURCES})
+add_executable(test_optimizer tests/test_optimizer.cpp ${SOURCES})
+
+# Main Application
+add_executable(ppn_train src/main.cpp ${SOURCES})
+target_link_libraries(ppn_train PRIVATE ${OPENBLAS_LIB} mnist_reader_lib)
 
 set(TEST_TARGETS
     test_matrix
@@ -51,6 +56,7 @@ set(TEST_TARGETS
     test_autodiff
     test_gradient_check
     test_dataloader
+    test_optimizer
 )
 
 foreach(target ${TEST_TARGETS})
@@ -64,3 +70,4 @@ add_test(NAME MLPTest COMMAND test_mlp)
 add_test(NAME AutodiffTest COMMAND test_autodiff)
 add_test(NAME GradientCheckTest COMMAND test_gradient_check)
 add_test(NAME DataLoaderTest COMMAND test_dataloader)
+add_test(NAME OptimizerTest COMMAND test_optimizer)
