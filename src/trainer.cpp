@@ -46,8 +46,8 @@ Metrics Trainer::runEpoch(bool training) {
         total_samples += batch_size;
 
         // Wrap raw matrices into computation graph nodes.
-        auto x = Node::constant(inputs);
-        auto y = Node::constant(targets);
+        auto x = constant(inputs);
+        auto y = constant(targets);
 
         // Forward pass through the model.
         auto preds = model_.forward(x);

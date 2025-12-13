@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(ppn LANGUAGES CXX)
+project(ppn LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
@@ -21,6 +21,10 @@ include_directories(${OPENBLAS_INCLUDE_DIR})
 
 # Inclure les headers
 include_directories(include)
+include_directories(mnist_reader)
+
+# MNIST Reader Library
+add_library(mnist_reader_lib STATIC mnist_reader/mnist_reader.c)
 
 # Sources
 file(GLOB SOURCES "src/*.cpp")
@@ -36,6 +40,9 @@ enable_testing()
 add_executable(test_autodiff tests/test_autodiff.cpp ${SOURCES})
 add_executable(test_gradient_check tests/test_gradient_check.cpp ${SOURCES})
 
+
+add_executable(test_dataloader tests/test_dataloader.cpp ${SOURCES})
+
 set(TEST_TARGETS
     test_matrix
     test_activations
@@ -43,10 +50,11 @@ set(TEST_TARGETS
     test_mlp
     test_autodiff
     test_gradient_check
+    test_dataloader
 )
 
 foreach(target ${TEST_TARGETS})
-    target_link_libraries(${target} PRIVATE ${OPENBLAS_LIB})
+    target_link_libraries(${target} PRIVATE ${OPENBLAS_LIB} mnist_reader_lib)
 endforeach()
 
 add_test(NAME MatrixTest COMMAND test_matrix)
@@ -55,3 +63,4 @@ add_test(NAME LinearTest COMMAND test_linear)
 add_test(NAME MLPTest COMMAND test_mlp)
 add_test(NAME AutodiffTest COMMAND test_autodiff)
 add_test(NAME GradientCheckTest COMMAND test_gradient_check)
+add_test(NAME DataLoaderTest COMMAND test_dataloader)
