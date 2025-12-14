@@ -5,6 +5,19 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pg")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
 
+# --- Options (profiling / blocked matmul) ---
+option(ENABLE_PROFILE_MATMUL "Print timing for matmul (PROFILE_MATMUL)" OFF)
+set(MATMUL_BLOCK_SIZE "" CACHE STRING "Block size for blocked matmul (e.g. 64,128). Empty = default in code")
+
+if(ENABLE_PROFILE_MATMUL)
+    add_compile_definitions(PROFILE_MATMUL)
+endif()
+
+if(NOT MATMUL_BLOCK_SIZE STREQUAL "")
+    add_compile_definitions(BLOCK_SIZE=${MATMUL_BLOCK_SIZE})
+endif()
+# -------------------------------------------
+
 find_path(OPENBLAS_INCLUDE_DIR
     NAMES cblas.h
     PATH_SUFFIXES openblas
@@ -31,7 +44,6 @@ add_library(mnist_reader_lib STATIC mnist_reader/mnist_reader.c)
 file(GLOB SOURCES "src/*.cpp")
 list(FILTER SOURCES EXCLUDE REGEX "src/main.cpp$")
 
-
 # Exécutables
 add_executable(test_matrix tests/test_matrix.cpp ${SOURCES})
 add_executable(test_activations tests/test_activations.cpp ${SOURCES})
@@ -42,7 +54,6 @@ enable_testing()
 
 add_executable(test_autodiff tests/test_autodiff.cpp ${SOURCES})
 add_executable(test_gradient_check tests/test_gradient_check.cpp ${SOURCES})
-
 
 add_executable(test_dataloader tests/test_dataloader.cpp ${SOURCES})
 add_executable(test_optimizer tests/test_optimizer.cpp ${SOURCES})
@@ -74,3 +85,4 @@ add_test(NAME AutodiffTest COMMAND test_autodiff)
 add_test(NAME GradientCheckTest COMMAND test_gradient_check)
 add_test(NAME DataLoaderTest COMMAND test_dataloader)
 add_test(NAME OptimizerTest COMMAND test_optimizer)
+

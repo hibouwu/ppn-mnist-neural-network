@@ -1,0 +1,30 @@
+Internal ctest changing into directory: /home/qianhao/PPN/ppn-mnist-neural-network/build
+Test project /home/qianhao/PPN/ppn-mnist-neural-network/build
+    Start 1: MatrixTest
+1/8 Test #1: MatrixTest .......................   Passed    0.01 sec
+    Start 2: ActivationsTest
+2/8 Test #2: ActivationsTest ..................   Passed    0.00 sec
+    Start 3: LinearTest
+3/8 Test #3: LinearTest .......................   Passed    0.00 sec
+    Start 4: MLPTest
+4/8 Test #4: MLPTest ..........................   Passed    0.00 sec
+    Start 5: AutodiffTest
+5/8 Test #5: AutodiffTest .....................   Passed    0.00 sec
+    Start 6: GradientCheckTest
+6/8 Test #6: GradientCheckTest ................   Passed    0.00 sec
+    Start 7: DataLoaderTest
+7/8 Test #7: DataLoaderTest ...................***Failed    0.00 sec
+Initializing MNISTDataset...
+Loading data from mnist...
+Test FAILED: Could not open file: mnist/train-images-idx3-ubyte
+Make sure you have run 'mnist_reader/get_mnist.sh' and the 'mnist' folder is accessible.
+
+    Start 8: OptimizerTest
+8/8 Test #8: OptimizerTest ....................   Passed    0.00 sec
+
+88% tests passed, 1 tests failed out of 8
+
+Total Test time (real) =   0.04 sec
+
+The following tests FAILED:
+	  7 - DataLoaderTest (Failed)

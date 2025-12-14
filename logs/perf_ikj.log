@@ -1,0 +1,96 @@
+=== perf ikj ===
+event syntax error: '..rgy-cores/,power/energy-ram/'
+                                  \___ Bad event or PMU
+
+Unable to find PMU or event on a PMU of 'power'
+
+event syntax error: '..res/,power/energy-ram/'
+                                  \___ unknown term 'energy-ram' for pmu 'power'
+
+valid terms: event,config,config1,config2,config3,name,period,percore,metric-id,cpu
+
+event syntax error: '..res/,power/energy-ram/'
+                                  \___ unknown term 'energy-ram' for pmu 'power'
+
+valid terms: event,config,config1,config2,config3,name,period,percore,metric-id,cpu
+Run 'perf list' for a list of valid events
+
+ Usage: perf stat [<options>] [<command>]
+
+    -e, --event <event>   event selector. use 'perf list' to list available events
+event syntax error: '..rgy-cores/,power/energy-ram/'
+                                  \___ Bad event or PMU
+
+Unable to find PMU or event on a PMU of 'power'
+
+event syntax error: '..res/,power/energy-ram/'
+                                  \___ unknown term 'energy-ram' for pmu 'power'
+
+valid terms: event,config,config1,config2,config3,name,period,percore,metric-id,cpu
+
+event syntax error: '..res/,power/energy-ram/'
+                                  \___ unknown term 'energy-ram' for pmu 'power'
+
+valid terms: event,config,config1,config2,config3,name,period,percore,metric-id,cpu
+Run 'perf list' for a list of valid events
+
+ Usage: perf stat [<options>] [<command>]
+
+    -e, --event <event>   event selector. use 'perf list' to list available events
+event syntax error: '..rgy-cores/,power/energy-ram/'
+                                  \___ Bad event or PMU
+
+Unable to find PMU or event on a PMU of 'power'
+
+event syntax error: '..res/,power/energy-ram/'
+                                  \___ unknown term 'energy-ram' for pmu 'power'
+
+valid terms: event,config,config1,config2,config3,name,period,percore,metric-id,cpu
+
+event syntax error: '..res/,power/energy-ram/'
+                                  \___ unknown term 'energy-ram' for pmu 'power'
+
+valid terms: event,config,config1,config2,config3,name,period,percore,metric-id,cpu
+Run 'perf list' for a list of valid events
+
+ Usage: perf stat [<options>] [<command>]
+
+    -e, --event <event>   event selector. use 'perf list' to list available events
+event syntax error: '..rgy-cores/,power/energy-ram/'
+                                  \___ Bad event or PMU
+
+Unable to find PMU or event on a PMU of 'power'
+
+event syntax error: '..res/,power/energy-ram/'
+                                  \___ unknown term 'energy-ram' for pmu 'power'
+
+valid terms: event,config,config1,config2,config3,name,period,percore,metric-id,cpu
+
+event syntax error: '..res/,power/energy-ram/'
+                                  \___ unknown term 'energy-ram' for pmu 'power'
+
+valid terms: event,config,config1,config2,config3,name,period,percore,metric-id,cpu
+Run 'perf list' for a list of valid events
+
+ Usage: perf stat [<options>] [<command>]
+
+    -e, --event <event>   event selector. use 'perf list' to list available events
+event syntax error: '..rgy-cores/,power/energy-ram/'
+                                  \___ Bad event or PMU
+
+Unable to find PMU or event on a PMU of 'power'
+
+event syntax error: '..res/,power/energy-ram/'
+                                  \___ unknown term 'energy-ram' for pmu 'power'
+
+valid terms: event,config,config1,config2,config3,name,period,percore,metric-id,cpu
+
+event syntax error: '..res/,power/energy-ram/'
+                                  \___ unknown term 'energy-ram' for pmu 'power'
+
+valid terms: event,config,config1,config2,config3,name,period,percore,metric-id,cpu
+Run 'perf list' for a list of valid events
+
+ Usage: perf stat [<options>] [<command>]
+
+    -e, --event <event>   event selector. use 'perf list' to list available events

@@ -1,14 +1,151 @@
 #include "tensor.hpp"
+
 #include <stdexcept>
 #include <iostream>
 #include <random>
+#include <limits>
+#include <cstdlib>   // getenv
+#include <cstring>   // strcmp
+
 #include <cblas.h>
+
+#ifdef PROFILE_MATMUL
+#include <chrono>
+#endif
+
+namespace {
+
+// Choix à l’exécution via la variable d’environnement :
+//   MATMUL_IMPL = blas | ijk | ikj | blocked
+// Valeur par défaut : blas
+
+enum class MatmulImpl { Blas, Ijk, Ikj, Blocked };
+
+static inline MatmulImpl parse_impl_env() {
+    const char* v = std::getenv("MATMUL_IMPL");
+    if (!v || !*v) return MatmulImpl::Blas;
+
+    if (std::strcmp(v, "blas") == 0)    return MatmulImpl::Blas;
+    if (std::strcmp(v, "ijk") == 0)     return MatmulImpl::Ijk;
+    if (std::strcmp(v, "ikj") == 0)     return MatmulImpl::Ikj;
+    if (std::strcmp(v, "blocked") == 0) return MatmulImpl::Blocked;
+
+    // Valeur inconnue : avertissement (une seule fois), puis fallback BLAS
+    static bool warned = false;
+    if (!warned) {
+        warned = true;
+        std::cerr << "[WARN] MATMUL_IMPL inconnu ('" << v
+                  << "'). Utilisation de 'blas'. Valeurs valides : "
+                  << "blas | ijk | ikj | blocked\n";
+    }
+    return MatmulImpl::Blas;
+}
+
+// Lecture paresseuse (une seule fois) de la variable d’environnement
+static inline MatmulImpl current_impl() {
+    static MatmulImpl impl = parse_impl_env();
+    return impl;
+}
+
+static inline size_t minz(size_t a, size_t b) { return a < b ? a : b; }
+
+// Toutes calculent : C = A * B
+// A : MxK, B : KxN, C : MxN
+// La matrice C est entièrement écrite (initialisée à zéro ici)
+
+// Version naïve (ordre i-j-k)
+static void dgemm_ijk(const double* A, const double* B, double* C,
+                      size_t M, size_t N, size_t K) {
+    for (size_t i = 0; i < M; ++i) {
+        for (size_t j = 0; j < N; ++j) {
+            double acc = 0.0;
+            for (size_t k = 0; k < K; ++k) {
+                acc += A[i*K + k] * B[k*N + j];
+            }
+            C[i*N + j] = acc;
+        }
+    }
+}
+
+// Version cache-friendly (ordre i-k-j)
+static void dgemm_ikj(
+#if defined(__GNUC__) || defined(__clang__)
+    const double* __restrict A,
+    const double* __restrict B,
+#else
+    const double* A,
+    const double* B,
+#endif
+    double* C,
+    size_t M, size_t N, size_t K) {
+
+    // Initialisation de C à zéro
+    for (size_t i = 0; i < M; ++i) {
+        double* Ci = C + i*N;
+        for (size_t j = 0; j < N; ++j) Ci[j] = 0.0;
+    }
+
+    for (size_t i = 0; i < M; ++i) {
+        const double* Ai = A + i*K;
+        double* Ci = C + i*N;
+        for (size_t k = 0; k < K; ++k) {
+            const double aik = Ai[k];
+            const double* Bk = B + k*N;
+            for (size_t j = 0; j < N; ++j) {
+                Ci[j] += aik * Bk[j];
+            }
+        }
+    }
+}
+
+// Version bloquée (cache blocking)
+#ifndef BLOCK_SIZE
+#define BLOCK_SIZE 128
+#endif
+
+static void dgemm_blocked(const double* A, const double* B, double* C,
+                          size_t M, size_t N, size_t K) {
+
+    // Initialisation de C à zéro
+    for (size_t i = 0; i < M; ++i) {
+        double* Ci = C + i*N;
+        for (size_t j = 0; j < N; ++j) Ci[j] = 0.0;
+    }
+
+    const size_t BS = static_cast<size_t>(BLOCK_SIZE);
+
+    for (size_t ii = 0; ii < M; ii += BS) {
+        const size_t i_max = minz(ii + BS, M);
+        for (size_t kk = 0; kk < K; kk += BS) {
+            const size_t k_max = minz(kk + BS, K);
+            for (size_t jj = 0; jj < N; jj += BS) {
+                const size_t j_max = minz(jj + BS, N);
+
+                for (size_t i = ii; i < i_max; ++i) {
+                    for (size_t k = kk; k < k_max; ++k) {
+                        const double aik = A[i*K + k];
+                        const double* Bk = B + k*N + jj; // B(k, jj)
+                        double* Ci = C + i*N + jj;       // C(i, jj)
+                        for (size_t j = jj; j < j_max; ++j) {
+                            Ci[j - jj] += aik * Bk[j - jj];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+} // namespace
+
 
 Matrix::Matrix(size_t r, size_t c) : rows(r), cols(c), data(r * c) {}
 
-Matrix::Matrix(size_t r, size_t c, double init_value) : rows(r), cols(c), data(r * c, init_value) {}
+Matrix::Matrix(size_t r, size_t c, double init_value)
+    : rows(r), cols(c), data(r * c, init_value) {}
 
-Matrix::Matrix(const Matrix& other) : rows(other.rows), cols(other.cols), data(other.data) {}
+Matrix::Matrix(const Matrix& other)
+    : rows(other.rows), cols(other.cols), data(other.data) {}
 
 Matrix& Matrix::operator=(const Matrix& other) {
     if (this != &other) {
@@ -20,18 +157,21 @@ Matrix& Matrix::operator=(const Matrix& other) {
 }
 
 double& Matrix::operator()(size_t r, size_t c) {
-    if (r >= rows || c >= cols) throw std::out_of_range("Index out of bounds");
+    if (r >= rows || c >= cols)
+        throw std::out_of_range("Index hors limites");
     return data[r * cols + c];
 }
 
 const double& Matrix::operator()(size_t r, size_t c) const {
-    if (r >= rows || c >= cols) throw std::out_of_range("Index out of bounds");
+    if (r >= rows || c >= cols)
+        throw std::out_of_range("Index hors limites");
     return data[r * cols + c];
 }
 
 Matrix Matrix::add(const Matrix& other) const {
     if (rows != other.rows || cols != other.cols) {
-        throw std::invalid_argument("Matrix dimensions must match for addition");
+        throw std::invalid_argument(
+            "Dimensions incompatibles pour l’addition");
     }
     Matrix result(rows, cols);
     for (size_t i = 0; i < data.size(); ++i) {
@@ -42,7 +182,8 @@ Matrix Matrix::add(const Matrix& other) const {
 
 Matrix Matrix::mul(const Matrix& other) const {
     if (rows != other.rows || cols != other.cols) {
-        throw std::invalid_argument("Matrix dimensions must match for element-wise multiplication");
+        throw std::invalid_argument(
+            "Dimensions incompatibles pour la multiplication élément par élément");
     }
     Matrix result(rows, cols);
     for (size_t i = 0; i < data.size(); ++i) {
@@ -53,27 +194,78 @@ Matrix Matrix::mul(const Matrix& other) const {
 
 Matrix Matrix::matmul(const Matrix& other) const {
     if (cols != other.rows) {
-        throw std::invalid_argument("Cannot multiply matrices: incompatible dimensions");
+        throw std::invalid_argument(
+            "Multiplication matricielle impossible : dimensions incompatibles");
     }
+
+    // BLAS utilise des int pour les dimensions
+    const size_t max_int = static_cast<size_t>(std::numeric_limits<int>::max());
+    if (rows > max_int || cols > max_int ||
+        other.rows > max_int || other.cols > max_int) {
+        throw std::overflow_error(
+            "Dimensions trop grandes pour l’interface BLAS (int)");
+    }
+
+#ifdef PROFILE_MATMUL
+    const auto t0 = std::chrono::high_resolution_clock::now();
+#endif
+
     Matrix result(rows, other.cols);
-    
-    // Row-major layout: result = this * other
-    cblas_dgemm(
-        CblasRowMajor,
-        CblasNoTrans,
-        CblasNoTrans,
-        static_cast<int>(rows),
-        static_cast<int>(other.cols),
-        static_cast<int>(cols),
-        1.0,
-        data.data(),
-        static_cast<int>(cols),
-        other.data.data(),
-        static_cast<int>(other.cols),
-        0.0,
-        result.data.data(),
-        static_cast<int>(other.cols)
-    );
+    const MatmulImpl impl = current_impl();
+
+    switch (impl) {
+        case MatmulImpl::Blas:
+            // Appel BLAS (row-major)
+            cblas_dgemm(
+                CblasRowMajor,
+                CblasNoTrans,
+                CblasNoTrans,
+                static_cast<int>(rows),
+                static_cast<int>(other.cols),
+                static_cast<int>(cols),
+                1.0,
+                data.data(),
+                static_cast<int>(cols),
+                other.data.data(),
+                static_cast<int>(other.cols),
+                0.0,
+                result.data.data(),
+                static_cast<int>(other.cols)
+            );
+            break;
+
+        case MatmulImpl::Ijk:
+            dgemm_ijk(data.data(), other.data.data(),
+                      result.data.data(), rows, other.cols, cols);
+            break;
+
+        case MatmulImpl::Ikj:
+            dgemm_ikj(data.data(), other.data.data(),
+                      result.data.data(), rows, other.cols, cols);
+            break;
+
+        case MatmulImpl::Blocked:
+            dgemm_blocked(data.data(), other.data.data(),
+                          result.data.data(), rows, other.cols, cols);
+            break;
+    }
+
+#ifdef PROFILE_MATMUL
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    const auto us =
+        std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+
+    const char* name =
+        (impl == MatmulImpl::Blas)    ? "blas" :
+        (impl == MatmulImpl::Ijk)     ? "ijk"  :
+        (impl == MatmulImpl::Ikj)     ? "ikj"  : "blocked";
+
+    std::cerr << "[PROFILE] matmul(" << name << ") "
+              << rows << "x" << cols << " * "
+              << other.rows << "x" << other.cols
+              << " -> " << rows << "x" << other.cols
+              << " : " << us << " us\n";
+#endif
 
     return result;
 }
@@ -108,3 +300,4 @@ void Matrix::print() const {
     }
     std::cout << "\n";
 }
+
