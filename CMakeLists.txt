@@ -28,6 +28,8 @@ add_library(mnist_reader_lib STATIC mnist_reader/mnist_reader.c)
 
 # Sources
 file(GLOB SOURCES "src/*.cpp")
+list(FILTER SOURCES EXCLUDE REGEX "src/main.cpp$")
+
 
 # Exécutables
 add_executable(test_matrix tests/test_matrix.cpp ${SOURCES})
