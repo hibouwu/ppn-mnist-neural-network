@@ -17,7 +17,7 @@ namespace fs = std::filesystem;
 
 // Simple configuration struct
 struct Config {
-    int epochs = 20;
+    int epochs = 1;
     int batch_size = 64;
     double learning_rate = 0.01;
     int hidden_size = 128;

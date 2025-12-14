@@ -78,6 +78,8 @@ Matrix Matrix::matmul(const Matrix& other) const {
     return result;
 }
 
+
+
 Matrix Matrix::transpose() const {
     Matrix result(cols, rows);
     for (size_t i = 0; i < rows; ++i) {
