@@ -9,11 +9,11 @@ Implementation of a neural network from scratch in C++ for the MNIST dataset (PP
 
 - La partie des phases de propagation avant et arrière.
 
-![](Docs/Images/phase3.png)
+![phase3](Docs/Images/phase3.png)
 
 - La partie entraînement.
 
-![](Docs/Images/phase4.png)
+![phase4-6](Docs/Images/phase4-6.png)
 
 //build
 

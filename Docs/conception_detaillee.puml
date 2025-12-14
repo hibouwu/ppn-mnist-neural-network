@@ -12,6 +12,7 @@ class Matrix {
   +transpose(): Matrix
   +randomInit(min: double, max: double): void
   +print(): void
+  +operator()(r: size_t, c: size_t): double
 }
 
 class Node {
@@ -27,7 +28,6 @@ class Node {
   +addGrad(g: Matrix): void
   +zeroGrad(): void
   {static} +topoSort(root: shared_ptr<Node>): vector~shared_ptr<Node>~
-  {static} +constant(t: Matrix): shared_ptr<Node>
 }
 Node *-- Matrix : value, grad
 
@@ -58,9 +58,6 @@ class Tanh
 ActivationFunction <|.. ReLU
 ActivationFunction <|.. Sigmoid
 ActivationFunction <|.. Tanh
-ReLU ..> MathOps : uses >
-Sigmoid ..> MathOps : uses >
-Tanh ..> MathOps : uses >
 
 class LinearLayer {
   -in_dim: size_t
@@ -81,7 +78,9 @@ class LayerNode {
 
 class MLPNetwork {
   -layers: vector~LayerNode~
+  +addLayer(linear: LinearLayer, activation: ActivationFunction): void
   +forward(input: Node): Node
+  +getParameters(): vector~shared_ptr<Node>~
 }
 MLPNetwork *-- LayerNode
 LayerNode *-- LinearLayer
@@ -96,8 +95,8 @@ LossFunction <|.. MSELoss
 LossFunction <|.. CrossEntropyLoss
 
 abstract Optimizer {
-  +parameters: vector~shared_ptr<Node>~
-  +lr: double
+  #parameters_: vector~shared_ptr<Node>~
+  #lr_: double
   +step(): void
   +zeroGrad(): void
 }
@@ -107,35 +106,60 @@ class SGDOptimizer {
 SGDOptimizer --|> Optimizer
 
 class MNISTDataset {
+  -data_dir_: string
+  -train_images_: Matrix
+  -train_labels_: Matrix
+  -test_images_: Matrix
+  -test_labels_: Matrix
   +load(): void
-  +normalize(): void
+  +getTrainImages(): const Matrix&
+  +getTrainLabels(): const Matrix&
 }
 
 class DataLoader {
-  -dataset: MNISTDataset
-  -batchSize: int
+  -inputs_: const Matrix&
+  -targets_: const Matrix&
+  -batchSize_: size_t
+  -currentIndex_: size_t
+  -indices_: vector~size_t~
+  +reset(): void
+  +hasNext(): bool
   +nextBatch(): pair~Matrix, Matrix~
+  +shuffle(): void
 }
-DataLoader --> MNISTDataset
+DataLoader --> Matrix : references (no ownership)
 
-struct TrainingConfig {
-  +epochs: int
-  +batchSize: int
-  +logInterval: int
+struct Metrics {
+  +avg_loss: double
+  +accuracy: double
 }
 
 class Trainer {
-  -model: MLPNetwork
-  -lossFn: LossFunction
-  -optimizer: Optimizer
-  -dataLoader: DataLoader
-  -config: TrainingConfig
-  +Trainer(model: MLPNetwork, loss: LossFunction, opt: Optimizer, loader: DataLoader, cfg: TrainingConfig)
-  +trainEpoch(): void
+  -model_: MLPNetwork&
+  -lossFn_: LossFunction&
+  -optimizer_: Optimizer&
+  -dataLoader_: DataLoader&
+  +trainEpoch(): Metrics
   +evaluate(): Metrics
 }
-Trainer --> MLPNetwork
-Trainer --> LossFunction
-Trainer --> Optimizer
-Trainer --> DataLoader
+Trainer o-- MLPNetwork : ref
+Trainer o-- LossFunction : ref
+Trainer o-- Optimizer : ref
+Trainer o-- DataLoader : ref
+
+class TrainingConfig {
+  +epochs: int
+  +batchSize: int
+  +learningRate: double
+  +dataDir: string
+}
+
+class TrainingEntry <<Entry Point>> {
+  + {static} main(argc: int, argv: char**): int
+}
+TrainingEntry ..> Trainer : instantiates >
+TrainingEntry ..> TrainingConfig : creates >
+TrainingEntry ..> MNISTDataset : loads >
+TrainingEntry ..> MLPNetwork : builds >
+TrainingEntry ..> DataLoader : builds >
 @enduml
