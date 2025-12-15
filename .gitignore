@@ -45,3 +45,14 @@ build
 
 *-ubyte
 trancripts.txt
+
+# latex
+*.toc
+*.out
+*.log
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+
+
