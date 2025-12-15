@@ -1,162 +1,282 @@
-# 测试脚本说明
+# Guide des scripts de test
 
-## 设置实验环境
+## Préparer l’environnement expérimental
 
 ```bash
-# 1. 设置实验环境 (需要 sudo)
+# 1. Préparer l’environnement (sudo requis)
 # ------------------------------------------------------------------
-echo "正在设置实验环境..."
-# 将 CPU 调速器设置为性能模式
+echo "Configuration de l’environnement..."
+# Placer le gouverneur CPU en mode performance
 sudo cpupower frequency-set -g performance
-# 锁定频率到 4.0 GHz (4000MHz)
+# Verrouiller la fréquence à 4.0 GHz (4000MHz)
 sudo cpupower frequency-set -u 4000MHz -d 4000MHz
 
-# 检查当前频率确认设置成功
-echo "当前 CPU 频率信息:"
+# Vérifier la fréquence actuelle
+echo "Fréquence CPU actuelle :"
 cpupower frequency-info | grep "current CPU frequency"
 ```
 
-## 测试不同线程和不同尺寸的矩阵乘法
+## Tester la multiplication matricielle avec différents threads et tailles
 
 ```bash
-# 2. 运行测试脚本
+# 2. Lancer le script de test
 # ------------------------------------------------------------------
-echo "开始运行测试..."
+echo "Début des tests..."
 ./find_optimal_threads.sh
-# or
-# 使用 taskset 将整个脚本进程绑定到前 8 个核心 (0-7)
-# 这样脚本里生成的所有子进程也会继承这个绑定
+# ou
+# Lier tout le script aux 8 premiers cœurs (0-7)
+# Tous les sous-processus héritent de ce binding
 sudo taskset -c 0-7 bash scripts/find_optimal_threads.sh
 ```
 
-结果在 [output/outputresult/thread_scaling.csv](output/outputresult/thread_scaling.csv)中
-结论：
+Les résultats sont dans [output/outputresult/thread_scaling.csv](output/outputresult/thread_scaling.csv).
+Conclusions :
 
-1. **小矩阵波动与开销 (Small Matrix Instability)**:
-   - **现象**: 对于 64x64 等小尺寸，多线程（尤其是 OpenMP 8线程）表现出**极高的方差（High Variance）**，标准差甚至接近均值。
-   - **原因**: 
-     - **计算量微乎其微**: 64x64 的浮点运算仅需几微秒即可完成。
-     - **OpenMP 开销占主导**: 线程的创建(Fork)、唤醒(Wakeup)和屏障同步(Barrier)本身就需要几微秒到几十微秒。
-     - **调度抖动**: 在如此短的时间窗口内，操作系统的任何微小调度延迟（如中断）都会被放大为巨大的性能波动。
-   - **结论**: **绝对禁止对小矩阵使用多线程**。推荐在矩阵小于 256x256 时强制使用 `OMP_NUM_THREADS=1`。
+1. **Instabilité des petites matrices (Small Matrix Instability)** :
+   - **Observation** : lors des premiers tests, la boucle externe en Bash introduisait de fortes variations sur les petites matrices (64x64) même en mono-thread.
+   - **Optimisation** : la boucle a été déplacée **à l’intérieur du C++ (Internal Loop)**, supprimant le bruit du lancement de processus et de l’ordonnanceur.
+   - **Résultat** : l’écart type tombe au **niveau microseconde (~2us)**, prouvant qu’avec une méthodologie correcte, les petites tailles sont très stables.
+   - **Conclusion** : malgré la stabilité, pour les matrices < 256x256 il est recommandé d’utiliser `OMP_NUM_THREADS=1`, car le overhead Fork/Join annule ou dépasse le gain du multithreading.
 
-   > **Case Study: 64x64 Anomaly (8 vs 16 Threads)**
-   > **Question**: Why is 8 threads (on 8 cores) unstable with high variance, while 16 threads is faster and more stable?
-   > **Explanation**:
-   > 1.  **8 Threads (Active Spin)**: OpenMP runtime often uses "Active Spin" (busy waiting) when threads <= cores. Threads aggressively check for work. If one thread is slightly delayed by OS noise, other 7 threads spin and consume CPU cycles uselessly, amplifying the delay and causing huge variance.
-   > 2.  **16 Threads (Passive Wait)**: When threads > cores, OpenMP/OS realizes CPU is scarce. Threads are forced to "Yield" or "Sleep" (Passive Wait) instead of spinning. This allows the OS scheduler to fill gaps more efficiently. Paradoxically for such tiny workloads, this "Yield" strategy avoids the rigid penalty of busy-waiting, leading to lower variance and better average time.
+   > **Étude de cas : Active Spin vs Passive Wait**
+   > Même sans bruit de mesure, on observe :
+   > - **8 threads (Active Spin)** : quand threads <= cœurs physiques, OpenMP busy-wait et devient très sensible au bruit système.
+   > - **16 threads (Passive Wait)** : quand threads > cœurs physiques, OpenMP passe en attente passive (yield) et la stabilité moyenne s’améliore.
+ 
+2. **Méthodologie statistique** :
+   - **Moyenne interne** : chaque point exécute 50-100 itérations dans C++ et prend moyenne et écart type haute précision.
+   - **Warm-up** : 5 runs à vide avant mesure pour chauffer i-cache et d-cache.
+   - **Moyenne tronquée** : le script de tracé agrège plusieurs runs et coupe les 5% extrêmes pour robustifier.
+ 
+3. **Affinité cœur et sursouscription** :
+   - **Contexte** : les expériences utilisent `taskset -c 0-7`, limitant strictement à 8 cœurs physiques.
+   - **Constat clé** : le meilleur nombre de threads est **fixé à 8**.
+   - **Pénalité d’oversubscription** : avec 16 threads, l’OS fait du context switch sur 8 cœurs.
+     - Pour **BLAS** (pipelines saturés), chaque switch est une perte pure : **~40% plus lent** (0.05s → 0.08s sur 2048x2048).
 
-2. **统计学修正 (Statistical Methodology)**:
-   - **观察**: 原始数据中存在偶发的极大值（Spikes）。
-   - **优化**: 采用 **截断平均数 (Trimmed Mean)**，通常去除头尾各 **5% ~ 10%** 的极值。
-   - **原理**: 
-     - **去除冷启动 (Remove Cold Start)**: 最快的几次（或刚开始的几次）可能受限于 CPU 频率提升、缓存未预热等影响。
-     - **过滤系统噪声 (Filter OS Jitter)**: 最慢的几次往往是因为操作系统中断（IRQ）、后台进程抢占等非算法因素导致的。
-     - **注意**: 在高性能计算（HPC）测试工况下，去掉 10% 属于**保守但安全**的做法，能有效过滤偶发波动（Outliers）而不损失主体特征。如果数据非常稳定（如大矩阵），可以放宽到 1-2%。
+4. **BLAS vs OpenMP maison** :
+   - **BLAS** : utilise fortement le CPU (AVX/FMA), très sensible à la limite de cœurs, s’effondre en oversubscription.
+   - **OpenMP maison** :
+     - Notre `dgemm_omp` parallélise mais la pipeline mono-thread est moins efficace que BLAS (bulles/attentes).
+     - Donc à 16 threads sur 8 cœurs, le coût de switch peut parfois masquer des bulles et ne pas dégrader autant que BLAS, voire être légèrement plus rapide sur les grandes tailles.
 
-3. **核心绑定与过载 (Core Binding & Oversubscription)**:
-   - **环境**: 实验使用了 `taskset -c 0-7`，严格限制程序只能在 8 个物理核心上运行。
-   - **关键发现**: 最佳线程数**严格锁定为 8**。
-   - **过载惩罚 (Penalty)**: 当开启 16 线程时，操作系统必须在 8 个核心上轮流调度 16 个线程（Context Switching）。
-     - 对于 **BLAS**（高度优化，流水线极满）：任何上下文切换都是纯粹的损耗，导致性能**下降约 40%**（从 0.05s 变慢到 0.08s 2048x2048）。
-     - 这一现象完美验证了高性能计算中的**"不要超额订阅 (Do not oversubscribe)"**原则。
+5. **Recommandations grandes matrices** :
+   - Pour >= 512x512, le multithreading apporte un gain net.
+   - Dans notre environnement limité, **8 threads** est recommandé.
 
-4. **BLAS vs 手写 OpenMP 的行为差异**:
-   - **BLAS**: 对 CPU 利用率极高（AVX/FMA指令），对核数限制极其敏感，过载即崩溃。
-   - **手写 OpenMP**:
-     - 我们的实现（`dgemm_omp`）虽然也并行了，但单线程流水线效率不如 BLAS（存在指令气泡/等待）。
-     - 因此，当 16 线程挤在 8 核上切换时，线程切换的延迟有时恰好能填补流水线的气泡（Latency Hiding），导致在大尺寸下 16 线程并没有像 BLAS 那样显著变慢，甚至微快。
-     - **注意**: 这不代表代码好，反而说明单线程优化还有空间（没有吃满 CPU）。
-
-5. **大矩阵推荐 (Large Matrices)**:
-   - 对于 >= 512x512 的矩阵，多线程收益显著。
-   - 在本实验受限环境下，推荐配置为 **8 线程**。
-
-6. **总结建议 (Summary Recommendations)**:
-   - **OpenMP**:
-     - **小矩阵 (< 128x128)**: 强制单线程 `OMP_NUM_THREADS=1`。
-     - **中等矩阵 (256x256 to 512x512)**: 可用4线程（既有明显的优化，又不会因为各种原因导致的不稳定）。
-     - **大矩阵 (>= 1024x1024)**: 推荐使用与物理核心数相等的线程数（本例为 8 线程）。
-     - **之后的实验我们将默认使用 4 线程和 8 线程进行测试**。
-   - **BLAS**: 对 CPU 利用率极高（AVX/FMA指令），对核数限制极其敏感，过载即崩溃，因此我们使用核数相同的线程数（本例为 8 线程）。
-     - 对于小矩阵，BLAS 不同线程数差异不大，我们可以说线程数影响不大。
-     - 对于大矩阵，推荐使用与物理核心数相等的线程数（本例为 8 线程）。
+6. **Recommandations résumées** :
+   - **OpenMP** :
+     - **Petites matrices (< 128x128)** : imposer `OMP_NUM_THREADS=1`.
+     - **Moyennes (256x256 à 512x512)** : 4 threads, bon compromis gain/stabilité.
+     - **Grandes (>= 1024x1024)** : égal aux cœurs physiques (8 ici).
+     - **Pour la suite, nous testerons par défaut 4 et 8 threads.**
+   - **BLAS** : utilisation CPU extrême, très sensible à l’oversubscription, donc threads = cœurs (8 ici).
+     - Sur petites matrices, l’impact du nombre de threads est faible.
+     - Sur grandes matrices, choisir le nombre de cœurs physiques (8 ici).
+   - **Pour les matrices 28x28 (ou 784x1) du projet** :
+     - Préconiser BLAS mono-thread.
 
 ```bash
-# 运行制图脚本
+# Générer les graphiques
 python3 scripts/plot_scaling.py
 ```
 
-结果在 [output/outputresult/scaling_plot.png](output/outputresult/scaling_plot.png) 和 [output/outputresult/scaling_speedup_plot.png](output/outputresult/scaling_speedup_plot.png) 中
+Résultats : [output/outputresult/scaling_plot.png](output/outputresult/scaling_plot.png) et [output/outputresult/scaling_speedup_plot.png](output/outputresult/scaling_speedup_plot.png)
 
 ![temps plot](output/outputresult/scaling_plot.png)
 ![scaling speedup plot](output/outputresult/scaling_speedup_plot.png)
 
-## 测试不同优化级别对矩阵乘法的影响
+### Lancer le test d’affinité
 
 ```bash
-# 2. 运行不同优化级别测试脚本
+# Test d’affinité (matrice 28x28)
 # ------------------------------------------------------------------
-echo "开始运行不同优化级别测试..."
+# Parcourt automatiquement différents nombres de threads et stratégies (default, close, spread)
+echo "Running Affinity Benchmark..."
+./scripts/benchmark_affinity.sh
+
+# Résultats dans output/affinity_comparison.csv
+cat output/affinity_comparison.csv
+```
+
+**Test d’affinité (cas 28x28)** :
+    -   **Contexte** : matrices 28x28, on teste `OMP_PROC_BIND` & `OMP_PLACES`.
+    -   **Résultats** :
+        -   **OpenMP** : `close` est meilleur à 4 threads (2.53us), devant `spread` (4.43us) et `default` (3.92us). Limiter la communication inter-cœur est vital sur si petite charge.
+        -   **BLAS** : temps constant ~0.81us, preuve d’un micro-noyau mono-thread ultra optimisé insensible aux réglages externes.
+    -   **Conclusion** : pour 28x28, **BLAS est imbattable** (0.8us vs 2.5us pour le meilleur OMP). Si OpenMP est imposé : `4 threads + OMP_PROC_BIND=close`.
+
+## Tester l’impact des niveaux d’optimisation sur la multiplication
+
+```bash
+# 2. Lancer le test des niveaux d’optimisation
+# ------------------------------------------------------------------
+echo "Début des tests d’optimisation..."
 ./scripts/benchmark_large.sh
-# or
-# 使用 taskset 将整个脚本进程绑定到前 8 个核心 (0-7)
-# 这样脚本里生成的所有子进程也会继承这个绑定
+# ou
+# Lier le script aux 8 premiers cœurs (0-7)
 sudo taskset -c 0-7 bash scripts/benchmark_large.sh
 ```
 
-结果在 [output/outputresult/impl_comparison.csv](output/outputresult/impl_comparison.csv) 中
+Résultats : [output/outputresult/impl_comparison.csv](output/outputresult/impl_comparison.csv)
 
 ```bash
-# 运行制图脚本 (生成对比图和加速比图)
+# Générer les graphiques de comparaison et d’accélération
 python3 scripts/plot_comparison.py
 ```
 
-结果在 [output/outputresult/comparison_grid_plot.png](output/outputresult/comparison_grid_plot.png) 和 [output/outputresult/comparison_speedup_grid.png](output/outputresult/comparison_speedup_grid.png) 中
+Résultats : [output/outputresult/comparison_grid_plot.png](output/outputresult/comparison_grid_plot.png) et [output/outputresult/comparison_speedup_grid.png](output/outputresult/comparison_speedup_grid.png)
 
 ![comparison grid plot](output/outputresult/comparison_grid_plot.png)
 ![comparison speedup grid](output/outputresult/comparison_speedup_grid.png)
 
-结论：
+Conclusions :
 
-1. **性能阶梯 (Performance Hierarchy)**:
-   - **朴素实现 (`ijk`)**: 极慢，随着矩阵尺寸增大呈现 $O(N^3)$ 指数级爆炸。在 2048x2048 时耗时数秒。
-   - **循环重排 (`ikj`)**: 仅通过改变循环顺序利用缓存局部性，即可获得显著加速。
-   - **手写 OpenMP**: 多线程并行带来了数量级的提升。
-   - **BLAS (OpenBLAS)**: 利用 SIMD 指令和汇编级优化，提供了极致性能，比朴素实现快 **1200倍以上**。
+1. **Hiérarchie de performance** :
+   - **Naïf (`ijk`)** : très lent, explosion $O(N^3)$ ; plusieurs secondes à 2048x2048.
+   - **Réordonné (`ikj`)** : simple changement d’ordre tire parti de la localité cache, gros gain.
+   - **OpenMP maison** : le parallélisme apporte un gain d’ordre de grandeur.
+   - **BLAS (OpenBLAS)** : SIMD + optimisations asm, plus de **1200x plus rapide** que l’implémentation naïve.
 
-2. **可视化策略 (Linear Scale & Adaptive Units)**:
-   - 我们使用了 **线性坐标 (Linear Scale)** 而非对数坐标，以最直观的方式展示了优化前后的巨大鸿沟（`ijk` 的柱子高耸入云，而优化后的实现几乎贴地）。
-   - 为了解决量级跨度大的问题，作图脚本采用了 **自适应单位 (Adaptive Units)**：
-     - 小矩阵 (64x64) 使用 **微秒 (us)**。
-     - 大矩阵 (2048x2048) 使用 **秒 (s)**。
-     - 这种处理方式兼顾了微观波动和宏观趋势的可读性。
+2. **Stratégie de visualisation (linéaire + unités adaptatives)** :
+   - Échelle **linéaire**, pas logarithmique, pour montrer le gouffre (`ijk` très haut, les autres au ras du sol).
+   - **Unités adaptatives** :
+     - Petites matrices (64x64) en **microsecondes (us)**.
+     - Grandes matrices (2048x2048) en **secondes (s)**.
+     - On garde ainsi lisibilité micro + macro.
 
-3. **加速比 (Speedup)**:
-   - 加速比图清晰地展示了优化的“台阶”。最大的矩阵下，BLAS 的加速比能达到 **1200x**，这有力地证明了算法优化比硬件堆砌更重要。
+3. **Accélération (Speedup)** :
+   - Les “marches” d’accélération sont claires ; BLAS atteint **~1200x** sur la plus grande taille, preuve que l’optimisation algorithmique l’emporte sur le seul hardware.
 
-4. **总结建议 (Summary Recommendations)**:
-   - **算法优化**: 循环重排和并行化是提升性能的关键步骤。
-   - **使用高效库**: 对于实际应用，优先选择经过高度优化的数学库（如 OpenBLAS、Intel MKL）以获得最佳性能。
-   - **在我们的项目中，因为是28x28 矩阵，最大加速比是8线程的blas的结果，为 15.3x**，因为之前的结论是小矩阵多线程波动大且收益不明显，所以我们默认使用单线程 blas 作为最优的实现。
+4. **Recommandations** :
+   - **Optimisation algorithmique** : réordonnancement et parallélisation sont clés.
+   - **Bibliothèques optimisées** : pour l’usage réel, préférer OpenBLAS / Intel MKL, etc.
+   - **Dans ce projet (matrices 28x28), le meilleur speedup est 15.3x avec BLAS 8 threads**, mais vu la faible stabilité et le faible gain du multithreading sur petites tailles, nous retenons BLAS mono-thread comme option par défaut.
 
-## 测试不同编译器对矩阵乘法的影响
+## Profiling des multiplications en cours d’entraînement
 
-## 
+Pour analyser les goulots d’étranglement, nous profilons l’implémentation **Naïve** et **BLAS** sur toute la chaîne.
 
-## 恢复环境
+### 1. Activer le profiling et compiler
+
+Assurez-vous que `-pg` est activé dans `CMakeLists.txt`.
 
 ```bash
-# 恢复为节能或调度模式或不变保持性能模式 (通常是 powersave 或 schedutil, Fedora 常用 powersave)
-sudo cpupower frequency-set -g powersave
-# 恢复频率范围 (根据您的 CPU: 421MHz - 5386MHz)
-sudo cpupower frequency-set -d 421MHz -u 5386MHz
+# 1. Régler le CPU à 4.0GHz
+# ------------------------------------------------------------------
+sudo cpupower frequency-set -g performance
+sudo cpupower frequency-set -u 4000MHz -d 4000MHz
 
-echo "环境已恢复。"
+# 2. Recompiler (Release + profiling)
+# ------------------------------------------------------------------
+# Vérifier -pg actif et ENABLE_PROFILE_MATMUL=OFF pour éviter le spam
+cd build
+make clean
+cmake .. -DENABLE_PROFILE_MATMUL=OFF -DCMAKE_BUILD_TYPE=Release
+make -j8 ppn_train
+cd ..
 ```
 
-## 其他脚本：生成 PlantUML 图
+### 2. Lancer le profiling (implémentations séparées)
+
+On bascule d’implémentation via la variable `MATMUL_IMPL`, avec `taskset` pour simuler l’environnement limité.
+
+```bash
+# A. Identifier le goulot : implémentation naïve (ijk)
+# ------------------------------------------------------------------
+# Très lent (~13s) mais montre clairement le coût de matmul
+echo "Profiling Naive Implementation..."
+MATMUL_IMPL=ijk sudo taskset -c 0-7 ./build/ppn_train
+gprof build/ppn_train gmon.out > analysis_naive.txt
+
+# B. Vérifier le résultat final : implémentation BLAS
+# ------------------------------------------------------------------
+echo "Profiling BLAS Implementation..."
+MATMUL_IMPL=blas sudo taskset -c 0-7 ./build/ppn_train
+gprof build/ppn_train gmon.out > analysis_blas.txt
+
+# 3. Restaurer l’environnement
+# ------------------------------------------------------------------
+sudo cpupower frequency-set -g powersave
+sudo cpupower frequency-set -d 421MHz -u 5386MHz
+```
+
+### 3. Analyse comparative des résultats
+
+Sur 1 epoch d’entraînement, les rapports donnent :
+
+#### A. Avant optimisation (Naïf) — goulot identifié
+*   **Bouchon** : `Matrix::matmul` prend **12.05s**, soit **94.8%** du temps total.
+*   **Appels fréquents** : 6 256 appels en 1 epoch.
+*   **Conclusion** : la multiplication matricielle est le tueur de perf, il faut l’optimiser.
+
+#### B. Après optimisation (BLAS) — goulot levé
+*   **Gain massif** : `Matrix::matmul` réduit à **~0.5s**, chute drastique de la part CPU.
+*   **Bascule des coûts** : le temps est désormais surtout dans l’I/O et l’allocation :
+    -   **Chargement des données (`MNISTDataset::load`)** : ~43% (coût one-shot)
+    -   **Allocations (`Matrix::Matrix`)** : ~29% (création/destruction fréquentes)
+    -   **Pur calcul** : < 1% (grâce à BLAS)
+
+### 4. Accélération End-to-End (macro-benchmark)
+
+Quelle accélération E2E quand l’opérateur est 1000x plus rapide ?
+
+| Implémentation | Temps total | Speedup | Note |
+| :--- | :--- | :--- | :--- |
+| **Naïf (`ijk`)** | **13.27s** | 1.0x | Référence, limité par le calcul |
+| **Réordonné (`ikj`)**| 4.00s | 3.3x | Localité cache améliorée |
+| **OpenMP** | 2.03s | 6.5x | Parallélisme |
+| **BLAS** | **1.74s** | **7.6x** | **Résultat final** |
+
+**Conclusion** : malgré un opérateur 1000x plus rapide, **Amdahl** limite le gain global à **~7.6x** à cause de l’I/O et de l’allocation. C’est tout de même un saut majeur (de “très lent” à “presque instantané”).
+
+```bash
+# Revenir au mode économie ou schedutil (souvent powersave)
+sudo cpupower frequency-set -g powersave
+# Restaurer la plage de fréquence (selon votre CPU : 421MHz - 5386MHz)
+sudo cpupower frequency-set -d 421MHz -u 5386MHz
+
+echo "Environnement restauré."
+```
+
+## Autres scripts : générer un diagramme PlantUML
 
 ```bash
 python3 encode_plantuml.py output/thread_scaling.csv
+```
+
+## Autre script
+
+```bash
+# 1. Verrouiller la fréquence CPU à 4.0GHz (sudo requis)
+echo "Setting CPU frequency..."
+sudo cpupower frequency-set -g performance
+sudo cpupower frequency-set -u 4000MHz -d 4000MHz
+
+# 2. Recompiler (Release + profiling)
+# CMakeLists.txt active -pg par défaut ; on force ENABLE_PROFILE_MATMUL=OFF
+# pour éviter de saturer gprof de logs.
+echo "Recompiling..."
+cd build
+make clean
+cmake .. -DENABLE_PROFILE_MATMUL=OFF -DCMAKE_BUILD_TYPE=Release
+make -j8 ppn_train
+cd ..
+
+# 3. Lancer l’entraînement (lié aux 8 premiers cœurs)
+# BLAS par défaut (le plus rapide), base de l’analyse "Compute < 1%" dans ce README
+echo "Running ppn_train with taskset..."
+sudo taskset -c 0-7 ./build/ppn_train
+
+# 4. Générer le rapport gprof
+echo "Generating gprof report..."
+gprof build/ppn_train gmon.out > analysis_final.txt
+echo "Report saved to analysis_final.txt"
+
+# 5. Restaurer l’environnement CPU
+echo "Restoring CPU environment..."
+sudo cpupower frequency-set -g powersave
+sudo cpupower frequency-set -d 421MHz -u 5386MHz
+
+echo "All done!"
 ```

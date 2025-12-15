@@ -36,22 +36,22 @@ for impl in "${implementations[@]}"; do
                 256)  iterations=25 ;;
                 512)  iterations=20 ;;
                 1024) iterations=12 ;;
-                2048) iterations=6 ;;
+                2048) iterations=10 ;;
                 *)    iterations=5 ;;
             esac
             
-            # Run determined number of times
-            timings=""
-            for (( k=1; k<=iterations; k++ )); do
-               output=$(MATMUL_IMPL=$impl ./build/test_benchmark_large $size)
-               time_taken=$(echo "$output" | grep "Done in" | awk '{print $3}')
-               timings="$timings$time_taken\n"
-            done
+            # Run ONCE with internal repetitions
+            # The C++ binary now handles warmup, averaging, and internal stddev calculation
             
-            # Compute stats
-            stats=$(echo -e "$timings" | python3 scripts/compute_stats.py)
-            mean=$(echo "$stats" | awk '{print $1}')
-            std=$(echo "$stats" | awk '{print $3}')
+            output=$(MATMUL_IMPL=$impl ./build/test_benchmark_large $size $iterations)
+            
+            # Parse output format: "Done. Mean: X.XXXX s, StdDev: Y.YYYY s"
+            mean=$(echo "$output" | grep "Done. Mean:" | awk '{print $3}')
+            std=$(echo "$output" | grep "Done. Mean:" | awk '{print $6}')
+
+            # Check if mean/std are valid
+            if [ -z "$mean" ]; then mean="N/A"; fi
+            if [ -z "$std" ]; then std="0.0"; fi
 
             echo "$impl,$size,$t,$mean,$std" >> output/thread_scaling.csv
             echo "Recorded: $impl | Size: $size | Threads: $t | Reps: $iterations | Mean: $mean | Std: $std"

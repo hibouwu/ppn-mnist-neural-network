@@ -38,17 +38,18 @@ for size in "${sizes[@]}"; do
         64)   iterations=100 ;;
         128)  iterations=50 ;;
         256)  iterations=25 ;;
-    #    512)  iterations=20 ;;
-    #    1024) iterations=12 ;;
-    #    2048) iterations=6 ;;
+        512)  iterations=20 ;;
+        1024) iterations=12 ;;
+        2048) iterations=6 ;;
         *)    iterations=5 ;;
     esac
 
     for config in "${configs[@]}"; do
         IFS=':' read -r impl threads <<< "$config"
         
-        # Override iterations for really slow implementation (ijk) on large matrices to avoid timeout
+        # Initialize current_iters
         current_iters=$iterations
+
         if [ "$impl" == "ijk" ] && [ "$size" -ge 1024 ]; then
             current_iters=3
         fi
@@ -59,27 +60,17 @@ for size in "${sizes[@]}"; do
         export OMP_NUM_THREADS=$threads
         export OPENBLAS_NUM_THREADS=$threads
 
-        # Warm-up runs to avoid cold-start noise (results discarded)
-        for ((w=1; w<=warmups; w++)); do
-            MATMUL_IMPL=$impl ./build/test_benchmark_large $size >/dev/null
-        done
+        # Run ONCE with internal repetitions
+        # The C++ binary now handles warmup, averaging, and stddev calculation
+        output=$(MATMUL_IMPL=$impl ./build/test_benchmark_large $size $current_iters)
         
-        # Temp file for storing times
-        timings=""
-        
-        for ((i=1; i<=current_iters; i++)); do
-            output=$(MATMUL_IMPL=$impl ./build/test_benchmark_large $size)
-            time_taken=$(echo "$output" | grep "Done in" | awk '{print $3}')
-            timings="$timings$time_taken\n"
-        done
-        
-        # Compute stats
-        stats=$(echo -e "$timings" | python3 scripts/compute_stats.py)
-        mean=$(echo "$stats" | awk '{print $1}')
-        std=$(echo "$stats" | awk '{print $3}')
-        
-        # Fix N/A if stats failed
-        if [ "$std" == "N/A" ] || [ -z "$std" ]; then std="0.00000000"; fi
+        # Parse output format: "Done. Mean: X.XXXX s, StdDev: Y.YYYY s"
+        mean=$(echo "$output" | grep "Done. Mean:" | awk '{print $3}')
+        std=$(echo "$output" | grep "Done. Mean:" | awk '{print $6}')
+
+        # Check if mean/std are valid
+        if [ -z "$mean" ]; then mean="N/A"; fi
+        if [ -z "$std" ]; then std="0.0"; fi
     
         echo "$impl,$threads,$size,$mean,$std" >> output/impl_comparison.csv
     done

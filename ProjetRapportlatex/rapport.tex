@@ -1,0 +1,326 @@
+\documentclass[a4paper,11pt]{article}
+
+%%%%%%%%%%%%%%%%%%%%%
+% Encodage et langues
+\usepackage[numbers]{natbib} % Charger avant babel
+\usepackage[frenchb,english]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+
+%%%%%%%%%%%%%%%%%%%%%
+% Liens et métadonnées
+\usepackage[colorlinks=false, urlcolor=black, breaklinks, pagebackref, citebordercolor={0 0 0}, filebordercolor={0 0 0}, linkbordercolor={0 0 0}, pagebordercolor={0 0 0}, runbordercolor={0 0 0}, urlbordercolor={0 0 0}, pdfborder={0 0 0}]{hyperref}
+
+%%%%%%%%%%%%%%%%%%%%%
+% Mise en page et utilitaires
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{geometry}
+\geometry{a4paper, margin=2.5cm, headheight=17pt}
+\usepackage{graphicx}
+\usepackage{icomma}
+\usepackage{latexsym}
+\usepackage{textcomp}
+\usepackage{cancel}
+\usepackage{color}
+\usepackage{dsfont}
+\usepackage{subfig}
+\usepackage{caption}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{extarrows}
+\usepackage{shorttoc}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{lmodern}
+\usepackage{moreverb}
+\usepackage{fancyhdr}
+
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!5}
+}
+
+\lstdefinelanguage{pseudo}{
+    morekeywords={for,foreach,while,if,else,return},
+    sensitive=false
+}
+
+\newcommand{\bigO}[1]{\ensuremath{\mathop{}\mathopen{}O\mathopen{}\left(#1\right)}}
+\newcommand{\smallO}[1]{\ensuremath{\mathop{}\mathopen{}o\mathopen{}\left(#1\right)}}
+
+\captionsetup{font=footnotesize}
+\emergencystretch=1em
+
+\setcounter{tocdepth}{3}
+
+%%%%%%%%%%%%%%%%%%%%%
+% Page de titre personnalisée
+\makeatletter
+\def\clap#1{\hbox to 0pt{\hss #1\hss}}%
+\def\ligne#1{%
+\hbox to \hsize{%
+\vbox{\centering #1}}}%
+\def\haut#1#2#3{%
+\hbox to \hsize{%
+\rlap{\vtop{\raggedright #1}}%
+\hss
+\clap{\vtop{\centering #2}}%
+\hss
+\llap{\vtop{\raggedleft #3}}}}%
+\def\bas#1#2#3{%
+\hbox to \hsize{%
+\rlap{\vbox{\raggedright #1}}%
+\hss
+\clap{\vbox{\centering #2}}%
+\hss
+\llap{\vbox{\raggedleft #3}}}}%
+\def\maketitle{%
+\thispagestyle{empty}\vbox to \vsize{%
+\haut{}{\@blurb}{}
+\vfill
+\vspace{0.5cm}
+\hrule height 2pt
+\vspace{0.2cm}
+\par
+\begin{center}
+\fontseries{bx}
+\huge \@title
+\end{center}
+\vspace{0.2cm}
+\par
+\hrule height 2pt
+\par
+\vspace{2cm}
+\begin{center}
+\Large
+\textit{Auteurs:}
+\end{center}
+\begin{center}
+\Large 
+\@author
+\par
+\end{center}
+\vspace{1cm}
+\begin{center}
+\Large
+\textit{Responsables:}
+\end{center}
+\begin{center}
+\Large 
+Mathys E. Jam / Pablo Oliveira
+\par
+\end{center}
+\vfill
+\vfill
+\bas{}{\begin{flushright}
+\large
+\@date
+\end{flushright}}{}
+}%
+\cleardoublepage
+}
+\def\date#1{\def\@date{#1}}
+\def\author#1{\def\@author{#1}}
+\def\title#1{\def\@title{#1}}
+\def\location#1{\def\@location{#1}}
+\def\blurb#1{\def\@blurb{#1}}
+\date{\today}
+\author{Jianye Shi, Hao, Xiang, Abdennour}
+\title{Rapport de Projet : MLP et moteur d'autodiff appliqués à MNIST}
+\location{}\blurb{%
+\begin{center}
+% Insérer un logo ici si disponible, par exemple :
+% \includegraphics[width=20em]{Images/Logo_UVSQ.jpg}
+\textbf{Projet M1 CHPS -- UVSQ}
+\end{center}
+}%
+\makeatother
+
+%%%%%%%%%%%%%%%%%%%%%
+% En-têtes et pieds de page
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{M1 CHPS -- UVSQ 25/26}
+\fancyhead[R]{\leftmark}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\setlength{\headheight}{17pt}
+
+\begin{document}
+
+\maketitle
+
+\renewcommand{\contentsname}{Sommaire}
+\tableofcontents
+
+\newpage
+
+\section{Introduction}
+Ce document présente le rapport du projet de construction d'un réseau de neurones multicouche (MLP) et d'un moteur de différenciation automatique appliqué au jeu de données MNIST. Réalisé dans le cadre de l'UE Projet en première année de master de calcul haute performance, simulation à l'Université Paris Saclay, ce travail a pour objectif d'implémenter pas à pas les fondements d'un système d'apprentissage automatique sans dépendre de bibliothèques haut niveau.
+
+L'objectif général du projet est double :
+\begin{enumerate}[label=\arabic*.]
+  \item Comprendre et implémenter les mécanismes internes d'un réseau neuronal, incluant le passage avant, la rétropropagation et la mise à jour de paramètres.
+  \item Construire un moteur d'autodiff permettant de dériver automatiquement les expressions mathématiques du réseau, afin de calculer les gradients nécessaires à l'apprentissage.
+\end{enumerate}
+En parallèle, le projet vise à familiariser les étudiants avec l'analyse expérimentale, l'optimisation du code et la préparation aux travaux de performance qui seront approfondis au second semestre.
+
+\section{Guide de lecture}
+Le rapport est structuré de manière à accompagner progressivement le lecteur :
+\begin{itemize}
+  \item La première partie présente le contexte, le problème à résoudre et un bref état de l'art autour de MNIST et des MLP.
+  \item La deuxième partie décrit en détail l'implémentation : choix de conception, organisation du code et intégration des différentes phases.
+  \item La troisième partie expose les expérimentations réalisées sur MNIST ainsi que les observations associées.
+  \item La quatrième partie propose une première analyse de performances (profiling) afin d'identifier les points critiques qui seront optimisés au second semestre.
+  \item Un glossaire et des références sont placés en fin de document pour clarifier les notions techniques.
+\end{itemize}
+
+\section{Description du projet}
+Le projet consiste à concevoir et implémenter un pipeline complet d'apprentissage supervisé comprenant :
+\begin{itemize}
+  \item un module de manipulation de tenseurs,
+  \item un réseau de couches linéaires avec fonctions d'activation,
+  \item un moteur de différenciation automatique (autodiff),
+  \item un mécanisme d'entraînement (optimiseur, fonction de perte),
+  \item l'intégration du jeu de données MNIST et l'évaluation du modèle.
+\end{itemize}
+Ce développement a été réalisé en plusieurs phases successives décrites ci-dessous. Des détails complémentaires figurent dans le document d'état de l'art.
+
+\section{Implémentation}
+\subsection{Choix techniques et justification}
+\subsubsection{Implementation}
+Choix du langage C++ pour sa performance et son contrôle fin de la mémoire, en cohérence avec l'orientation \emph{calcul haute performance} de l'UE. Implémentation d'un moteur de calcul et d'autodiff maison (Matrix, Node, MathOps) afin de comprendre explicitement la construction du graphe computationnel et le calcul des gradients, plutôt que de s'appuyer sur des bibliothèques haut niveau.
+
+\subsubsection{Matrix / Node / graphe de calcul}
+\begin{itemize}
+  \item Représentation des données numériques par une classe \texttt{Matrix} générique (doubles en 2D), offrant les opérations de base nécessaires au MLP (matmul, add, mul, transpose).
+  \item Représentation du graphe computationnel par la classe \texttt{Node}, qui stocke la valeur courante, le gradient associé, les parents et une fonction de rétropropagation (\texttt{backwardFn\_}).
+  \item Utilisation d'un tri topologique (méthode statique \texttt{topoSort}) pour parcourir le graphe lors de la phase de backward, plutôt que d'utiliser une récursion profonde.
+\end{itemize}
+
+\subsubsection{Architecture générale}
+Choix d'un perceptron multicouche (MLP) à base de couches linéaires plutôt que de réseaux convolutifs ou récurrents, afin de se concentrer sur les mécanismes d'autodiff et de rétropropagation. Introduction d'une interface \texttt{ActivationFunction} (implémentée par ReLU, Sigmoid, Tanh) pour permettre de changer de fonction d'activation sans modifier la structure globale du code. Encapsulation de la combinaison « couche linéaire + activation » dans la structure \texttt{LayerNode}, puis construction du modèle complet via un vecteur de \texttt{LayerNode} dans \texttt{MLPNetwork}.
+
+\subsection{Architecture du MLP et organisation du code}
+Cette section décrit l'architecture logicielle du projet ainsi que les relations entre les différents modules, telles que représentées dans le diagramme UML (Figure~\ref{fig:uml}). L'objectif est de mettre en évidence la séparation des responsabilités, l'organisation hiérarchique des composants et le flux global des données au sein du système.
+
+\subsubsection{Couche de base : opérations numériques et graphe computationnel}
+La couche la plus fondamentale de l'architecture repose sur les classes \texttt{Matrix}, \texttt{Node}, \texttt{OperationNode} et \texttt{MathOps}. Elle constitue le socle sur lequel s'appuient toutes les composantes du réseau neuronal.
+
+La classe \texttt{Matrix} fournit les structures de données nécessaires aux calculs numériques et implémente les opérations linéaires de base utilisées dans le réseau. La classe \texttt{Node} modélise les nœuds du graphe computationnel. Chaque nœud contient une valeur courante, un gradient associé, ainsi que des liens vers ses nœuds parents, ce qui permet de représenter explicitement les dépendances entre les opérations. La classe \texttt{OperationNode} étend \texttt{Node} afin d'identifier le type d'opération réalisée via un identifiant (\texttt{OpKind}), facilitant ainsi la lecture et l'analyse du graphe.
+
+Les opérations mathématiques sont centralisées dans la classe \texttt{MathOps}, qui encapsule des fonctions telles que \texttt{matmul}, \texttt{add}, \texttt{mul}, \texttt{relu}, \texttt{sigmoid} ou \texttt{tanh}. Chaque appel à \texttt{MathOps} construit un nouveau \texttt{Node}, définit ses dépendances et associe la fonction de rétropropagation correspondante. Cette organisation permet de découpler le moteur d'autodifférentiation de la définition du réseau, rendant le graphe computationnel générique et réutilisable.
+
+\subsubsection{Architecture du réseau}
+Au-dessus du moteur de calcul, l'architecture du réseau neuronal est construite à l'aide de modules de plus haut niveau, spécifiquement dédiés à la définition du modèle. La classe \texttt{LinearLayer} encapsule les paramètres entraînables du réseau, à savoir les poids et les biais, ainsi que l'opération de projection linéaire appliquée aux entrées.
+
+Les fonctions d'activation sont modélisées via l'interface abstraite \texttt{ActivationFunction}, permettant une implémentation interchangeable des activations telles que ReLU, Sigmoid ou Tanh. L'unité fonctionnelle de base du réseau est la structure \texttt{LayerNode}, qui combine une couche linéaire et une fonction d'activation en un bloc cohérent. Le modèle complet est représenté par la classe \texttt{MLPNetwork}, structurée comme une séquence de \texttt{LayerNode}, ce qui permet de composer facilement des réseaux multi-couches de profondeur variable. Cette conception favorise la modularité et permet de modifier l'architecture du réseau sans impacter le moteur de calcul sous-jacent.
+
+\subsubsection{Module d'entraînement}
+Le module d'entraînement regroupe l'ensemble des composants nécessaires à l'apprentissage du modèle et à son évaluation. L'abstraction \texttt{LossFunction} permet de définir différentes fonctions de perte, dont \texttt{MSELoss} et \texttt{CrossEntropyLoss}, utilisées respectivement pour des tests simples et pour la classification sur MNIST. La mise à jour des paramètres est assurée par la classe abstraite \texttt{Optimizer}, avec une implémentation basée sur la descente de gradient stochastique (\texttt{SGDOptimizer}).
+
+Les données sont fournies par \texttt{MNISTDataset}, puis organisées en mini-batchs à l'aide de \texttt{DataLoader}. La classe \texttt{Trainer} coordonne l'ensemble du processus d'entraînement, en orchestrant le flux suivant : chargement des données, propagation avant dans le modèle, calcul de la perte, rétropropagation des gradients et mise à jour des paramètres. Cette séparation claire des rôles permet de faire évoluer indépendamment le modèle, la fonction de perte ou la stratégie d'optimisation, tout en conservant une architecture globale cohérente.
+
+\begin{figure}[h]
+  \centering
+  \caption{Diagramme de classes UML}
+  \label{fig:uml}
+\end{figure}
+
+\subsection{Implémentation détaillée}
+Cette section décrit les principaux choix d'implémentation des classes et méthodes constituant le moteur de calcul, le réseau neuronal et le pipeline d'entraînement. L'accent est mis sur la logique interne des composants, plutôt que sur les détails syntaxiques du code.
+
+\subsubsection{Implémentation de \texttt{Matrix}}
+La classe \texttt{Matrix} constitue la brique de base du calcul numérique. Les données sont stockées sous forme d'un \texttt{vector<double>} contigu en mémoire, facilitant l'accès séquentiel et la manipulation directe des coefficients.
+
+Les opérations fondamentales nécessaires au MLP sont implémentées explicitement, notamment :
+\begin{itemize}
+  \item la multiplication matricielle (\texttt{matmul}), réalisée à l'aide d'une triple boucle $i$--$j$--$k$ ;
+  \item les opérations élémentaires \texttt{add} et \texttt{mul} ;
+  \item la transposition de matrices.
+\end{itemize}
+Ce choix d'implémentation privilégie la clarté et la maîtrise du calcul, au détriment d'optimisations bas niveau, qui seront étudiées dans une phase ultérieure du projet. Les paramètres du réseau sont initialisés aléatoirement dans une plage contrôlée afin de rompre la symétrie au démarrage de l'apprentissage.
+
+\subsubsection{Construction du graphe computationnel (\texttt{Node}, \texttt{MathOps})}
+Le moteur d'autodifférentiation repose sur la classe \texttt{Node}, qui contient une valeur (\texttt{value\_}), un gradient (\texttt{grad\_}), une liste de nœuds parents et une fonction de rétropropagation (\texttt{backwardFn\_}). Lorsqu'une opération est invoquée via \texttt{MathOps} (par exemple \texttt{matmul}), un nouveau \texttt{Node} est créé. Ses dépendances sont explicitement définies et une fonction \texttt{backwardFn\_}, implémentée sous forme de lambda, est associée afin de calculer les gradients locaux.
+
+La phase de rétropropagation s'effectue en trois étapes :
+\begin{enumerate}[label=\arabic*.]
+  \item un tri topologique du graphe computationnel ;
+  \item l'initialisation du gradient au niveau de la fonction de perte ;
+  \item l'appel successif des fonctions \texttt{backwardFn\_} de chaque nœud dans l'ordre inverse du passage avant.
+\end{enumerate}
+Cette approche garantit une propagation correcte des gradients, tout en évitant les récursions profondes.
+
+\subsubsection{Implémentation des couches du MLP}
+\paragraph{\texttt{LinearLayer}} La classe \texttt{LinearLayer} implémente la transformation affine du réseau. La méthode \texttt{forward(input)} réalise l'opération \texttt{output = input \texttimes{} weights + bias} à l'aide des opérateurs définis dans \texttt{MathOps}. Les paramètres sont initialisés via la méthode \texttt{randomInit()}, et la méthode \texttt{parameters()} permet d'exposer les nœuds entraînables au module d'optimisation.
+
+\paragraph{Fonctions d'activation} Les fonctions d'activation sont implémentées comme des surcouches appliquant les opérateurs correspondants du moteur (\texttt{relu}, \texttt{sigmoid}, \texttt{tanh}), ce qui permet de les intégrer naturellement dans le graphe computationnel.
+
+\paragraph{\texttt{LayerNode} \& \texttt{MLPNetwork}} Un \texttt{LayerNode} combine une couche linéaire et une fonction d'activation en une unité cohérente. La classe \texttt{MLPNetwork} applique successivement ces blocs lors de la propagation avant, permettant de construire des réseaux multi-couches de manière flexible.
+
+\subsubsection{Implémentation de la loss et de l'optimisation}
+L'apprentissage du réseau repose sur l'association d'une fonction de loss et d'un algorithme d'optimisation, tous deux intégrés au moteur d'auto-différentiation. Les fonctions de loss sont définies via une interface abstraite \texttt{LossFunction}, qui impose la méthode \texttt{forward(pred, target)}. Celle-ci construit un nœud scalaire représentant la perte du batch, directement inséré dans le graphe de calcul.
+
+Deux fonctions de loss ont été implémentées :
+\begin{enumerate}[label=\arabic*.]
+  \item \textbf{MSELoss} : utilisée principalement pour les tests et la validation du moteur d'auto-différentiation. Elle correspond à l'erreur quadratique moyenne entre prédictions et cibles, la perte retournée étant la somme sur le batch, normalisée par le nombre de sorties.
+  \item \textbf{CrossEntropyLoss} : utilisée pour la classification MNIST. Elle opère directement sur les logits du réseau et intègre une opération de softmax stable numériquement. Le gradient par rapport aux logits s'exprime simplement comme la différence entre les probabilités prédites et les labels one-hot, ce qui garantit une rétropropagation efficace et stable.
+\end{enumerate}
+
+L'optimisation des paramètres est assurée par une interface abstraite \texttt{Optimizer}, fournissant les méthodes \texttt{zeroGrad()} et \texttt{step()}. Un optimiseur SGD (\emph{Stochastic Gradient Descent}) a été implémenté, mettant à jour chaque paramètre selon la règle $-\nabla L$. Cette séparation claire entre calcul des gradients et mise à jour des paramètres permet une architecture modulaire et facilement extensible vers d'autres méthodes d'optimisation.
+
+\subsubsection{Boucle d'entraînement}
+La boucle d'entraînement et d'évaluation est implémentée dans la classe \texttt{Trainer}. Elle repose sur une fonction centrale \texttt{runEpoch}, paramétrée par un indicateur permettant de distinguer les phases d'apprentissage et d'évaluation.
+
+Au début de chaque époque, le \texttt{DataLoader} est réinitialisé afin de parcourir l'ensemble des mini-batchs. Pour chaque batch, les matrices d'entrée et de cibles sont encapsulées dans des nœuds constants du graphe computationnel. La propagation avant est ensuite réalisée en appliquant successivement le modèle (\texttt{MLPNetwork}) aux données d'entrée, produisant les prédictions du réseau.
+
+La fonction de perte est alors évaluée à partir des prédictions et des cibles, générant un nœud de perte généralement scalaire. La valeur numérique de la perte est accumulée afin de calculer une perte moyenne sur l'ensemble de l'époque. En parallèle, la précision (accuracy) est estimée au niveau du \texttt{Trainer} en comparant, pour chaque échantillon du batch, la classe prédite (argmax des logits) à la classe cible encodée en one-hot.
+
+Lorsque l'époque est exécutée en mode entraînement, la phase de rétropropagation est déclenchée pour chaque batch. Les gradients des paramètres sont d'abord réinitialisés, puis la méthode \texttt{backward} est appelée sur le nœud de perte afin de propager les gradients dans le graphe computationnel. Les paramètres du réseau sont enfin mis à jour à l'aide de l'optimiseur. En mode évaluation, les étapes de rétropropagation et de mise à jour des paramètres sont désactivées, ce qui permet de mesurer les performances du modèle sans modifier son état interne.
+
+À la fin de l'époque, la perte moyenne et la précision globale sont calculées à partir des quantités accumulées et retournées sous forme de métriques.
+
+\section{Expérimentations (à rédiger après tests)}
+\subsection{Configuration de l'environnement}
+\subsubsection{Environnement Matériel / Hardware}
+% À compléter après les campagnes de tests.
+\subsubsection{Environnement Logiciel / Software}
+% À compléter après les campagnes de tests.
+\subsubsection{Configuration Spécifique et Protocole}
+% À compléter après les campagnes de tests.
+
+\subsection{Résultats expérimentaux}
+% À compléter après les campagnes de tests.
+
+\section{Analyse des performances (profiling)}
+% Première analyse de profilage à documenter ici après exécution des scénarios.
+
+\section{Déroulé du Projet}
+L'état de l'art a été rédigé conjointement par Jianye, Hao et Xiang, afin de présenter le contexte théorique du projet et les approches existantes en matière de réseaux neuronaux et de classification MNIST. L'équipe a ensuite organisé son travail en plusieurs phases successives, chacune étant portée par un ou plusieurs membres selon leurs affinités techniques.
+
+La phase de conception a été initiée par Jianye, qui a rédigé la documentation préliminaire et produit la première version du diagramme UML, permettant de clarifier l'architecture générale du projet. La mise en place du premier prototype fonctionnel du MLP a ensuite été assurée par Abdennour, qui a développé les modules fondamentaux liés aux tenseurs, aux couches linéaires et aux fonctions d'activation.
+
+La réalisation du moteur de différenciation automatique a été répartie entre Hao et Xiang, chacun prenant en charge une partie des opérations nécessaires au calcul du graphe et des gradients. Par la suite, Jianye a intégré l'ensemble de ces composants, généré une seconde version du diagramme UML pour refléter les ajustements apportés, et affiné la conception en fonction des problèmes rencontrés.
+
+Le développement du mécanisme d'entraînement a été amorcé par Xiang, tandis que Abdennour et Hao poursuivent respectivement l'implémentation de l'optimiseur et des fonctions de perte. L'intégration du jeu de données MNIST et la validation du pipeline complet ont été assurées par Jianye.
+
+Enfin, la rédaction du rapport est réalisée collectivement, de manière collaborative.
+
+\section{Conclusion \& perspectives}
+% À compléter lors de la finalisation du rapport.
+
+\section{Références}
+% À compléter avec les références bibliographiques.
+
+\section{Glossaire}
+% À compléter avec les définitions des principaux termes techniques.
+
+\end{document}
