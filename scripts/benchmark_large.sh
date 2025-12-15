@@ -13,52 +13,77 @@ cd ..
 
 # Define the implementations to test
 # Define the implementations to test
-impls=("blas" "ijk" "ikj" "blocked" "omp")
-size=${1:-2048}
+# Configs to test: "Implementation:Threads"
+# Note: ijk/ikj/blocked are single-threaded (Threads=1)
+configs=(
+    "ijk:1"
+    "ikj:1"
+    "blocked:1"
+    "omp:4"
+    "omp:8"
+    "blas:8"
+)
 
-echo "=== Benchmarking Large Matrices (${size}x${size}) ===" > output/benchmark_large_results.txt
-echo "Date: $(date)" >> output/benchmark_large_results.txt
-echo "----------------------------------------" >> output/benchmark_large_results.txt
+sizes=(64 128 256 512 1024 2048)
+echo "Implementation,Threads,Size,Mean,StdDev" > output/impl_comparison.csv
+echo "=== Benchmarking Implementations (All Sizes) ==="
 
-for impl in "${impls[@]}"; do
-
-    # Determine iterations and OMP threads
-    export OMP_NUM_THREADS=1
-    if [ "$impl" == "ijk" ]; then
-        ITERATIONS=3
-    elif [ "$impl" == "omp" ]; then
-        ITERATIONS=5
-        export OMP_NUM_THREADS=16
-    else
-        ITERATIONS=5
-    fi
-
-    echo "Running benchmark for: $impl (Threads: $OMP_NUM_THREADS, Iterations: $ITERATIONS)"
+for size in "${sizes[@]}"; do
+    echo "--- Size: ${size}x${size} ---"
     
-    # Temp file for storing times
-    > times.txt
+    # Determine repetitions based on size (copied from find_optimal_threads.sh)
+    iterations=10
+    warmups=3
+    case $size in
+        64)   iterations=100 ;;
+        128)  iterations=50 ;;
+        256)  iterations=25 ;;
+    #    512)  iterations=20 ;;
+    #    1024) iterations=12 ;;
+    #    2048) iterations=6 ;;
+        *)    iterations=5 ;;
+    esac
 
-    for ((i=1; i<=ITERATIONS; i++)); do
-        # Run test_benchmark_large with size argument
-        output=$(MATMUL_IMPL=$impl ./build/test_benchmark_large $size)
+    for config in "${configs[@]}"; do
+        IFS=':' read -r impl threads <<< "$config"
         
-        # Extract time
-        time_taken=$(echo "$output" | grep "Done in" | awk '{print $3}')
-        echo "$time_taken" >> times.txt
-        echo "  Run $i: $time_taken seconds"
-    done
-    
-    # Compute mean and std dev
-    result_line=$(python3 scripts/compute_stats.py < times.txt)
-    
-    echo "Implementation: $impl" >> output/benchmark_large_results.txt
-    echo "Stats: $result_line seconds" >> output/benchmark_large_results.txt
-    echo "----------------------------------------" >> output/benchmark_large_results.txt
-    
-    echo "  -> Result: $result_line"
-    rm times.txt
+        # Override iterations for really slow implementation (ijk) on large matrices to avoid timeout
+        current_iters=$iterations
+        if [ "$impl" == "ijk" ] && [ "$size" -ge 1024 ]; then
+            current_iters=3
+        fi
+        
+        echo "Running: $impl (Threads: $threads) | Size: $size | Reps: $current_iters"
+        
+        # Export env vars
+        export OMP_NUM_THREADS=$threads
+        export OPENBLAS_NUM_THREADS=$threads
 
+        # Warm-up runs to avoid cold-start noise (results discarded)
+        for ((w=1; w<=warmups; w++)); do
+            MATMUL_IMPL=$impl ./build/test_benchmark_large $size >/dev/null
+        done
+        
+        # Temp file for storing times
+        timings=""
+        
+        for ((i=1; i<=current_iters; i++)); do
+            output=$(MATMUL_IMPL=$impl ./build/test_benchmark_large $size)
+            time_taken=$(echo "$output" | grep "Done in" | awk '{print $3}')
+            timings="$timings$time_taken\n"
+        done
+        
+        # Compute stats
+        stats=$(echo -e "$timings" | python3 scripts/compute_stats.py)
+        mean=$(echo "$stats" | awk '{print $1}')
+        std=$(echo "$stats" | awk '{print $3}')
+        
+        # Fix N/A if stats failed
+        if [ "$std" == "N/A" ] || [ -z "$std" ]; then std="0.00000000"; fi
+    
+        echo "$impl,$threads,$size,$mean,$std" >> output/impl_comparison.csv
+    done
 done
 
-echo "Large Benchmark completed. Results saved to output/benchmark_large_results.txt"
-cat output/benchmark_large_results.txt
+echo "Comparison Benchmark completed. Results saved to output/impl_comparison.csv"
+cat output/impl_comparison.csv
