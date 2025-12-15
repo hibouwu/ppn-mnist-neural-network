@@ -79,6 +79,8 @@ sudo taskset -c 0-7 bash scripts/find_optimal_threads.sh
      - **大矩阵 (>= 1024x1024)**: 推荐使用与物理核心数相等的线程数（本例为 8 线程）。
      - **之后的实验我们将默认使用 4 线程和 8 线程进行测试**。
    - **BLAS**: 对 CPU 利用率极高（AVX/FMA指令），对核数限制极其敏感，过载即崩溃，因此我们使用核数相同的线程数（本例为 8 线程）。
+     - 对于小矩阵，BLAS 不同线程数差异不大，我们可以说线程数影响不大。
+     - 对于大矩阵，推荐使用与物理核心数相等的线程数（本例为 8 线程）。
 
 ```bash
 # 运行制图脚本
@@ -86,6 +88,9 @@ python3 scripts/plot_scaling.py
 ```
 
 结果在 [output/outputresult/scaling_plot.png](output/outputresult/scaling_plot.png) 和 [output/outputresult/scaling_speedup_plot.png](output/outputresult/scaling_speedup_plot.png) 中
+
+![temps plot](output/outputresult/scaling_plot.png)
+![scaling speedup plot](output/outputresult/scaling_speedup_plot.png)
 
 ## 测试不同优化级别对矩阵乘法的影响
 
@@ -109,6 +114,9 @@ python3 scripts/plot_comparison.py
 
 结果在 [output/outputresult/comparison_grid_plot.png](output/outputresult/comparison_grid_plot.png) 和 [output/outputresult/comparison_speedup_grid.png](output/outputresult/comparison_speedup_grid.png) 中
 
+![comparison grid plot](output/outputresult/comparison_grid_plot.png)
+![comparison speedup grid](output/outputresult/comparison_speedup_grid.png)
+
 结论：
 
 1. **性能阶梯 (Performance Hierarchy)**:
@@ -127,7 +135,14 @@ python3 scripts/plot_comparison.py
 3. **加速比 (Speedup)**:
    - 加速比图清晰地展示了优化的“台阶”。最大的矩阵下，BLAS 的加速比能达到 **1200x**，这有力地证明了算法优化比硬件堆砌更重要。
 
+4. **总结建议 (Summary Recommendations)**:
+   - **算法优化**: 循环重排和并行化是提升性能的关键步骤。
+   - **使用高效库**: 对于实际应用，优先选择经过高度优化的数学库（如 OpenBLAS、Intel MKL）以获得最佳性能。
+   - **在我们的项目中，因为是28x28 矩阵，最大加速比是8线程的blas的结果，为 15.3x**，因为之前的结论是小矩阵多线程波动大且收益不明显，所以我们默认使用单线程 blas 作为最优的实现。
 
+## 测试不同编译器对矩阵乘法的影响
+
+## 
 
 ## 恢复环境
 
