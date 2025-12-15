@@ -7,6 +7,7 @@
 #include <cstdlib>   // getenv
 #include <cstring>   // strcmp
 
+#include <omp.h>
 #include <cblas.h>
 
 #ifdef PROFILE_MATMUL
@@ -15,11 +16,11 @@
 
 namespace {
 
-// Choix à l’exécution via la variable d’environnement :
+// Choix à l'exécution via la variable d'environnement :
 //   MATMUL_IMPL = blas | ijk | ikj | blocked
 // Valeur par défaut : blas
 
-enum class MatmulImpl { Blas, Ijk, Ikj, Blocked };
+enum class MatmulImpl { Blas, Ijk, Ikj, Blocked, Omp };
 
 static inline MatmulImpl parse_impl_env() {
     const char* v = std::getenv("MATMUL_IMPL");
@@ -29,6 +30,7 @@ static inline MatmulImpl parse_impl_env() {
     if (std::strcmp(v, "ijk") == 0)     return MatmulImpl::Ijk;
     if (std::strcmp(v, "ikj") == 0)     return MatmulImpl::Ikj;
     if (std::strcmp(v, "blocked") == 0) return MatmulImpl::Blocked;
+    if (std::strcmp(v, "omp") == 0)     return MatmulImpl::Omp;
 
     // Valeur inconnue : avertissement (une seule fois), puis fallback BLAS
     static bool warned = false;
@@ -36,12 +38,12 @@ static inline MatmulImpl parse_impl_env() {
         warned = true;
         std::cerr << "[WARN] MATMUL_IMPL inconnu ('" << v
                   << "'). Utilisation de 'blas'. Valeurs valides : "
-                  << "blas | ijk | ikj | blocked\n";
+                  << "blas | ijk | ikj | blocked | omp\n";
     }
     return MatmulImpl::Blas;
 }
 
-// Lecture paresseuse (une seule fois) de la variable d’environnement
+// Lecture paresseuse (une seule fois) de la variable d'environnement
 static inline MatmulImpl current_impl() {
     static MatmulImpl impl = parse_impl_env();
     return impl;
@@ -136,16 +138,45 @@ static void dgemm_blocked(const double* A, const double* B, double* C,
     }
 }
 
+// Version OpenMP (parallélisation de la boucle externe i)
+// Basée sur dgemm_ikj pour l'efficacité mémoire
+static void dgemm_omp(const double* A, const double* B, double* C,
+                      size_t M, size_t N, size_t K) {
+    
+    // Initialisation de C à zéro (parallèle)
+    #pragma omp parallel for
+    for (size_t i = 0; i < M; ++i) {
+        double* Ci = C + i*N;
+        for (size_t j = 0; j < N; ++j) {
+            Ci[j] = 0.0;
+        }
+    }
+
+    // Multiplication (parallèle)
+    #pragma omp parallel for
+    for (size_t i = 0; i < M; ++i) {
+        const double* Ai = A + i*K;
+        double* Ci = C + i*N;
+        for (size_t k = 0; k < K; ++k) {
+            const double aik = Ai[k];
+            const double* Bk = B + k*N;
+            for (size_t j = 0; j < N; ++j) {
+                Ci[j] += aik * Bk[j];
+            }
+        }
+    }
+}
+
 } // namespace
 
 
-Matrix::Matrix(size_t r, size_t c) : rows(r), cols(c), data(r * c) {}
+Matrix::Matrix(size_t r, size_t c) : data(r * c), rows(r), cols(c) {}
 
 Matrix::Matrix(size_t r, size_t c, double init_value)
-    : rows(r), cols(c), data(r * c, init_value) {}
+    : data(r * c, init_value), rows(r), cols(c) {}
 
 Matrix::Matrix(const Matrix& other)
-    : rows(other.rows), cols(other.cols), data(other.data) {}
+    : data(other.data), rows(other.rows), cols(other.cols) {}
 
 Matrix& Matrix::operator=(const Matrix& other) {
     if (this != &other) {
@@ -171,7 +202,7 @@ const double& Matrix::operator()(size_t r, size_t c) const {
 Matrix Matrix::add(const Matrix& other) const {
     if (rows != other.rows || cols != other.cols) {
         throw std::invalid_argument(
-            "Dimensions incompatibles pour l’addition");
+            "Dimensions incompatibles pour l'addition");
     }
     Matrix result(rows, cols);
     for (size_t i = 0; i < data.size(); ++i) {
@@ -203,7 +234,7 @@ Matrix Matrix::matmul(const Matrix& other) const {
     if (rows > max_int || cols > max_int ||
         other.rows > max_int || other.cols > max_int) {
         throw std::overflow_error(
-            "Dimensions trop grandes pour l’interface BLAS (int)");
+            "Dimensions trop grandes pour l'interface BLAS (int)");
     }
 
 #ifdef PROFILE_MATMUL
@@ -248,6 +279,11 @@ Matrix Matrix::matmul(const Matrix& other) const {
             dgemm_blocked(data.data(), other.data.data(),
                           result.data.data(), rows, other.cols, cols);
             break;
+
+        case MatmulImpl::Omp:
+            dgemm_omp(data.data(), other.data.data(),
+                      result.data.data(), rows, other.cols, cols);
+            break;
     }
 
 #ifdef PROFILE_MATMUL
@@ -269,8 +305,6 @@ Matrix Matrix::matmul(const Matrix& other) const {
 
     return result;
 }
-
-
 
 Matrix Matrix::transpose() const {
     Matrix result(cols, rows);

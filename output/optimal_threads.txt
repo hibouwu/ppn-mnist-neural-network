@@ -1,0 +1,20 @@
+=== Searching for Optimal Thread Counts ===
+Date: 2025年 12月 14日 星期日 23:03:42 CET
+========================================
+Testing Implementation: omp
+========================================
+Size 64: Optimal Threads = 4 (Time: 0.0000s)
+Size 128: Optimal Threads = 4 (Time: 0.0002s)
+Size 256: Optimal Threads = 8 (Time: 0.0009s)
+Size 512: Optimal Threads = 16 (Time: 0.0043s)
+Size 1024: Optimal Threads = 16 (Time: 0.0367s)
+Size 2048: Optimal Threads = 16 (Time: 0.2999s)
+========================================
+Testing Implementation: blas
+========================================
+Size 64: Optimal Threads = 1 (Time: 0.0000s)
+Size 128: Optimal Threads = 1 (Time: 0.0002s)
+Size 256: Optimal Threads = 8 (Time: 0.0006s)
+Size 512: Optimal Threads = 16 (Time: 0.0022s)
+Size 1024: Optimal Threads = 16 (Time: 0.0101s)
+Size 2048: Optimal Threads = 16 (Time: 0.0733s)

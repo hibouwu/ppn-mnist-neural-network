@@ -1,0 +1,18 @@
+=== Benchmarking Large Matrices (512x512) ===
+Date: 2025年 12月 14日 星期日 20:56:33 CET
+----------------------------------------
+Implementation: blas
+Stats: 0.0093 +/- 0.0007 seconds
+----------------------------------------
+Implementation: ijk
+Stats: 0.8549 +/- 0.2278 seconds
+----------------------------------------
+Implementation: ikj
+Stats: 0.0336 +/- 0.0007 seconds
+----------------------------------------
+Implementation: blocked
+Stats: 0.0447 +/- 0.0003 seconds
+----------------------------------------
+Implementation: omp
+Stats: 0.0059 +/- 0.0001 seconds
+----------------------------------------

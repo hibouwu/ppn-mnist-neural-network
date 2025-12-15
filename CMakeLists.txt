@@ -23,11 +23,19 @@ find_path(OPENBLAS_INCLUDE_DIR
     PATH_SUFFIXES openblas
 )
 find_library(OPENBLAS_LIB
-    NAMES openblas openblas64
+    NAMES openblaso openblas openblas64
 )
 
 if(NOT OPENBLAS_INCLUDE_DIR OR NOT OPENBLAS_LIB)
     message(FATAL_ERROR "OpenBLAS not found: set OPENBLAS_INCLUDE_DIR and OPENBLAS_LIB")
+endif()
+
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    message(STATUS "OpenMP found")
+    link_libraries(OpenMP::OpenMP_CXX)
+else()
+    message(WARNING "OpenMP not found")
 endif()
 
 add_compile_definitions(USE_OPENBLAS)
@@ -85,4 +93,7 @@ add_test(NAME AutodiffTest COMMAND test_autodiff)
 add_test(NAME GradientCheckTest COMMAND test_gradient_check)
 add_test(NAME DataLoaderTest COMMAND test_dataloader)
 add_test(NAME OptimizerTest COMMAND test_optimizer)
+
+add_executable(test_benchmark_large tests/test_benchmark_large.cpp ${SOURCES})
+target_link_libraries(test_benchmark_large PUBLIC ${OPENBLAS_LIB} mnist_reader_lib)
 

@@ -1,0 +1,19 @@
+=== Starting Benchmark ===
+Date: 2025年 12月 14日 星期日 18:38:01 CET
+----------------------------------------
+Implementation: blas
+Total Duration: 4.254799324 seconds
+Final Accuracy: 96.06%
+----------------------------------------
+Implementation: ijk
+Total Duration: 28.164307408 seconds
+Final Accuracy: 96.15%
+----------------------------------------
+Implementation: ikj
+Total Duration: 8.137232371 seconds
+Final Accuracy: 96.41%
+----------------------------------------
+Implementation: blocked
+Total Duration: 9.363870682 seconds
+Final Accuracy: 95.52%
+----------------------------------------
