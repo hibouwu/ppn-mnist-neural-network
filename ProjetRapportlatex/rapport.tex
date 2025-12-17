@@ -43,7 +43,8 @@
     basicstyle=\ttfamily\footnotesize,
     breaklines=true,
     frame=single,
-    backgroundcolor=\color{gray!5}
+    backgroundcolor=\color{gray!5},
+    literate={é}{{\'e}}1 {è}{{\`e}}1 {à}{{\`a}}1 {ç}{{\c{c}}}1 {œ}{{\oe}}1 {ù}{{\`u}}1 {É}{{\'E}}1 {È}{{\`E}}1 {À}{{\`A}}1 {Ç}{{\c{C}}}1 {Œ}{{\OE}}1 {Ê}{{\^E}}1 {ê}{{\^e}}1 {î}{{\^i}}1 {ô}{{\^o}}1 {û}{{\^u}}1
 }
 
 \lstdefinelanguage{pseudo}{
@@ -141,7 +142,7 @@ Aurélien Delval / Hugo Bolloré / Pablo Oliveira
 \def\location#1{\def\@location{#1}}
 \def\blurb#1{\def\@blurb{#1}}
 \date{\today}
-\author{Jianye Shi, Hao, Xiang, Abdennour}
+\author{Jianye Shi, Hao Qian, Xiang Bian, Abdennour Boulmis}
 \title{Rapport de Projet : MLP et moteur d'autodiff appliqués à MNIST}
 \location{}\blurb{%
 \begin{center}
@@ -236,8 +237,9 @@ Le module d'entraînement regroupe l'ensemble des composants nécessaires à l'a
 
 Les données sont fournies par \texttt{MNISTDataset}, puis organisées en mini-batchs à l'aide de \texttt{DataLoader}. La classe \texttt{Trainer} coordonne l'ensemble du processus d'entraînement, en orchestrant le flux suivant : chargement des données, propagation avant dans le modèle, calcul de la perte, rétropropagation des gradients et mise à jour des paramètres. Cette séparation claire des rôles permet de faire évoluer indépendamment le modèle, la fonction de perte ou la stratégie d'optimisation, tout en conservant une architecture globale cohérente.
 
-\begin{figure}[h]
+\begin{figure}[H]
   \centering
+  \includegraphics[width=\textwidth]{Images/phase4-6.png}
   \caption{Diagramme de classes UML}
   \label{fig:uml}
 \end{figure}
@@ -246,18 +248,47 @@ Les données sont fournies par \texttt{MNISTDataset}, puis organisées en mini-b
 Cette section décrit les principaux choix d'implémentation des classes et méthodes constituant le moteur de calcul, le réseau neuronal et le pipeline d'entraînement. L'accent est mis sur la logique interne des composants, plutôt que sur les détails syntaxiques du code.
 
 \subsubsection{Implémentation de \texttt{Matrix}}
-La classe \texttt{Matrix} constitue la brique de base du calcul numérique. Les données sont stockées sous forme d'un \texttt{vector<double>} contigu en mémoire, facilitant l'accès séquentiel et la manipulation directe des coefficients.
+La classe \texttt{Matrix} constitue la brique de base du calcul numérique. Les données sont encapsulées dans un \texttt{std::vector<double>}, garantissant une allocation mémoire contiguë. Ce choix est critique pour la performance : il maximise la localité spatiale et l'efficacité des caches CPU (L1/L2), un prérequis indispensable aux optimisations vectorielles (SIMD).
 
-Les opérations fondamentales nécessaires au MLP sont implémentées explicitement, notamment :
+\begin{lstlisting}[language=C++, caption={Structure de données contiguë (Matrix)}]
+class Matrix {
+public:
+    // Stockage contigu garantissant la localité spatiale
+    std::vector<double> data;
+    size_t rows;
+    size_t cols;
+    // ...
+};
+\end{lstlisting}
+
+Les opérations fondamentales nécessaires au MLP sont implémentées explicitement. Concernant la multiplication matricielle (\texttt{matmul}), le code adopte une architecture flexible permettant de sélectionner l'implémentation sous-jacente (via une variable d'environnement) :
 \begin{itemize}
-  \item la multiplication matricielle (\texttt{matmul}), réalisée à l'aide d'une triple boucle $i$--$j$--$k$ ;
-  \item les opérations élémentaires \texttt{add} et \texttt{mul} ;
-  \item la transposition de matrices.
+  \item une version naïve (triple boucle $i$--$j$--$k$) servant de référence pédagogique ;
+  \item des versions optimisées (BLAS, Blocked, OpenMP) assurant la performance.
 \end{itemize}
-Ce choix d'implémentation privilégie la clarté et la maîtrise du calcul, au détriment d'optimisations bas niveau, qui seront étudiées dans une phase ultérieure du projet. Les paramètres du réseau sont initialisés aléatoirement dans une plage contrôlée afin de rompre la symétrie au démarrage de l'apprentissage.
+Les opérations élémentaires \texttt{add}, \texttt{mul} et la transposition sont également disponibles.
+
+Ce choix d'implémentation permet de comparer différentes approches d'optimisation (telles que détaillées dans la section expérimentale) tout en conservant une maitrise totale de la chaîne de calcul. Les paramètres du réseau sont initialisés aléatoirement dans une plage contrôlée afin de rompre la symétrie au démarrage de l'apprentissage.
 
 \subsubsection{Construction du graphe computationnel (\texttt{Node}, \texttt{MathOps})}
-Le moteur d'autodifférentiation repose sur la classe \texttt{Node}, qui contient une valeur (\texttt{value\_}), un gradient (\texttt{grad\_}), une liste de nœuds parents et une fonction de rétropropagation (\texttt{backwardFn\_}). Lorsqu'une opération est invoquée via \texttt{MathOps} (par exemple \texttt{matmul}), un nouveau \texttt{Node} est créé. Ses dépendances sont explicitement définies et une fonction \texttt{backwardFn\_}, implémentée sous forme de lambda, est associée afin de calculer les gradients locaux.
+Le moteur d'autodifférentiation repose sur la classe \texttt{Node}, dont la gestion mémoire est assurée par des pointeurs intelligents \texttt{std::shared\_ptr}. Cette approche automatise la gestion du cycle de vie des nœuds au sein du Graphe Acyclique Dirigé (DAG), évitant ainsi les fuites de mémoire complexes inhérentes aux graphes dynamiques.
+
+Chaque \texttt{Node} contient une valeur, un gradient, une liste de parents, et surtout une fonction de rétropropagation \texttt{backwardFn\_}, typée via \texttt{std::function}. Lorsqu'une opération est invoquée via \texttt{MathOps}, l'utilisation d'expressions Lambda (\emph{Modern C++}) permet de capturer efficacement le contexte local (clôtures) nécessaire au calcul du gradient, offrant une syntaxe concise et expressive.
+
+\begin{lstlisting}[language=C++, caption={Utilisation de Lambdas et Smart Pointers (MathOps)}]
+// Exemple pour l'opération Mul (e.g. y = a * b)
+Node::Ptr mul(const Node::Ptr& a, const Node::Ptr& b) {
+    auto node = std::make_shared<OperationNode>(...);
+
+    // Capture du contexte par valeur (smart pointers)
+    node->setBackwardFn([a, b](const Matrix& grad){
+        // Calcul local du gradient : dL/da = grad * b
+        a->addGrad(grad.mul(b->value()));
+        b->addGrad(grad.mul(a->value()));
+    });
+    return node;
+}
+\end{lstlisting}
 
 La phase de rétropropagation s'effectue en trois étapes :
 \begin{enumerate}[label=\arabic*.]
@@ -270,7 +301,20 @@ Cette approche garantit une propagation correcte des gradients, tout en évitant
 \subsubsection{Implémentation des couches du MLP}
 \paragraph{\texttt{LinearLayer}} La classe \texttt{LinearLayer} implémente la transformation affine du réseau. La méthode \texttt{forward(input)} réalise l'opération \texttt{output = input \texttimes{} weights + bias} à l'aide des opérateurs définis dans \texttt{MathOps}. Les paramètres sont initialisés via la méthode \texttt{randomInit()}, et la méthode \texttt{parameters()} permet d'exposer les nœuds entraînables au module d'optimisation.
 
-\paragraph{Fonctions d'activation} Les fonctions d'activation sont implémentées comme des surcouches appliquant les opérateurs correspondants du moteur (\texttt{relu}, \texttt{sigmoid}, \texttt{tanh}), ce qui permet de les intégrer naturellement dans le graphe computationnel.
+\paragraph{Fonctions d'activation} Les fonctions d'activation sont implémentées via l'héritage et le polymorphisme d'exécution (\emph{Runtime Polymorphism}). Une classe abstraite de base définit l'interface virtuelle pure \texttt{forward()}, permettant d'interchanger dynamiquement les algorithmes (\texttt{ReLU}, \texttt{Sigmoid}, \texttt{Tanh}) sans impacter le reste du réseau.
+
+\begin{lstlisting}[language=C++, caption={Polymorphisme pour les activations}]
+class ActivationFunction {
+public:
+    // Interface virtuelle pure
+    virtual Node::Ptr forward(const Node::Ptr& input) const = 0;
+    virtual ~ActivationFunction() = default;
+};
+
+class ReLU : public ActivationFunction { 
+    /* Implementation concrète */ 
+};
+\end{lstlisting}
 
 \paragraph{\texttt{LayerNode} \& \texttt{MLPNetwork}} Un \texttt{LayerNode} combine une couche linéaire et une fonction d'activation en une unité cohérente. La classe \texttt{MLPNetwork} applique successivement ces blocs lors de la propagation avant, permettant de construire des réseaux multi-couches de manière flexible.
 
@@ -283,7 +327,7 @@ Deux fonctions de loss ont été implémentées :
   \item \textbf{CrossEntropyLoss} : utilisée pour la classification MNIST. Elle opère directement sur les logits du réseau et intègre une opération de softmax stable numériquement. Le gradient par rapport aux logits s'exprime simplement comme la différence entre les probabilités prédites et les labels one-hot, ce qui garantit une rétropropagation efficace et stable.
 \end{enumerate}
 
-L'optimisation des paramètres est assurée par une interface abstraite \texttt{Optimizer}, fournissant les méthodes \texttt{zeroGrad()} et \texttt{step()}. Un optimiseur SGD (\emph{Stochastic Gradient Descent}) a été implémenté, mettant à jour chaque paramètre selon la règle $-\nabla L$. Cette séparation claire entre calcul des gradients et mise à jour des paramètres permet une architecture modulaire et facilement extensible vers d'autres méthodes d'optimisation.
+L'optimisation des paramètres est assurée par une interface abstraite \texttt{Optimizer}, tirant parti, là encore, du mécanisme de fonctions virtuelles du C++. La méthode \texttt{step()} est redéfinie par les classes filles (comme \texttt{SGDOptimizer}), ce qui offre une extensibilité immédiate pour l'ajout futur d'algorithmes plus complexes (Adam, RMSProp) sans modifier la boucle d'entraînement.
 
 \subsubsection{Boucle d'entraînement}
 La boucle d'entraînement et d'évaluation est implémentée dans la classe \texttt{Trainer}. Elle repose sur une fonction centrale \texttt{runEpoch}, paramétrée par un indicateur permettant de distinguer les phases d'apprentissage et d'évaluation.
@@ -296,7 +340,7 @@ Lorsque l'époque est exécutée en mode entraînement, la phase de rétropropag
 
 À la fin de l'époque, la perte moyenne et la précision globale sont calculées à partir des quantités accumulées et retournées sous forme de métriques.
 
-\section{Expérimentations (à rédiger après tests)}
+\section{Expérimentations}
 \subsection{Configuration de l'environnement}
 Toutes les expériences ont été réalisées sur une machine avec les spécifications suivantes :
 
@@ -326,7 +370,7 @@ Swap & 8.0 GiB \\
 \end{tabular}
 \end{table}
 
-Les expérimentations parallèles ainsi que les mesures d'énergie ont été réalisées sur cette même configuration matérielle.
+Les expérimentations parallèles ont été réalisées sur cette même configuration matérielle.
 
 \subsubsection{Environnement Logiciel / Software}
 
@@ -348,12 +392,12 @@ IDE & Visual Studio Code on Linux \\
 \end{tabular}
 \end{table}
 
-Les mesures de performance ont été réalisées à l'aide de \texttt{perf stat} avec les événements RAPL (\texttt{power/energy-pkg/} et \texttt{power\_core/energy-core/}) pour quantifier la consommation énergétique. Les optimisations de compilation ont été testées avec les flags \texttt{-O3 -march=native} pour activer l'auto-vectorisation et les optimisations spécifiques à l'architecture.
+Les optimisations de compilation ont été testées avec les flags \texttt{-O3 -march=native} pour activer l'auto-vectorisation et les optimisations spécifiques à l'architecture.
 
 \subsubsection{Configuration Spécifique et Protocole}\label{subsec:protocol}
 
-Afin de limiter la variabilité des résultats, les campagnes de mesure suivent un protocole systématique de verrouillage de fréquence et d'affinité CPU. Les huit premiers cœurs physiques sont forcés à 4.0~GHz à l'aide de \texttt{cpupower}, puis les exécutions \texttt{perf stat} sont liées explicitement à ce jeu de cœurs via \texttt{taskset}. Le script type est le suivant :
-Le détail des commandes (verrouillage de fréquence, événements suivi par \texttt{perf stat}, étapes de remise à l'état initial) est présenté en annexe~\ref{app:protocol}. Ce protocole constitue l'adaptation AMD des commandes recommandées pour les processeurs Intel dans le Lab~6, lesquelles préconisent un verrouillage similaire sur quatre cœurs logiques avec des bornes de fréquence adaptées au turbo (par exemple \texttt{cpupower frequency-set -g performance -u 5000MHz -d 5000MHz}). Les deux approches ne diffèrent donc que par les limites matérielles et la taille du groupe de cœurs réservés à l'expérience. Les scripts d'analyse acceptent les variables \texttt{LOCK\_FREQ} et \texttt{CPU\_SET} afin de rejouer automatiquement ces réglages.
+Afin de limiter la variabilité des résultats, les campagnes de mesure suivent un protocole systématique de verrouillage de fréquence et d'affinité CPU. Les huit premiers cœurs physiques sont forcés à 4.0~GHz à l'aide de \texttt{cpupower}, puis les exécutions sont liées explicitement à ce jeu de cœurs via \texttt{taskset}. Le script type est le suivant :
+Le détail des commandes (verrouillage de fréquence, étapes de remise à l'état initial) est présenté en annexe~\ref{app:protocol}. Ce protocole constitue l'adaptation AMD des commandes recommandées pour les processeurs Intel dans le Lab~6, lesquelles préconisent un verrouillage similaire sur quatre cœurs logiques avec des bornes de fréquence adaptées au turbo (par exemple \texttt{cpupower frequency-set -g performance -u 5000MHz -d 5000MHz}). Les deux approches ne diffèrent donc que par les limites matérielles et la taille du groupe de cœurs réservés à l'expérience. Les scripts d'analyse acceptent les variables \texttt{LOCK\_FREQ} et \texttt{CPU\_SET} afin de rejouer automatiquement ces réglages.
 
 \subsection{Résultats expérimentaux}
 
@@ -362,6 +406,20 @@ Cette section détaille les résultats obtenus lors des campagnes de test, en an
 \subsubsection{Passage à l'échelle (Thread Scaling)}
 
 Nous avons évalué la scalabilité de notre implémentation OpenMP sur différentes tailles de matrices, en variant le nombre de threads de 1 à 16 sur nos 8 cœurs physiques.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Images/scaling_plot.png}
+    \caption{Temps d'exécution en fonction du nombre de threads pour différentes tailles de matrices.}
+    \label{fig:scaling_time}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Images/scaling_speedup_plot.png}
+    \caption{Speedup (accélération) en fonction du nombre de threads.}
+    \label{fig:scaling_speedup}
+\end{figure}
 
 \paragraph{Instabilité des petites matrices ($< 128 \times 128$).}
 Lors des premiers tests pilotés par scripts Bash, nous avons observé une forte variabilité sur les petites tailles. Cette instabilité a été corrigée en déplaçant la boucle de mesures \textbf{à l'intérieur du programme C++}, éliminant ainsi le bruit lié au lancement de processus. Avec cette méthodologie rigoureuse (moyenne sur 100 itérations internes, warm-up de 5 runs), l'écart type est tombé à environ 2 $\mu$s.
@@ -390,6 +448,20 @@ Le cas spécifique des matrices $28 \times 28$ (taille des images MNIST) a fait 
 \subsubsection{Hiérarchie des performances et Speedup}
 
 La comparaison globale des implémentations sur grandes matrices met en évidence quatre paliers de performance (Figure~\ref{fig:comparison}) :
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Images/comparison_grid_plot.png}
+    \caption{Comparaison des temps d'exécution (Naïf vs Reordered vs OpenMP vs BLAS).}
+    \label{fig:comparison}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Images/comparison_speedup_grid.png}
+    \caption{Speedup relatif des différentes optimisations.}
+    \label{fig:comparison_speedup}
+\end{figure}
 \begin{enumerate}
     \item \textbf{Naïf ($ijk$)} : L'ordre des boucles provoque des accès mémoire non contigus (fautes de cache). Le temps explose en $O(N^3)$, atteignant plusieurs secondes pour $N=2048$.
     \item \textbf{Réordonné ($ikj$)} : La simple permutation des boucles améliore la localité spatiale et apporte un gain substantiel (Speedup $\approx 3.3\times$).
@@ -404,6 +476,13 @@ Afin de comprendre l'impact de ces optimisations sur le temps total d'apprentiss
 \textbf{Avant optimisation (Kernel Naïf) :}
 L'application est totalement limitée par le calcul (\emph{compute-bound}). La fonction \texttt{Matrix::matmul} consomme \textbf{94.8\%} du temps total (12.05s).
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Images/gprof_analyse_naive.png}
+    \caption{Profil d'exécution (gprof) - Version Naïve : Matmul domine.}
+    \label{fig:gprof_naive}
+\end{figure}
+
 \textbf{Après optimisation (BLAS) :}
 Le temps passé dans \texttt{Matrix::matmul} s'effondre à moins de \textbf{1\%} ($\approx 0.5$s). Le goulot d'étranglement se déplace alors vers :
 \begin{itemize}
@@ -411,11 +490,32 @@ Le temps passé dans \texttt{Matrix::matmul} s'effondre à moins de \textbf{1\%}
     \item Les allocations mémoire (\texttt{Matrix::Matrix}) : $\approx 29\%$ du temps.
 \end{itemize}
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{Images/gprof_analyse_blas.png}
+    \caption{Profil d'exécution (gprof) - Version BLAS : Matmul négligeable.}
+    \label{fig:gprof_blas}
+\end{figure}
+
 \textbf{Conséquence (Loi d'Amdahl) :}
 Bien que le noyau de calcul soit accéléré de 1200x, l'accélération de l'application complète est plafonnée par les parties non optimisables (chargement, allocation). Le temps total d'une époque passe de 13.27s à 1.74s, soit un \textbf{speedup end-to-end de 7.6x}. Ce résultat démontre l'importance de considérer la chaîne complète : une fois le calcul optimisé, les efforts doivent se porter sur la gestion mémoire et les I/O pour obtenir de nouveaux gains.
 
-\section{Analyse des performances (profiling)}
-% Première analyse de profilage à documenter ici après exécution des scénarios.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{Images/e2e_benchmark_plot.png}
+    \caption{Répartition du temps d'exécution (End-to-End) : Naïf vs BLAS.}
+    \label{fig:e2e_benchmark}
+\end{figure}
+
+\subsection{Convergence de l'entraînement}
+Afin de valider la correction du modèle et de l'algorithme d'optimisation, nous présentons la courbe d'apprentissage sur MNIST.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{Images/training_curve.png}
+    \caption{Courbe de perte (Loss) et de précision (Accuracy) sur les données d'entraînement/validation.}
+    \label{fig:training_curve}
+\end{figure}
 
 \section{Déroulé du Projet}
 L'état de l'art a été rédigé conjointement par Jianye, Hao et Xiang, afin de présenter le contexte théorique du projet et les approches existantes en matière de réseaux neuronaux et de classification MNIST. L'équipe a ensuite organisé son travail en plusieurs phases successives, chacune étant portée par un ou plusieurs membres selon leurs affinités techniques.
@@ -424,17 +524,92 @@ La phase de conception a été initiée par Jianye, qui a rédigé la documentat
 
 La réalisation du moteur de différenciation automatique a été répartie entre Hao et Xiang, chacun prenant en charge une partie des opérations nécessaires au calcul du graphe et des gradients. Par la suite, Jianye a intégré l'ensemble de ces composants, généré une seconde version du diagramme UML pour refléter les ajustements apportés, et affiné la conception en fonction des problèmes rencontrés.
 
-Le développement du mécanisme d'entraînement a été amorcé par Xiang, tandis que Abdennour et Hao poursuivent respectivement l'implémentation de l'optimiseur et des fonctions de perte. L'intégration du jeu de données MNIST et la validation du pipeline complet ont été assurées par Jianye.
+Le développement du mécanisme d'entraînement a été amorcé par Xiang, tandis que Jianye et Hao poursuivent respectivement l'implémentation de l'optimiseur et des fonctions de perte. L'intégration du jeu de données MNIST et la validation du pipeline complet ont été assurées par Jianye.
 
 Enfin, la rédaction du rapport est réalisée collectivement, de manière collaborative.
 
 \section{Conclusion \& perspectives}
-% À compléter lors de la finalisation du rapport.
+Ce projet a permis de démystifier le fonctionnement interne des réseaux de neurones profonds en implémentant, \textit{from scratch}, un moteur complet d'apprentissage en C++. L'architecture retenue, basée sur un graphe de calcul dynamique (DAG) et la différenciation automatique, a démontré la flexibilité du C++ moderne (Smart Pointers, Polymorphisme) pour modéliser des concepts mathématiques abstraits tout en garantissant une gestion rigoureuse de la mémoire.
+
+Sur le plan de la performance, l'analyse expérimentale a mis en évidence l'impact critique des optimisations bas niveau. Le passage d'une implémentation naïve ($O(N^3)$) à une utilisation efficace des bibliothèques BLAS et du parallélisme OpenMP a permis un gain de performance de plus de trois ordres de grandeur ($1200\times$), illustrant concrètement l'importance de la localité spatiale et de la vectorisation SIMD dans le calcul haute performance (HPC). L'étude a également confirmé la loi d'Amdahl : une fois le calcul matriciel optimisé, le goulot d'étranglement se déplace inévitablement vers la gestion des données (I/O) et les allocations mémoire.
+
+\textbf{Perspectives :}
+Plusieurs axes d'amélioration pourraient enrichir ce projet :
+\begin{itemize}
+    \item \textbf{Support GPU (CUDA)} : Déporter les calculs matriciels sur GPU pour accélérer encore l'entraînement sur de très grands réseaux.
+    \item \textbf{Nouvelles architectures} : Implémenter des couches de convolution (CNN) pour améliorer la précision sur MNIST, ou des couches récurrentes (RNN) pour les données séquentielles.
+    \item \textbf{Optimiseurs avancés} : Ajouter l'algorithme Adam ou RMSProp pour une convergence plus rapide et stable.
+    \item \textbf{Gestion mémoire} : Implémenter un \textit{Memory Pool} pour réduire le surcoût des allocations dynamiques répétées de la classe \texttt{Matrix}.
+\end{itemize}
 
 \section{Références}
-% À compléter avec les références bibliographiques.
+\begin{thebibliography}{9}
+
+\bibitem{goodfellow2016}
+Ian Goodfellow, Yoshua Bengio, et Aaron Courville.
+\textit{Deep Learning}.
+MIT Press, 2016.
+
+\bibitem{rumelhart1986}
+David E. Rumelhart, Geoffrey E. Hinton, et Ronald J. Williams.
+Learning representations by back-propagating errors.
+\textit{Nature}, 323(6088):533--536, 1986.
+
+\bibitem{openmp}
+OpenMP Architecture Review Board.
+\textit{OpenMP Application Program Interface Version 5.0}.
+2018.
+
+\bibitem{blas}
+Jack J. Dongarra et al.
+A set of level 3 basic linear algebra subprograms.
+\textit{ACM Transactions on Mathematical Software (TOMS)}, 16(1):1--17, 1990.
+
+\end{thebibliography}
 
 \section{Glossaire}
-% À compléter avec les définitions des principaux termes techniques.
+\begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
+
+\item[Auto-différentiation] Technique permettant d'évaluer automatiquement la dérivée d'une fonction spécifiée par un programme informatique, en appliquant récursivement la règle de la chaîne (Chain Rule).
+
+\item[Backpropagation] Algorithme fondamental d'entraînement des réseaux de neurones, calculant le gradient de la fonction de perte par rapport à chaque poids du réseau en propageant l'erreur de la sortie vers l'entrée.
+
+\item[BLAS] \textit{Basic Linear Algebra Subprograms}. Une spécification standard d'API pour les bibliothèques effectuant des opérations d'algèbre linéaire numérique de bas niveau (comme le produit matriciel).
+
+\item[DAG] \textit{Directed Acyclic Graph}. Structure de données utilisée pour représenter le graphe de calcul, où les nœuds sont les opérations et les arêtes les dépendances de données.
+
+\item[Epoch] Une itération complète de l'algorithme d'apprentissage sur l'ensemble du jeu de données d'entraînement.
+
+\item[OpenMP] API multi-plateforme de support du parallélisme à mémoire partagée (multithreading) en C/C++ et Fortran.
+
+\item[Overfitting] Phénomène où un modèle apprend "par cœur" les données d'entraînement (bruit inclus) et perd sa capacité à généraliser sur de nouvelles données.
+
+\item[SIMD] \textit{Single Instruction, Multiple Data}. Technique d'optimisation matérielle permettant à un processeur d'effectuer la même opération sur plusieurs points de données simultanément.
+
+\item[Tensor/Matrix] Dans ce projet, structure de données fondamentale encapsulant un tableau contigu de scalaires et supportant les opérations mathématiques.
+
+\end{description}
+
+\appendix
+\section{Protocole de Verrouillage des Fréquences}\label{app:protocol}
+Afin de garantir la reproductibilité des mesures, le script suivant est exécuté avant chaque campagne de test pour fixer la fréquence du CPU à 4.0 GHz sur les coeurs physiques.
+
+\begin{lstlisting}[language=bash, caption={Commandes de configuration CPU (mode performance)}]
+# 1. Passer le gouverneur en mode performance
+sudo cpupower frequency-set -g performance
+
+# 2. Verrouiller la frequence min et max a 4.0 GHz
+# (Adaptez la valeur selon votre CPU)
+sudo cpupower frequency-set -u 4000MHz -d 4000MHz
+
+# 3. Verifier la frequence
+cpupower frequency-info | grep "current CPU frequency"
+\end{lstlisting}
+
+Une fois les mesures terminées, l'environnement est restauré :
+\begin{lstlisting}[language=bash, caption={Restauration de l'environnement}]
+sudo cpupower frequency-set -d 421MHz -u 5386MHz
+sudo cpupower frequency-set -g powersave
+\end{lstlisting}
 
 \end{document}
