@@ -254,19 +254,7 @@ sudo cpupower frequency-set -g performance
 sudo cpupower frequency-set -u 4000MHz -d 4000MHz
 
 # 2. Recompiler (Release + profiling)
-# CMakeLists.txt active -pg par défaut ; on force ENABLE_PROFILE_MATMUL=OFF
-# pour éviter de saturer gprof de logs.
-echo "Recompiling..."
-cd build
-make clean
-cmake .. -DENABLE_PROFILE_MATMUL=OFF -DCMAKE_BUILD_TYPE=Release
-make -j8 ppn_train
-cd ..
-
-# 3. Lancer l’entraînement (lié aux 8 premiers cœurs)
-# BLAS par défaut (le plus rapide), base de l’analyse "Compute < 1%" dans ce README
-echo "Running ppn_train with taskset..."
-sudo taskset -c 0-7 ./build/ppn_train
+sudo taskset -c 0-7 bash scripts/find_optimal_threads.sh
 
 # 4. Générer le rapport gprof
 echo "Generating gprof report..."

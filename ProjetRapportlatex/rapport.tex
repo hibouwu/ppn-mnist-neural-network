@@ -204,7 +204,7 @@ Ce développement a été réalisé en plusieurs phases successives décrites ci
 
 \section{Implémentation}
 \subsection{Choix techniques et justification}
-\subsubsection{Implementation}
+\subsubsection{Implémentation}
 Choix du langage C++ pour sa performance et son contrôle fin de la mémoire, en cohérence avec l'orientation \emph{calcul haute performance} de l'UE. Implémentation d'un moteur de calcul et d'autodiff maison (Matrix, Node, MathOps) afin de comprendre explicitement la construction du graphe computationnel et le calcul des gradients, plutôt que de s'appuyer sur des bibliothèques haut niveau.
 
 \subsubsection{Matrix / Node / graphe de calcul}
@@ -268,12 +268,12 @@ Les opérations fondamentales nécessaires au MLP sont implémentées explicitem
 \end{itemize}
 Les opérations élémentaires \texttt{add}, \texttt{mul} et la transposition sont également disponibles.
 
-Ce choix d'implémentation permet de comparer différentes approches d'optimisation (telles que détaillées dans la section expérimentale) tout en conservant une maitrise totale de la chaîne de calcul. Les paramètres du réseau sont initialisés aléatoirement dans une plage contrôlée afin de rompre la symétrie au démarrage de l'apprentissage.
+Ce choix d'implémentation permet de comparer différentes approches d'optimisation (telles que détaillées dans la section expérimentale) tout en conservant une maîtrise totale de la chaîne de calcul. Les paramètres du réseau sont initialisés aléatoirement dans une plage contrôlée afin de rompre la symétrie au démarrage de l'apprentissage.
 
 \subsubsection{Construction du graphe computationnel (\texttt{Node}, \texttt{MathOps})}
 Le moteur d'autodifférentiation repose sur la classe \texttt{Node}, dont la gestion mémoire est assurée par des pointeurs intelligents \texttt{std::shared\_ptr}. Cette approche automatise la gestion du cycle de vie des nœuds au sein du Graphe Acyclique Dirigé (DAG), évitant ainsi les fuites de mémoire complexes inhérentes aux graphes dynamiques.
 
-Chaque \texttt{Node} contient une valeur, un gradient, une liste de parents, et surtout une fonction de rétropropagation \texttt{backwardFn\_}, typée via \texttt{std::function}. Lorsqu'une opération est invoquée via \texttt{MathOps}, l'utilisation d'expressions Lambda (\emph{Modern C++}) permet de capturer efficacement le contexte local (clôtures) nécessaire au calcul du gradient, offrant une syntaxe concise et expressive.
+Chaque \texttt{Node} contient une valeur, un gradient, une liste de parents, et surtout une fonction de rétropropagation \texttt{backwardFn\_}, typée via \texttt{std::function}. Lorsqu'une opération est invoquée via \texttt{MathOps}, l'utilisation d'expressions Lambda (\emph{Modern C++}) permet de capturer efficacement le contexte local (clôtures) nécessaire au calcul du gradient, offrant une syntaxe concise et expressive. Certaines opérations (comme \texttt{add}) supportent un broadcasting simple ($1 \times M$ vers $N \times M$), notamment pour l'ajout du biais.
 
 \begin{lstlisting}[language=C++, caption={Utilisation de Lambdas et Smart Pointers (MathOps)}]
 // Exemple pour l'opération Mul (e.g. y = a * b)
@@ -293,7 +293,7 @@ Node::Ptr mul(const Node::Ptr& a, const Node::Ptr& b) {
 La phase de rétropropagation s'effectue en trois étapes :
 \begin{enumerate}[label=\arabic*.]
   \item un tri topologique du graphe computationnel ;
-  \item l'initialisation du gradient au niveau de la fonction de perte ;
+  \item l'initialisation du gradient au niveau de la fonction de perte (explicitement, ou par défaut à 1 s'il n'est pas défini) ;
   \item l'appel successif des fonctions \texttt{backwardFn\_} de chaque nœud dans l'ordre inverse du passage avant.
 \end{enumerate}
 Cette approche garantit une propagation correcte des gradients, tout en évitant les récursions profondes.
@@ -318,7 +318,7 @@ class ReLU : public ActivationFunction {
 
 \paragraph{\texttt{LayerNode} \& \texttt{MLPNetwork}} Un \texttt{LayerNode} combine une couche linéaire et une fonction d'activation en une unité cohérente. La classe \texttt{MLPNetwork} applique successivement ces blocs lors de la propagation avant, permettant de construire des réseaux multi-couches de manière flexible.
 
-\subsubsection{Implémentation de la loss et de l'optimisation}
+\subsubsection{Implémentation de la fonction de loss et de l'optimisation}
 L'apprentissage du réseau repose sur l'association d'une fonction de loss et d'un algorithme d'optimisation, tous deux intégrés au moteur d'auto-différentiation. Les fonctions de loss sont définies via une interface abstraite \texttt{LossFunction}, qui impose la méthode \texttt{forward(pred, target)}. Celle-ci construit un nœud scalaire représentant la perte du batch, directement inséré dans le graphe de calcul.
 
 Deux fonctions de loss ont été implémentées :
@@ -354,6 +354,7 @@ Toutes les expériences ont été réalisées sur une machine avec les spécific
 \toprule
 \textbf{Composant} & \textbf{Caractéristiques} \\
 \midrule
+
 Processeur & \begin{tabular}[t]{@{}l@{}}
 AMD Ryzen 9 8940HX with Radeon Graphics\\
 Architecture : x86\_64\\
@@ -532,7 +533,7 @@ Le temps passé dans \texttt{Matrix::matmul} s'effondre à moins de \textbf{1\%}
 \end{figure}
 
 \textbf{Conséquence (Loi d'Amdahl) :}
-Bien que le noyau de calcul soit accéléré de 1200x, l'accélération de l'application complète est plafonnée par les parties non optimisables (chargement, allocation). Le temps total d'une époque, mesuré via le script dédié \texttt{benchmark\_e2e.sh} (compilation Release sans surcoût de profilage, moyenne sur 5 runs), passe de 13.27s à 1.74s, soit un \textbf{speedup end-to-end de 7.6x}. Ce résultat démontre l'importance de considérer la chaîne complète : une fois le calcul optimisé, les efforts doivent se porter sur la gestion mémoire et les I/O pour obtenir de nouveaux gains.
+Bien que le noyau de calcul ait été accéléré de plusieurs centaines de fois au niveau micro-benchmark, l'accélération globale de l'application est limitée par les parties non optimisables, telles que le chargement des données et les allocations mémoire. Le temps total d'une époque, mesuré via le script dédié \texttt{benchmark\_e2e.sh} (compilation Release sans surcoût de profilage, moyenne sur 5 exécutions), passe ainsi de 13.27s à 1.74s, soit un \textbf{speedup end-to-end de 7.6x}. Ce résultat illustre clairement la loi d'Amdahl : une fois le calcul optimisé, les gains supplémentaires nécessitent d'agir sur la gestion mémoire et les entrées/sorties.
 
 \begin{figure}[H]
     \centering
@@ -541,7 +542,8 @@ Bien que le noyau de calcul soit accéléré de 1200x, l'accélération de l'app
     \label{fig:e2e_benchmark}
 \end{figure}
 
-\subsection{Convergence de l'entraînement}
+\section{Convergence de l'entraînement}
+
 Afin de valider la correction du modèle et de l'algorithme d'optimisation, nous présentons la courbe d'apprentissage sur MNIST.
 
 \begin{figure}[H]
@@ -558,12 +560,12 @@ La phase de conception a été initiée par Jianye, qui a rédigé la documentat
 
 La réalisation du moteur de différenciation automatique a été répartie entre Hao et Xiang, chacun prenant en charge une partie des opérations nécessaires au calcul du graphe et des gradients. Par la suite, Jianye a intégré l'ensemble de ces composants, généré une seconde version du diagramme UML pour refléter les ajustements apportés, et affiné la conception en fonction des problèmes rencontrés.
 
-Le développement du mécanisme d'entraînement a été amorcé par Xiang, tandis que Jianye et Hao poursuivent respectivement l'implémentation de l'optimiseur et des fonctions de perte. L'intégration du jeu de données MNIST et la validation du pipeline complet ont été assurées par Jianye.
+Le développement du mécanisme d'entraînement a été amorcé par Xiang, tandis que Jianye et Hao poursuivent respectivement l'implémentation de l'optimiseur et des fonctions de perte. L'intégration du jeu de données MNIST et la validation du pipeline complet ont été assurées par Jianye. De plus, Jianye a mené de nombreux tests de performance et analyses de profilage pour optimiser l'ensemble du système.
 
 Enfin, la rédaction du rapport est réalisée collectivement, de manière collaborative.
 
 \section{Conclusion \& perspectives}
-Ce projet a permis de démystifier le fonctionnement interne des réseaux de neurones profonds en implémentant, \textit{from scratch}, un moteur complet d'apprentissage en C++. L'architecture retenue, basée sur un graphe de calcul dynamique (DAG) et la différenciation automatique, a démontré la flexibilité du C++ moderne (Smart Pointers, Polymorphisme) pour modéliser des concepts mathématiques abstraits tout en garantissant une gestion rigoureuse de la mémoire.
+Ce projet a permis de démystifier le fonctionnement interne des réseaux de neurones profonds en implémentant, \textit{from scratch}, un moteur complet d'apprentissage en C++. L'architecture retenue, basée sur un graphe de calcul dynamique (DAG) et la différenciation automatique, a démontré la flexibilité du C++ moderne (pointeurs intelligents, polymorphisme) pour modéliser des concepts mathématiques abstraits tout en garantissant une gestion rigoureuse de la mémoire.
 
 Sur le plan de la performance, l'analyse expérimentale a mis en évidence l'impact critique des optimisations bas niveau. Le passage d'une implémentation naïve ($O(N^3)$) à une utilisation efficace des bibliothèques BLAS et du parallélisme OpenMP a permis un gain de performance de plus de trois ordres de grandeur ($1200\times$), illustrant concrètement l'importance de la localité spatiale et de la vectorisation SIMD dans le calcul haute performance (HPC). L'étude a également confirmé la loi d'Amdahl : une fois le calcul matriciel optimisé, le goulot d'étranglement se déplace inévitablement vers la gestion des données (I/O) et les allocations mémoire.
 
@@ -577,17 +579,27 @@ Plusieurs axes d'amélioration pourraient enrichir ce projet :
 \end{itemize}
 
 \section{Références}
-\begin{thebibliography}{9}
+\begin{thebibliography}{11}
 
 \bibitem{goodfellow2016}
 Ian Goodfellow, Yoshua Bengio, et Aaron Courville.
 \textit{Deep Learning}.
 MIT Press, 2016.
 
+\bibitem{lecun1998}
+Yann LeCun, Léon Bottou, Yoshua Bengio, et Patrick Haffner.
+Gradient-based learning applied to document recognition.
+\textit{Proceedings of the IEEE}, 86(11):2278--2324, 1998.
+
 \bibitem{rumelhart1986}
 David E. Rumelhart, Geoffrey E. Hinton, et Ronald J. Williams.
 Learning representations by back-propagating errors.
 \textit{Nature}, 323(6088):533--536, 1986.
+
+\bibitem{amdahl1967}
+Gene M. Amdahl.
+Validity of the single processor approach to achieving large scale computing capabilities.
+\textit{AFIPS Conference Proceedings}, 30:483--485, 1967.
 
 \bibitem{openmp}
 OpenMP Architecture Review Board.

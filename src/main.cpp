@@ -26,6 +26,13 @@ struct Config {
 
 int main(int argc, char** argv) {
     Config cfg;
+    if (argc > 1) {
+        try {
+            cfg.epochs = std::stoi(argv[1]);
+        } catch (...) {
+            std::cerr << "Invalid epoch argument, using default: " << cfg.epochs << std::endl;
+        }
+    }
     std::cout << "Starting training with config:" << "\n"
               << "  Epochs: " << cfg.epochs << "\n"
               << "  Batch Size: " << cfg.batch_size << "\n"
