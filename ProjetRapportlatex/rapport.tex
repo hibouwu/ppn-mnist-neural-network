@@ -397,7 +397,7 @@ Les optimisations de compilation ont été testées avec les flags \texttt{-O3 -
 \subsubsection{Configuration Spécifique et Protocole}\label{subsec:protocol}
 
 Afin de limiter la variabilité des résultats, les campagnes de mesure suivent un protocole systématique de verrouillage de fréquence et d'affinité CPU. Les huit premiers cœurs physiques sont forcés à 4.0~GHz à l'aide de \texttt{cpupower}, puis les exécutions sont liées explicitement à ce jeu de cœurs via \texttt{taskset}. Le script type est le suivant :
-Le détail des commandes (verrouillage de fréquence, étapes de remise à l'état initial) est présenté en annexe~\ref{app:protocol}. Ce protocole constitue l'adaptation AMD des commandes recommandées pour les processeurs Intel dans le Lab~6, lesquelles préconisent un verrouillage similaire sur quatre cœurs logiques avec des bornes de fréquence adaptées au turbo (par exemple \texttt{cpupower frequency-set -g performance -u 5000MHz -d 5000MHz}). Les deux approches ne diffèrent donc que par les limites matérielles et la taille du groupe de cœurs réservés à l'expérience. Les scripts d'analyse acceptent les variables \texttt{LOCK\_FREQ} et \texttt{CPU\_SET} afin de rejouer automatiquement ces réglages.
+Le détail des commandes de configuration (verrouillage de fréquence à 4.0~GHz, isolation des cœurs) est documenté dans le fichier \texttt{scripts/README.md} et appliqué via les scripts \texttt{benchmark\_affinity.sh} et \texttt{benchmark\_large.sh}. Ce protocole s'inspire des bonnes pratiques de notre ancien cours, adaptées ici à l'architecture AMD Ryzen. Les mesures de temps sont réalisées par le programme C++ \texttt{tests/test\_benchmark\_large.cpp}, qui intègre une horloge haute résolution (\texttt{std::chrono}) pour exclure les surcoûts liés au système d'exploitation. Le protocole inclut systématiquement un préchauffage (\emph{warm-up}) de 5 itérations pour stabiliser les caches (L1/L2) et le \emph{branch predictor} avant le début des mesures.
 
 \subsection{Résultats expérimentaux}
 
@@ -405,7 +405,9 @@ Cette section détaille les résultats obtenus lors des campagnes de test, en an
 
 \subsubsection{Passage à l'échelle (Thread Scaling)}
 
-Nous avons évalué la scalabilité de notre implémentation OpenMP sur différentes tailles de matrices, en variant le nombre de threads de 1 à 16 sur nos 8 cœurs physiques.
+L'évaluation du passage à l'échelle (\textit{scaling}) de l'implémentation OpenMP a été réalisée en faisant varier le nombre de threads de 1 à 16, sur une architecture disposant de 8 cœurs physiques.
+
+Une attention particulière a été portée à la précision des mesures pour les petites instances. Les premiers essais, pilotés par des scripts externes, présentaient une variabilité excessive. Pour y remédier, la boucle de mesure a été intégrée directement \textbf{au sein du programme C++} (\texttt{test\_benchmark\_large.cpp}), isolant ainsi le noyau de calcul des surcoûts liés au lancement de processus. Le protocole final adopte une méthodologie rigoureuse : un nombre d'itérations adaptatif (de 100 pour $N=64$ à 5 pour $N=2048$), précédé systématiquement de 5 exécutions de chauffe (\emph{warm-up}). L'application d'une moyenne tronquée (rejet des 20\% de valeurs hautes et 10\% de valeurs basses) a permis de réduire l'écart type à environ 2 $\mu$s, garantissant la fiabilité des résultats présentés ci-après.
 
 \begin{figure}[H]
     \centering
@@ -421,18 +423,43 @@ Nous avons évalué la scalabilité de notre implémentation OpenMP sur différe
     \label{fig:scaling_speedup}
 \end{figure}
 
-\paragraph{Instabilité des petites matrices ($< 128 \times 128$).}
-Lors des premiers tests pilotés par scripts Bash, nous avons observé une forte variabilité sur les petites tailles. Cette instabilité a été corrigée en déplaçant la boucle de mesures \textbf{à l'intérieur du programme C++}, éliminant ainsi le bruit lié au lancement de processus. Avec cette méthodologie rigoureuse (moyenne sur 100 itérations internes, warm-up de 5 runs), l'écart type est tombé à environ 2 $\mu$s.
-Cependant, même avec une mesure stable, le multithreading dégrade les performances pour les matrices inférieures à $128 \times 128$. Le surcoût de création et de synchronisation des threads (overhead Fork/Join) est supérieur au gain de calcul. Il est donc impératif d'utiliser \texttt{OMP\_NUM\_THREADS=1} pour ces cas.
+\paragraph{Analyse des petites matrices ($N = 64 \times 64$).}
+La parallélisation OpenMP apporte un gain conforme aux attentes entre 2 et 8 threads, mais devient contre-productive au-delà de 8 threads (au-delà du nombre de cœurs physiques). À cette échelle, la granularité du calcul est trop fine : la charge utile par thread devient comparable, voire inférieure, au surcoût de gestion (création, synchronisation et contention des ressources), ce qui annule les gains, voire dégrade les performances.
 
-\paragraph{Matrices moyennes et grandes ($\ge 512 \times 512$).}
-Pour les tailles plus importantes, le gain du parallélisme devient net. Nous observons deux comportements distincts selon la charge thread :
-\begin{itemize}
-    \item \textbf{8 threads (Saturation physique)} : C'est la configuration optimale sur notre machine. OpenMP utilise une attente active (\emph{busy-wait}), ce qui maximise la réactivité mais rend le système sensible au bruit si d'autres processus tournent.
-    \item \textbf{16 threads (Sursouscription)} : Lancer plus de threads que de cœurs physiques force l'OS à effectuer des changements de contexte (\emph{context switching}). Pour une librairie hautement optimisée comme BLAS, dont les pipelines arithmétiques sont saturés, chaque interruption est coûteuse. Nous avons mesuré une perte de performance d'environ 40\% avec BLAS en passant de 8 à 16 threads (0.05s contre 0.08s sur une matrice $2048 \times 2048$).
-\end{itemize}
+À l'inverse, BLAS reste monothread sur des matrices $64 \times 64$, la charge de calcul n'atteignant pas son seuil interne de déclenchement du parallélisme. Ainsi, pour cette échelle, les configurations les plus efficaces consistent soit à utiliser BLAS, soit à recourir à OpenMP en limitant le nombre de threads au nombre de cœurs physiques (8 threads dans notre cas).
+
+Bien que notre projet se concentre sur des matrices de petite taille, nous avons également analysé des dimensions plus importantes afin de mieux caractériser les mécanismes de parallélisation du produit matriciel.
+
+\paragraph{Matrices de taille intermédiaire ($128 \times 128$ à $1024 \times 1024$).}
+Pour les matrices de taille intermédiaire, OpenMP présente une accélération nette lorsque le nombre de threads augmente jusqu'au nombre de cœurs physiques disponibles. Au-delà de ce seuil, les gains se tassent, voire deviennent négatifs, sous l'effet de la saturation des ressources partagées et de l'augmentation des coûts de synchronisation.
+
+BLAS offre de meilleures performances globales grâce à ses optimisations internes (vectorisation et découpage en blocs), mais peut également se dégrader lorsque le nombre de threads dépasse le nombre de cœurs physiques, notamment à cause de la contention des ressources.
+
+\paragraph{Grandes matrices ($2048 \times 2048$).}
+Pour les matrices de grande taille, les deux approches bénéficient d'une parallélisation efficace jusqu'à environ 8 threads. Toutefois, l'augmentation du nombre de threads au-delà de ce point n'entraîne plus de gain significatif, le calcul devenant principalement limité par la bande passante mémoire. Dans ce contexte, BLAS reste la solution la plus performante et la plus stable.
+
+Ces résultats confirment que l'efficacité du parallélisme dépend fortement de la taille du problème, et qu'une sursouscription (plus de threads que de cœurs physiques) n'est pas nécessairement bénéfique.
 
 \subsubsection{Impact de l'Affinité sur les petites charges}
+
+Les résultats présentés dans cette section correspondent à une exécution avec 4 threads, ce choix étant représentatif du comportement observé pour l'ensemble des configurations testées sur des matrices de petite taille.
+
+\begin{table}[H]
+    \centering
+    \caption{Impact de l'affinité sur les performances (Matrices $28 \times 28$, 4 threads)}
+    \label{tab:affinity}
+    \begin{tabular}{llc}
+        \toprule
+        \textbf{Implémentation} & \textbf{Affinité} & \textbf{Temps moyen ($\mu$s)} \\
+        \midrule
+        OpenMP & \texttt{close} & 2.54 \\
+        OpenMP & \texttt{spread} & 4.43 \\
+        \midrule
+        BLAS & \texttt{close} & 0.82 \\
+        BLAS & \texttt{spread} & 0.81 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 Le cas spécifique des matrices $28 \times 28$ (taille des images MNIST) a fait l'objet d'une étude d'affinité approfondie.
 \begin{itemize}
@@ -443,7 +470,8 @@ Le cas spécifique des matrices $28 \times 28$ (taille des images MNIST) a fait 
         \item \texttt{OMP\_PROC\_BIND=spread} : 4.43 $\mu$s (coût de communication accru).
     \end{itemize}
 \end{itemize}
-\textbf{Conclusion :} Pour les couches d'entrée du réseau ($784 \times 1$ ou $28 \times 28$), BLAS mono-thread est imbattable (3x plus rapide que le meilleur OpenMP).
+
+\textbf{Conclusion :} Pour les couches d'entrée du réseau ($784 \times 1$ ou $28 \times 28$), BLAS, dont l'implémentation reste effectivement séquentielle pour cette taille de problème, est imbattable (3x plus rapide que le meilleur OpenMP).
 
 \subsubsection{Hiérarchie des performances et Speedup}
 
@@ -462,11 +490,17 @@ La comparaison globale des implémentations sur grandes matrices met en évidenc
     \caption{Speedup relatif des différentes optimisations.}
     \label{fig:comparison_speedup}
 \end{figure}
+
 \begin{enumerate}
-    \item \textbf{Naïf ($ijk$)} : L'ordre des boucles provoque des accès mémoire non contigus (fautes de cache). Le temps explose en $O(N^3)$, atteignant plusieurs secondes pour $N=2048$.
-    \item \textbf{Réordonné ($ikj$)} : La simple permutation des boucles améliore la localité spatiale et apporte un gain substantiel (Speedup $\approx 3.3\times$).
-    \item \textbf{OpenMP} : La parallélisation sur 8 cœurs offre un gain supplémentaire d'un ordre de grandeur (Speedup global $\approx 6.5\times$).
-    \item \textbf{BLAS (OpenBLAS)} : L'utilisation des instructions vectorielles (AVX2/FMA) et l'optimisation assembleur permettent un speedup final de plus de \textbf{1200x} par rapport à la version naïve sur les très grandes tailles.
+    \item \textbf{Naïf ($ijk$)} : L'ordre des boucles induit un parcours mémoire très défavorable, entraînant de nombreuses fautes de cache. Le temps d'exécution devient prohibitif pour les grandes tailles, atteignant plusieurs secondes pour $N=2048$.
+    
+    \item \textbf{Réordonné ($ikj$)} : La permutation des boucles améliore la localité spatiale des accès mémoire et permet un premier gain significatif par rapport à l'implémentation naïve, en particulier pour les tailles intermédiaires et grandes.
+    
+    \item \textbf{Bloqué (blocked)} : Cette optimisation apporte un gain mesurable par rapport à la version réordonnée, en améliorant la réutilisation des données dans les caches.
+    
+    \item \textbf{OpenMP} : La parallélisation sur 8 cœurs permet d'exploiter le parallélisme matériel et apporte un gain supplémentaire, bien que celui-ci reste contraint par le nombre de cœurs physiques et par la hiérarchie mémoire.
+    
+    \item \textbf{BLAS (OpenBLAS)} : Grâce à la combinaison d'optimisations avancées — blocage hiérarchique, vectorisation (AVX2/FMA) et micro-noyaux optimisés — BLAS surpasse largement les implémentations manuelles, avec un speedup pouvant atteindre plusieurs centaines de fois par rapport à la version naïve pour les plus grandes tailles.
 \end{enumerate}
 
 \subsubsection{Analyse de Profiling et Loi d'Amdahl : vers l'entraînement complet}
@@ -498,7 +532,7 @@ Le temps passé dans \texttt{Matrix::matmul} s'effondre à moins de \textbf{1\%}
 \end{figure}
 
 \textbf{Conséquence (Loi d'Amdahl) :}
-Bien que le noyau de calcul soit accéléré de 1200x, l'accélération de l'application complète est plafonnée par les parties non optimisables (chargement, allocation). Le temps total d'une époque passe de 13.27s à 1.74s, soit un \textbf{speedup end-to-end de 7.6x}. Ce résultat démontre l'importance de considérer la chaîne complète : une fois le calcul optimisé, les efforts doivent se porter sur la gestion mémoire et les I/O pour obtenir de nouveaux gains.
+Bien que le noyau de calcul soit accéléré de 1200x, l'accélération de l'application complète est plafonnée par les parties non optimisables (chargement, allocation). Le temps total d'une époque, mesuré via le script dédié \texttt{benchmark\_e2e.sh} (compilation Release sans surcoût de profilage, moyenne sur 5 runs), passe de 13.27s à 1.74s, soit un \textbf{speedup end-to-end de 7.6x}. Ce résultat démontre l'importance de considérer la chaîne complète : une fois le calcul optimisé, les efforts doivent se porter sur la gestion mémoire et les I/O pour obtenir de nouveaux gains.
 
 \begin{figure}[H]
     \centering
