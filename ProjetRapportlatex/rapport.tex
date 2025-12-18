@@ -172,7 +172,7 @@ Aurélien Delval / Hugo Bolloré / Pablo Oliveira
 \newpage
 
 \section{Introduction}
-Ce document présente le rapport du projet de construction d'un réseau de neurones multicouche (MLP) et d'un moteur de différenciation automatique appliqué au jeu de données MNIST. Réalisé dans le cadre de l'UE Projet en première année de master de calcul haute performance, simulation à l'Université Paris Saclay, ce travail a pour objectif d'implémenter pas à pas les fondements d'un système d'apprentissage automatique sans dépendre de bibliothèques haut niveau.
+Ce document présente le rapport du projet de construction d'un réseau de neurones multicouche (MLP) et d'un moteur de différenciation automatique appliqué au jeu de données MNIST \cite{lecun1998}. Réalisé dans le cadre de l'UE Projet en première année de master de calcul haute performance, simulation à l'Université Paris Saclay, ce travail a pour objectif d'implémenter pas à pas les fondements d'un système d'apprentissage automatique sans dépendre de bibliothèques haut niveau.
 
 L'objectif général du projet est double :
 \begin{enumerate}[label=\arabic*.]
@@ -191,7 +191,52 @@ Le rapport est structuré de manière à accompagner progressivement le lecteur 
   \item Un glossaire et des références sont placés en fin de document pour clarifier les notions techniques.
 \end{itemize}
 
-\section{Description du projet}
+\section{Contexte et État de l'art}
+
+\subsection{Introduction au problème}
+Au cours des dernières décennies, l'apprentissage automatique a connu un développement considérable, principalement grâce aux progrès réalisés dans le domaine des réseaux de neurones artificiels. Parmi les problèmes emblématiques de ce domaine figure la reconnaissance de chiffres manuscrits, couramment étudiée à l'aide du jeu de données MNIST \cite{lecun1998}, devenu un standard pour les tâches de classification. Ce travail vise à présenter les approches classiques permettant de résoudre ce problème, en commençant par le perceptron multicouche (MLP), avant d'aborder ses principales variantes et l'évolution des modèles plus récents.
+
+\subsection{Concept de la méthode classique}
+Le problème MNIST consiste à classer des images de chiffres manuscrits ($28 \times 28$ pixels) dans dix catégories correspondant aux chiffres 0 à 9. Pour résoudre ce problème, on utilise un perceptron multicouche (MLP), c'est-à-dire un réseau de neurones constitué de plusieurs neurones artificiels organisés en couches (entrée, cachées, sortie).
+
+Chaque neurone calcule une combinaison linéaire de ses entrées, à laquelle il applique ensuite une fonction d'activation non linéaire, afin d'introduire de la complexité dans le modèle. Dans ce projet, nous explorons notamment la fonction sigmoïde, définie par $\sigma(x) = \frac{1}{1 + e^{-x}}$, qui transforme les valeurs réelles en probabilités comprises entre 0 et 1.
+
+L'objectif de l'apprentissage est de minimiser une fonction de coût (Loss), qui mesure l'écart entre les prédictions du réseau et les valeurs attendues. L'algorithme de rétropropagation (\textit{backpropagation}) \cite{rumelhart1986}, basé sur la règle de la chaîne, permet de calculer le gradient de cette fonction de coût par rapport à chaque paramètre du réseau. Concrètement, l'erreur calculée en sortie est propagée en sens inverse à travers les couches du réseau : chaque neurone reçoit la contribution de son erreur et ajuste ses poids en conséquence.
+
+\subsection{Présentation des éléments modulables du MLP}
+
+\subsubsection{Fonctions d'activation}
+Les fonctions d'activation introduisent la non-linéarité dans le réseau. Sans elles, le MLP se réduirait à une simple régression linéaire.
+\begin{itemize}
+    \item \textbf{Sigmoïde} : transforme l'entrée en valeur entre 0 et 1, mais peut provoquer la saturation des gradients.
+    \item \textbf{Tanh} : centrée sur zéro, améliore la convergence mais reste sujette au même problème.
+    \item \textbf{ReLU} (\textit{Rectified Linear Unit}) : garde uniquement les valeurs positives ($ReLU(x) = \max(0, x)$). Elle accélère l'apprentissage et est aujourd'hui la plus courante \cite{goodfellow2016}.
+\end{itemize}
+
+\subsubsection{Algorithmes de descente de gradient}
+L'apprentissage consiste à minimiser la fonction de perte grâce à des méthodes de descente de gradient. Si ce projet se concentre sur la méthode \textbf{SGD}, il convient de citer les évolutions majeures de l'état de l'art :
+\begin{itemize}
+    \item \textbf{SGD} (\textit{Stochastic Gradient Descent}) : met à jour les poids après chaque mini-lot (\textbf{méthode implémentée}).
+    \item \textbf{Momentum} : ajoute une inertie pour lisser les oscillations et accélérer la convergence.
+    \item \textbf{Adam} : combine Momentum et adaptation du taux d'apprentissage ; optimisateurs standards actuels.
+\end{itemize}
+
+\subsection{Travaux existants et évolution des architectures}
+
+\paragraph{Premières approches : MLP et réseaux simples}
+La première tentative d'utilisation des réseaux pour la reconnaissance des chiffres remonte aux années 1990.
+Appliqués au jeu de données MNIST, ces modèles atteignaient déjà des taux de réussite proches de 97 à 98 \%. Cependant, leur performance restait limitée car ils ne tiraient pas parti de la structure spatiale des images et manquaient d'invariance aux translations.
+
+\paragraph{Réseaux convolutionnels (CNN)}
+Une avancée majeure est survenue avec l'introduction des réseaux de neurones convolutionnels (CNN), proposés notamment par LeCun et al. avec le modèle LeNet-5 \cite{lecun1998}.
+Cette architecture repose sur le principe de convolution locale, où chaque neurone est connecté uniquement à une petite région de l'image. LeNet-5 a atteint un taux de reconnaissance d'environ 99,2 \% sur MNIST, établissant un nouveau standard à l'époque.
+
+\subsection{Synthèse : du modèle naïf au réseau moderne}
+L'évolution des architectures appliquées à MNIST illustre parfaitement la progression du domaine de l'apprentissage profond.
+Néanmoins, la compréhension des fondements du MLP demeure indispensable : elle permet de saisir les principes élémentaires du calcul du gradient, de la propagation de l'erreur et de la représentation hiérarchique des données.
+Ainsi, notre travail s'inscrit dans cette continuité : commencer par un modèle simple (MLP), en explorer les variantes, avant d'envisager des architectures plus complexes.
+
+\subsection{Périmètre du projet}
 Le projet consiste à concevoir et implémenter un pipeline complet d'apprentissage supervisé comprenant :
 \begin{itemize}
   \item un module de manipulation de tenseurs,
@@ -200,12 +245,12 @@ Le projet consiste à concevoir et implémenter un pipeline complet d'apprentiss
   \item un mécanisme d'entraînement (optimiseur, fonction de perte),
   \item l'intégration du jeu de données MNIST et l'évaluation du modèle.
 \end{itemize}
-Ce développement a été réalisé en plusieurs phases successives décrites ci-dessous. Des détails complémentaires figurent dans le document d'état de l'art.
+Ce développement a été réalisé en plusieurs phases successives décrites ci-dessous.
 
 \section{Implémentation}
 \subsection{Choix techniques et justification}
 \subsubsection{Implémentation}
-Choix du langage C++ pour sa performance et son contrôle fin de la mémoire, en cohérence avec l'orientation \emph{calcul haute performance} de l'UE. Implémentation d'un moteur de calcul et d'autodiff maison (Matrix, Node, MathOps) afin de comprendre explicitement la construction du graphe computationnel et le calcul des gradients, plutôt que de s'appuyer sur des bibliothèques haut niveau.
+Choix du langage C++ pour sa performance et son contrôle fin de la mémoire, en cohérence avec l'orientation \emph{calcul haute performance} de l'UE. Implémentation d'un moteur de calcul et d'autodiff maison (Matrix, Node, MathOps) afin de comprendre explicitement la construction du graphe computationnel et le calcul des gradients \cite{goodfellow2016}, plutôt que de s'appuyer sur des bibliothèques haut niveau.
 
 \subsubsection{Matrix / Node / graphe de calcul}
 \begin{itemize}
@@ -248,7 +293,7 @@ Les données sont fournies par \texttt{MNISTDataset}, puis organisées en mini-b
 Cette section décrit les principaux choix d'implémentation des classes et méthodes constituant le moteur de calcul, le réseau neuronal et le pipeline d'entraînement. L'accent est mis sur la logique interne des composants, plutôt que sur les détails syntaxiques du code.
 
 \subsubsection{Implémentation de \texttt{Matrix}}
-La classe \texttt{Matrix} constitue la brique de base du calcul numérique. Les données sont encapsulées dans un \texttt{std::vector<double>}, garantissant une allocation mémoire contiguë. Ce choix est critique pour la performance : il maximise la localité spatiale et l'efficacité des caches CPU (L1/L2), un prérequis indispensable aux optimisations vectorielles (SIMD).
+La classe \texttt{Matrix} constitue la brique de base du calcul numérique. Les données sont encapsulées dans un \texttt{std::vector<double>}, garantissant une allocation mémoire contiguë. Ce choix est critique pour la performance : il maximise la localité spatiale et l'efficacité des caches CPU (L1/L2), un prérequis favorable aux optimisations vectorielles (SIMD).
 
 \begin{lstlisting}[language=C++, caption={Structure de données contiguë (Matrix)}]
 class Matrix {
@@ -264,7 +309,7 @@ public:
 Les opérations fondamentales nécessaires au MLP sont implémentées explicitement. Concernant la multiplication matricielle (\texttt{matmul}), le code adopte une architecture flexible permettant de sélectionner l'implémentation sous-jacente (via une variable d'environnement) :
 \begin{itemize}
   \item une version naïve (triple boucle $i$--$j$--$k$) servant de référence pédagogique ;
-  \item des versions optimisées (BLAS, Blocked, OpenMP) assurant la performance.
+  \item des versions optimisées (BLAS \cite{blas}, Blocked, OpenMP \cite{openmp}) assurant la performance.
 \end{itemize}
 Les opérations élémentaires \texttt{add}, \texttt{mul} et la transposition sont également disponibles.
 
@@ -508,6 +553,12 @@ La comparaison globale des implémentations sur grandes matrices met en évidenc
 
 Afin de comprendre l'impact de ces optimisations sur le temps total d'apprentissage, nous avons profilé une époque complète d'entraînement (forward + backward) avec \texttt{gprof}.
 
+\begin{tabular}{@{}ll@{}}
+\textbf{Architecture} & : MLP 784 $\to$ 128 $\to$ 10 avec ReLU \\
+\textbf{Batch Size}   & : 64 \\
+\textbf{Données}      & : MNIST Train (60 000 images)
+\end{tabular}
+
 \textbf{Avant optimisation (Kernel Naïf) :}
 L'application est totalement limitée par le calcul (\emph{compute-bound}). La fonction \texttt{Matrix::matmul} consomme \textbf{94.8\%} du temps total (12.05s).
 
@@ -533,7 +584,7 @@ Le temps passé dans \texttt{Matrix::matmul} s'effondre à moins de \textbf{1\%}
 \end{figure}
 
 \textbf{Conséquence (Loi d'Amdahl) :}
-Bien que le noyau de calcul ait été accéléré de plusieurs centaines de fois au niveau micro-benchmark, l'accélération globale de l'application est limitée par les parties non optimisables, telles que le chargement des données et les allocations mémoire. Le temps total d'une époque, mesuré via le script dédié \texttt{benchmark\_e2e.sh} (compilation Release sans surcoût de profilage, moyenne sur 5 exécutions), passe ainsi de 13.27s à 1.74s, soit un \textbf{speedup end-to-end de 7.6x}. Ce résultat illustre clairement la loi d'Amdahl : une fois le calcul optimisé, les gains supplémentaires nécessitent d'agir sur la gestion mémoire et les entrées/sorties.
+Bien que le noyau de calcul ait été accéléré de plusieurs centaines de fois au niveau micro-benchmark, l'accélération globale de l'application est limitée par les parties non optimisables, telles que le chargement des données et les allocations mémoire. Le temps total d'une époque, mesuré via le script dédié \texttt{benchmark\_e2e.sh} (compilation Release sans surcoût de profilage, moyenne sur 5 exécutions), passe ainsi de 13.27s à 1.74s, soit un \textbf{speedup end-to-end de 7.6x}. Ce résultat illustre clairement la loi d'Amdahl \cite{amdahl1967} : une fois le calcul optimisé, les gains supplémentaires nécessitent d'agir sur la gestion mémoire et les entrées/sorties.
 
 \begin{figure}[H]
     \centering
@@ -569,13 +620,16 @@ Ce projet a permis de démystifier le fonctionnement interne des réseaux de neu
 
 Sur le plan de la performance, l'analyse expérimentale a mis en évidence l'impact critique des optimisations bas niveau. Le passage d'une implémentation naïve ($O(N^3)$) à une utilisation efficace des bibliothèques BLAS et du parallélisme OpenMP a permis un gain de performance de plus de trois ordres de grandeur ($1200\times$), illustrant concrètement l'importance de la localité spatiale et de la vectorisation SIMD dans le calcul haute performance (HPC). L'étude a également confirmé la loi d'Amdahl : une fois le calcul matriciel optimisé, le goulot d'étranglement se déplace inévitablement vers la gestion des données (I/O) et les allocations mémoire.
 
+\textbf{Limites et menaces à la validité :}
+Les conclusions de performance dépendent d'un protocole de mesure contrôlé (verrouillage de fréquence, affinité CPU) et peuvent varier sur d'autres architectures, avec d'autres implémentations BLAS, ou sous une charge système différente. Par ailleurs, l'analyse se concentre principalement sur le noyau \texttt{matmul} dense et ne couvre pas nécessairement l'ensemble des coûts d'un entraînement complet (pipeline de données, allocations, et surcoûts d'orchestration). Enfin, le choix d'un MLP sur MNIST limite l'extrapolation à des architectures plus modernes (CNN) et à des jeux de données plus complexes.
+
 \textbf{Perspectives :}
 Plusieurs axes d'amélioration pourraient enrichir ce projet :
 \begin{itemize}
-    \item \textbf{Support GPU (CUDA)} : Déporter les calculs matriciels sur GPU pour accélérer encore l'entraînement sur de très grands réseaux.
-    \item \textbf{Nouvelles architectures} : Implémenter des couches de convolution (CNN) pour améliorer la précision sur MNIST, ou des couches récurrentes (RNN) pour les données séquentielles.
-    \item \textbf{Optimiseurs avancés} : Ajouter l'algorithme Adam ou RMSProp pour une convergence plus rapide et stable.
-    \item \textbf{Gestion mémoire} : Implémenter un \textit{Memory Pool} pour réduire le surcoût des allocations dynamiques répétées de la classe \texttt{Matrix}.
+    \item \textbf{Support GPU (CUDA)} : Déporter les calculs matriciels sur GPU pour accélérer massivement l'entraînement, en réduisant les transferts hôte-périphérique.
+    \item \textbf{Vectorisation Explicite (SIMD)} : Remplacer l'auto-vectorisation du compilateur par des intrinsèques (AVX-512) ou des micro-noyaux optimisés pour exploiter pleinement les unités de calcul du CPU.
+    \item \textbf{Optimisation Mémoire} : Implémenter un \textit{Memory Pool} ou une arène d'allocation pour supprimer le surcoût de \texttt{malloc/free} identifié lors du profilage.
+    \item \textbf{Parallélisme Distribué (MPI)} : Étendre l'entraînement à plusieurs nœuds de calcul en utilisant MPI pour paralléliser le traitement des batchs (\textit{Data Parallelism}).
 \end{itemize}
 
 \section{Références}
@@ -614,41 +668,80 @@ A set of level 3 basic linear algebra subprograms.
 \end{thebibliography}
 
 \section{Glossaire}
+\subsection*{Contexte et État de l'art}
 \begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
-
-\item[Auto-différentiation] Technique permettant d'évaluer automatiquement la dérivée d'une fonction spécifiée par un programme informatique, en appliquant récursivement la règle de la chaîne (Chain Rule).
-
+\item[Autodifférentiation] Technique permettant d'évaluer automatiquement la dérivée d'une fonction spécifiée par un programme informatique, en appliquant récursivement la règle de la chaîne (\textit{chain rule}).
+\item[MLP] \textit{Multi-Layer Perceptron} (perceptron multicouche). Réseau feed-forward composé d'empilements de couches linéaires et de fonctions d'activation.
+\item[MNIST] \textit{Modified National Institute of Standards and Technology}. Jeu de données de chiffres manuscrits (28$\times$28) utilisé comme benchmark de classification.
+\item[HPC] \textit{High-Performance Computing}. Ensemble des techniques et architectures visant à maximiser les performances de calcul.
 \item[Backpropagation] Algorithme fondamental d'entraînement des réseaux de neurones, calculant le gradient de la fonction de perte par rapport à chaque poids du réseau en propageant l'erreur de la sortie vers l'entrée.
+\end{description}
 
-\item[BLAS] \textit{Basic Linear Algebra Subprograms}. Une spécification standard d'API pour les bibliothèques effectuant des opérations d'algèbre linéaire numérique de bas niveau (comme le produit matriciel).
+\subsection*{Architecture et Modèles (CNN)}
+\begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
+\item[CNN] \textit{Convolutional Neural Network}. Architecture de réseau de neurones utilisant des couches de convolution, adaptée aux données structurées spatialement (images).
+\end{description}
 
-\item[DAG] \textit{Directed Acyclic Graph}. Structure de données utilisée pour représenter le graphe de calcul, où les nœuds sont les opérations et les arêtes les dépendances de données.
-
-\item[Epoch] Une itération complète de l'algorithme d'apprentissage sur l'ensemble du jeu de données d'entraînement.
-
-\item[OpenMP] API multi-plateforme de support du parallélisme à mémoire partagée (multithreading) en C/C++ et Fortran.
-
-\item[Overfitting] Phénomène où un modèle apprend "par cœur" les données d'entraînement (bruit inclus) et perd sa capacité à généraliser sur de nouvelles données.
-
-\item[SIMD] \textit{Single Instruction, Multiple Data}. Technique d'optimisation matérielle permettant à un processeur d'effectuer la même opération sur plusieurs points de données simultanément.
-
+\subsection*{Implémentation : Tenseurs et Réseaux}
+\begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
 \item[Tensor/Matrix] Dans ce projet, structure de données fondamentale encapsulant un tableau contigu de scalaires et supportant les opérations mathématiques.
+\item[RNN] \textit{Recurrent Neural Network}. Architecture de réseau intégrant des connexions récurrentes, adaptée aux données séquentielles.
+\end{description}
 
+\subsection*{Implémentation : Optimisation}
+\begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
+\item[SGD] \textit{Stochastic Gradient Descent}. Méthode d'optimisation mettant à jour les paramètres en suivant le gradient estimé sur des mini-batchs.
+\end{description}
+
+\subsection*{Implémentation : Calcul et Matériel}
+\begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
+\item[CPU] \textit{Central Processing Unit}. Processeur généraliste exécutant le programme et orchestrant le calcul.
+\item[SIMD] \textit{Single Instruction, Multiple Data}. Technique d'optimisation matérielle permettant à un processeur d'effectuer la même opération sur plusieurs points de données simultanément.
+\item[BLAS] \textit{Basic Linear Algebra Subprograms}. Une spécification standard d'API pour les bibliothèques effectuant des opérations d'algèbre linéaire numérique de bas niveau (comme le produit matriciel).
+\item[OpenMP] API multi-plateforme de support du parallélisme à mémoire partagée (multithreading) en C/C++ et Fortran.
+\item[DAG] \textit{Directed Acyclic Graph}. Structure de données utilisée pour représenter le graphe de calcul, où les nœuds sont les opérations et les arêtes les dépendances de données.
+\item[Logits] Valeurs réelles en sortie du réseau avant normalisation (par exemple avant softmax), interprétées comme des scores par classe.
+\item[One-hot] Encodage d'une classe par un vecteur binaire de dimension $K$ avec un unique 1 à l'indice de la classe, et 0 ailleurs.
+\item[Softmax] Fonction transformant un vecteur de scores en distribution de probabilités, fréquemment utilisée en sortie d'un classifieur multi-classes.
+\item[Epoch] Une itération complète de l'algorithme d'apprentissage sur l'ensemble du jeu de données d'entraînement.
+\end{description}
+
+\subsection*{Expérimentations : Configuration}
+\begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
+\item[Affinité CPU] Politique de placement liant l'exécution (processus/threads) à un sous-ensemble de cœurs CPU afin de réduire la variabilité et les coûts de migration.
+\item[Warm-up] Exécutions préalables avant mesure visant à stabiliser caches, prédicteur de branchement, et état d'exécution.
+\end{description}
+
+\subsection*{Expérimentations : Résultats}
+\begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
+\item[Speedup] Rapport entre un temps de référence et un temps optimisé (par exemple $T_1/T_p$), mesurant l'accélération obtenue.
+\item[I/O] \textit{Input/Output} (entrées/sorties). Accès aux données (lecture/écriture) pouvant devenir un goulot d'étranglement face à un noyau de calcul optimisé.
+\end{description}
+
+\subsection*{Perspectives (GPU)}
+\begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
+\item[CUDA] Plateforme et modèle de programmation de NVIDIA pour l'exécution de calculs sur GPU.
+\item[GPU] \textit{Graphics Processing Unit}. Processeur massivement parallèle, particulièrement efficace pour les opérations matricielles.
+\end{description}
+
+\subsection*{Autres concepts}
+\begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
+\item[Overfitting] Phénomène où un modèle apprend "par cœur" les données d'entraînement (bruit inclus) et perd sa capacité à généraliser sur de nouvelles données.
 \end{description}
 
 \appendix
 \section{Protocole de Verrouillage des Fréquences}\label{app:protocol}
-Afin de garantir la reproductibilité des mesures, le script suivant est exécuté avant chaque campagne de test pour fixer la fréquence du CPU à 4.0 GHz sur les coeurs physiques.
+Afin de garantir la reproductibilité des mesures, le script suivant est exécuté avant chaque campagne de test pour fixer la fréquence du CPU à 4.0 GHz sur les cœurs physiques.
 
 \begin{lstlisting}[language=bash, caption={Commandes de configuration CPU (mode performance)}]
 # 1. Passer le gouverneur en mode performance
 sudo cpupower frequency-set -g performance
 
-# 2. Verrouiller la frequence min et max a 4.0 GHz
+# 2. Verrouiller la fréquence min et max à 4.0 GHz
 # (Adaptez la valeur selon votre CPU)
 sudo cpupower frequency-set -u 4000MHz -d 4000MHz
 
-# 3. Verifier la frequence
+# 3. Vérifier la fréquence
 cpupower frequency-info | grep "current CPU frequency"
 \end{lstlisting}
 
