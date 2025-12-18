@@ -199,14 +199,67 @@ Au cours des dernières décennies, l'apprentissage automatique a connu un déve
 \subsection{Concept de la méthode classique}
 Le problème MNIST consiste à classer des images de chiffres manuscrits ($28 \times 28$ pixels) dans dix catégories correspondant aux chiffres 0 à 9. Pour résoudre ce problème, on utilise un perceptron multicouche (MLP), c'est-à-dire un réseau de neurones constitué de plusieurs neurones artificiels organisés en couches (entrée, cachées, sortie).
 
-Chaque neurone calcule une combinaison linéaire de ses entrées, à laquelle il applique ensuite une fonction d'activation non linéaire, afin d'introduire de la complexité dans le modèle. Dans ce projet, nous explorons notamment la fonction sigmoïde, définie par $\sigma(x) = \frac{1}{1 + e^{-x}}$, qui transforme les valeurs réelles en probabilités comprises entre 0 et 1.
+Chaque neurone calcule une combinaison linéaire de ses entrées, à laquelle il applique ensuite une fonction d'activation non linéaire.
+Soit $x$ le vecteur d'entrée, $w$ le vecteur de poids et $b$ le biais. La sortie $y$ d'un neurone est donnée par :
+\[ y = \sigma(w \cdot x + b) \]
 
-L'objectif de l'apprentissage est de minimiser une fonction de coût (Loss), qui mesure l'écart entre les prédictions du réseau et les valeurs attendues. L'algorithme de rétropropagation (\textit{backpropagation}) \cite{rumelhart1986}, basé sur la règle de la chaîne, permet de calculer le gradient de cette fonction de coût par rapport à chaque paramètre du réseau. Concrètement, l'erreur calculée en sortie est propagée en sens inverse à travers les couches du réseau : chaque neurone reçoit la contribution de son erreur et ajuste ses poids en conséquence.
+\paragraph{Passage au calcul matriciel}
+Pour des raisons d'efficacité (parallélisation, vectorisation SIMD), nous ne calculons pas les activations neurone par neurone pour chaque image. Nous travaillons au contraire par \textit{mini-batches}.
+Concrètement, chaque image ($28 \times 28$) est d'abord aplatie (\textit{flattened}) en un vecteur ligne de dimension 784. Nous regroupons ensuite $N$ de ces vecteurs (correspondant au \textit{batch size}) afin de former une matrice d'entrée $X$ de dimensions $(N \times 784)$.
+Si $W$ est la matrice des poids de la couche (dimensions $784 \times \text{neurones}$), le passage avant pour l'ensemble du batch s'écrit alors sous forme de multiplication matricielle :
+\[ Y = \sigma(X \cdot W + B) \]
+où $B$ est le biais (un vecteur ligne de dimensions $(1 \times \text{neurones})$) diffusé (\textit{broadcasted}) sur les $N$ exemples du mini-batch.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\textwidth]{Images/LayersOfMLP.png}
+  \caption{Architecture d'un Perceptron Multicouche (MLP) avec couches cachées \cite{cour-GLHPC}.}
+  \label{fig:layers_of_mlp}
+\end{figure}
+
+Cette figure illustre la structure hiérarchique du modèle (schéma purement illustratif : pour MNIST, chaque entrée est un vecteur de dimension 784, et un mini-batch correspond à une matrice $X$ de dimensions $N \times 784$) :
+\begin{itemize}
+    \item \textbf{Couche d'entrée} ($x_0$ à $x_3$) : reçoit les données brutes (ici les pixels d'une image).
+    \item \textbf{Couches cachées} : couches intermédiaires où le réseau apprend des représentations abstraites. Chaque neurone est connecté à tous les neurones de la couche précédente (\textit{fully connected}).
+    \item \textbf{Couche de sortie} ($y$) : produit la prédiction finale (probabilités des classes pour MNIST).
+\end{itemize}
+Bien que le schéma montre des connexions individuelles, notre implémentation vectorise ces opérations sous forme de produits matriciels $X \cdot W$.
+
+C'est cette opération matricielle que nous optimisons intensivement dans ce projet (BLAS, OpenMP).
+
+L'objectif de l'apprentissage est de minimiser une fonction de perte (\textit{loss}) $L$, qui mesure l'écart entre les prédictions et les valeurs attendues. L'algorithme de rétropropagation (\textit{backpropagation}) \cite{rumelhart1986} permet de calculer le gradient $\nabla L$ par rapport à tous les paramètres.
+
+\paragraph{Règle de la chaîne (\textit{chain rule})}
+Le réseau peut se voir comme une composition de fonctions $f(x) = f_n(f_{n-1}(\dots f_1(x)))$. Le gradient se calcule en remontant de la fin vers le début via la règle de la chaîne :
+\[ \frac{\partial L}{\partial x} = \frac{\partial L}{\partial y} \cdot \frac{\partial y}{\partial x} \]
+Cela conduit naturellement à une représentation sous forme de \textbf{graphe de calcul} (DAG), où chaque nœud est une opération élémentaire, connaissant ses parents et sa dérivée locale. Lors de la phase \textit{backward}, nous propageons le gradient accumulé depuis la perte jusqu'aux feuilles (les poids).
+
+\paragraph{Exemple : graphe de calcul et autodiff}
+Un \textbf{graphe de calcul} représente une expression comme un enchaînement d'opérations élémentaires. Par exemple, pour
+\[
+z = x \cdot w,\quad y = z + b,\quad L = y^2,
+\]
+le graphe contient trois nœuds d'opération (multiplication, addition, carré) reliés par des dépendances ($x,w \rightarrow z \rightarrow y \rightarrow L$).
+Lors du \textbf{passage avant}, chaque nœud calcule puis \emph{stocke} sa valeur (ici $z$ et $y$), afin d'éviter de recalculer ces intermédiaires lors du backward.
+Lors du \textbf{passage arrière} (autodiff en mode inverse), chaque nœud utilise sa \textbf{dérivée locale} et le gradient amont pour mettre à jour ses parents :
+\[
+\frac{\partial L}{\partial y} = 2y,\quad
+\frac{\partial y}{\partial z} = 1,\quad
+\frac{\partial y}{\partial b} = 1,\quad
+\frac{\partial z}{\partial x} = w,\quad
+\frac{\partial z}{\partial w} = x.
+\]
+On obtient alors, par composition, $\frac{\partial L}{\partial b} = \frac{\partial L}{\partial y}$, $\frac{\partial L}{\partial z} = \frac{\partial L}{\partial y}$, $\frac{\partial L}{\partial x} = \frac{\partial L}{\partial z}\cdot w$ et $\frac{\partial L}{\partial w} = \frac{\partial L}{\partial z}\cdot x$.
+Dans notre implémentation, cette logique se traduit par des nœuds \texttt{Node} stockant une \texttt{value} (résultat du forward) et une fonction \texttt{backwardFn\_} (dérivée locale + accumulation du gradient dans les parents).
+Enfin, la \textbf{rétropropagation} correspond au cas particulier où ce graphe de calcul est celui d'un réseau de neurones : c'est l'application de l'autodiff en mode inverse à une composition de couches.
 
 \subsection{Présentation des éléments modulables du MLP}
 
 \subsubsection{Fonctions d'activation}
-Les fonctions d'activation introduisent la non-linéarité dans le réseau. Sans elles, le MLP se réduirait à une simple régression linéaire.
+Les fonctions d'activation introduisent la non-linéarité dans le réseau. Elles sont cruciales pour deux raisons :
+\begin{enumerate}
+    \item \textbf{Non-linéarité} : Sans elles, une superposition de couches linéaires resterait une simple transformation linéaire unique ($W_2(W_1 x) = W'x$), incapable de modéliser des problèmes complexes (comme XOR ou MNIST).
+    \item \textbf{Recadrage des valeurs} : Elles permettent souvent de maintenir les activations dans une plage bornée (ex: [0,1] pour Sigmoïde), évitant l'explosion des valeurs lors de la propagation dans des réseaux profonds.
+\end{enumerate}
 \begin{itemize}
     \item \textbf{Sigmoïde} : transforme l'entrée en valeur entre 0 et 1, mais peut provoquer la saturation des gradients.
     \item \textbf{Tanh} : centrée sur zéro, améliore la convergence mais reste sujette au même problème.
@@ -214,7 +267,24 @@ Les fonctions d'activation introduisent la non-linéarité dans le réseau. Sans
 \end{itemize}
 
 \subsubsection{Algorithmes de descente de gradient}
-L'apprentissage consiste à minimiser la fonction de perte grâce à des méthodes de descente de gradient. Si ce projet se concentre sur la méthode \textbf{SGD}, il convient de citer les évolutions majeures de l'état de l'art :
+L'apprentissage consiste à minimiser la fonction de perte grâce à la descente de gradient. L'algorithme met à jour les paramètres $\theta$ (poids et biais) itérativement :
+\[ \theta_{t+1} = \theta_t - \eta \cdot \nabla_\theta L \]
+où $\eta$ est le \textbf{taux d'apprentissage} (\textit{learning rate}).
+\begin{itemize}
+    \item Un $\eta$ trop grand accélère la convergence mais risque de provoquer des oscillations, voire une divergence.
+    \item Un $\eta$ trop petit garantit la stabilité mais ralentit considérablement l'apprentissage.
+\end{itemize}
+
+\begin{lstlisting}[language=pseudo, caption={Algorithme simplifie SGD}]
+Pour chaque epoch:
+  Pour chaque mini-batch (X, Y):
+    1. Forward: P = Model(X)
+    2. Loss: L = LossFn(P, Y)
+    3. Backward: Calculer dL/dW (gradients) via autdiff
+    4. Update: W = W - learning_rate * dL/dW
+\end{lstlisting}
+
+Si ce projet se concentre sur la méthode \textbf{SGD}, il convient de citer les évolutions majeures de l'état de l'art :
 \begin{itemize}
     \item \textbf{SGD} (\textit{Stochastic Gradient Descent}) : met à jour les poids après chaque mini-lot (\textbf{méthode implémentée}).
     \item \textbf{Momentum} : ajoute une inertie pour lisser les oscillations et accélérer la convergence.
@@ -242,7 +312,7 @@ Le projet consiste à concevoir et implémenter un pipeline complet d'apprentiss
   \item un module de manipulation de tenseurs,
   \item un réseau de couches linéaires avec fonctions d'activation,
   \item un moteur de différenciation automatique (autodiff),
-  \item un mécanisme d'entraînement (optimiseur, fonction de perte),
+  \item un mécanisme d'entraînement (optimiseur, fonction de perte, gestion des \textit{mini-batches}),
   \item l'intégration du jeu de données MNIST et l'évaluation du modèle.
 \end{itemize}
 Ce développement a été réalisé en plusieurs phases successives décrites ci-dessous.
@@ -405,10 +475,10 @@ AMD Ryzen 9 8940HX with Radeon Graphics\\
 Architecture : x86\_64\\
 Cœurs / Threads : 16 physiques / 32 logiques (2 threads par cœur)\\
 Fréquence : 421.8 MHz (min) à 5386 MHz (max)\\
-Cache L1d : 512 KiB (16 instances)\\
-Cache L1i : 512 KiB (16 instances)\\
-Cache L2 : 16 MiB (16 instances)\\
-Cache L3 : 64 MiB (2 instances)
+Cache L1d : 512 KiB total, répartis en 16 instances (32 KiB chacune)\\
+Cache L1i : 512 KiB total, répartis en 16 instances (32 KiB chacune)\\
+Cache L2 : 16 MiB total, répartis en 16 instances (1 MiB chacune)\\
+Cache L3 : 64 MiB total, répartis en 2 instances (32 MiB chacune)
 \end{tabular} \\
 Mémoire & 30 GiB de RAM système \\
 Swap & 8.0 GiB \\
@@ -430,10 +500,6 @@ Les expérimentations parallèles ont été réalisées sur cette même configur
 \midrule
 Système d'exploitation & Fedora Linux 42 (Workstation Edition) \\
 Compilateur C/C++ & GCC 15.2.1 20250808 (Red Hat 15.2.1-1) \\
-Python & Version 3.13.7 \\
-CMake & Version 3.31.6 \\
-Shell & zsh \\
-IDE & Visual Studio Code on Linux \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -443,17 +509,17 @@ Les optimisations de compilation ont été testées avec les flags \texttt{-O3 -
 \subsubsection{Configuration Spécifique et Protocole}\label{subsec:protocol}
 
 Afin de limiter la variabilité des résultats, les campagnes de mesure suivent un protocole systématique de verrouillage de fréquence et d'affinité CPU. Les huit premiers cœurs physiques sont forcés à 4.0~GHz à l'aide de \texttt{cpupower}, puis les exécutions sont liées explicitement à ce jeu de cœurs via \texttt{taskset}. Le script type est le suivant :
-Le détail des commandes de configuration (verrouillage de fréquence à 4.0~GHz, isolation des cœurs) est documenté dans le fichier \texttt{scripts/README.md} et appliqué via les scripts \texttt{benchmark\_affinity.sh} et \texttt{benchmark\_large.sh}. Ce protocole s'inspire des bonnes pratiques de notre ancien cours, adaptées ici à l'architecture AMD Ryzen. Les mesures de temps sont réalisées par le programme C++ \texttt{tests/test\_benchmark\_large.cpp}, qui intègre une horloge haute résolution (\texttt{std::chrono}) pour exclure les surcoûts liés au système d'exploitation. Le protocole inclut systématiquement un préchauffage (\emph{warm-up}) de 5 itérations pour stabiliser les caches (L1/L2) et le \emph{branch predictor} avant le début des mesures.
+Le détail des commandes de configuration (verrouillage de fréquence à 4.0~GHz, isolation des cœurs) est documenté dans le fichier \texttt{scripts/README.md} et appliqué via les scripts \texttt{benchmark\_affinity.sh} et \texttt{benchmark\_large.sh}. Ce protocole s'inspire des bonnes pratiques de notre ancien cours, adaptées ici à l'architecture AMD Ryzen. Les mesures de temps sont réalisées par le programme C++ \texttt{tests/test\_benchmark\_large.cpp}, dédié au benchmarking du noyau de calcul, qui intègre une horloge haute résolution (\texttt{std::chrono}) pour exclure les surcoûts liés au système d'exploitation. Le protocole inclut systématiquement un préchauffage (\emph{warm-up}) de 5 itérations pour stabiliser les caches (L1/L2) et le \emph{branch predictor} avant le début des mesures.
 
-\subsection{Résultats expérimentaux}
+\subsection{Analyse des performances de calcul et d'entraînement}
 
-Cette section détaille les résultats obtenus lors des campagnes de test, en analysant l'impact du parallélisme, de l'affinité et des optimisations bas niveau sur les performances.
+Cette section détaille les résultats obtenus lors des campagnes de test, en analysant l'impact du parallélisme, de l'affinité et des optimisations bas niveau sur les performances. Il convient de préciser que ces micro-benchmarks portent exclusivement sur l'opération de multiplication matricielle (\texttt{matmul}), cœur intensif du calcul, et non sur le processus d'entraînement complet du réseau de neurones.
 
 \subsubsection{Passage à l'échelle (Thread Scaling)}
 
 L'évaluation du passage à l'échelle (\textit{scaling}) de l'implémentation OpenMP a été réalisée en faisant varier le nombre de threads de 1 à 16, sur une architecture disposant de 8 cœurs physiques.
 
-Une attention particulière a été portée à la précision des mesures pour les petites instances. Les premiers essais, pilotés par des scripts externes, présentaient une variabilité excessive. Pour y remédier, la boucle de mesure a été intégrée directement \textbf{au sein du programme C++} (\texttt{test\_benchmark\_large.cpp}), isolant ainsi le noyau de calcul des surcoûts liés au lancement de processus. Le protocole final adopte une méthodologie rigoureuse : un nombre d'itérations adaptatif (de 100 pour $N=64$ à 5 pour $N=2048$), précédé systématiquement de 5 exécutions de chauffe (\emph{warm-up}). L'application d'une moyenne tronquée (rejet des 20\% de valeurs hautes et 10\% de valeurs basses) a permis de réduire l'écart type à environ 2 $\mu$s, garantissant la fiabilité des résultats présentés ci-après.
+Une attention particulière a été portée à la précision des mesures pour les petites instances. Les premiers essais, pilotés par des scripts externes, présentaient une variabilité excessive. Pour y remédier, la boucle de mesure a été intégrée directement \textbf{au sein du programme C++} (\texttt{test\_benchmark\_large.cpp}), isolant ainsi le noyau de calcul des surcoûts liés au lancement de processus. Le protocole final adopte une méthodologie rigoureuse : un nombre d'itérations adaptatif (de 100 pour $N=64$ à 5 pour $N=2048$), précédé systématiquement de 5 exécutions de chauffe (\emph{warm-up}). L'application d'une moyenne tronquée (rejet des 10\% de valeurs hautes et 10\% de valeurs basses) a permis de réduire l'écart type à environ 2 $\mu$s pour les configurations stables ($\le 8$ threads), garantissant la fiabilité des résultats présentés ci-après.
 
 \begin{figure}[H]
     \centering
@@ -474,50 +540,15 @@ La parallélisation OpenMP apporte un gain conforme aux attentes entre 2 et 8 th
 
 À l'inverse, BLAS reste monothread sur des matrices $64 \times 64$, la charge de calcul n'atteignant pas son seuil interne de déclenchement du parallélisme. Ainsi, pour cette échelle, les configurations les plus efficaces consistent soit à utiliser BLAS, soit à recourir à OpenMP en limitant le nombre de threads au nombre de cœurs physiques (8 threads dans notre cas).
 
-Bien que notre projet se concentre sur des matrices de petite taille, nous avons également analysé des dimensions plus importantes afin de mieux caractériser les mécanismes de parallélisation du produit matriciel.
-
 \paragraph{Matrices de taille intermédiaire ($128 \times 128$ à $1024 \times 1024$).}
 Pour les matrices de taille intermédiaire, OpenMP présente une accélération nette lorsque le nombre de threads augmente jusqu'au nombre de cœurs physiques disponibles. Au-delà de ce seuil, les gains se tassent, voire deviennent négatifs, sous l'effet de la saturation des ressources partagées et de l'augmentation des coûts de synchronisation.
 
-BLAS offre de meilleures performances globales grâce à ses optimisations internes (vectorisation et découpage en blocs), mais peut également se dégrader lorsque le nombre de threads dépasse le nombre de cœurs physiques, notamment à cause de la contention des ressources.
+BLAS offre de meilleures performances globales grâce à ses optimisations internes (vectorisation et découpage en blocs). Cependant, lorsque le nombre de threads dépasse le nombre de cœurs physiques, ses performances se dégradent et deviennent instables, principalement en raison de la contention des ressources et des changements de contexte (\emph{context switching}) sur un même cœur.
 
 \paragraph{Grandes matrices ($2048 \times 2048$).}
 Pour les matrices de grande taille, les deux approches bénéficient d'une parallélisation efficace jusqu'à environ 8 threads. Toutefois, l'augmentation du nombre de threads au-delà de ce point n'entraîne plus de gain significatif, le calcul devenant principalement limité par la bande passante mémoire. Dans ce contexte, BLAS reste la solution la plus performante et la plus stable.
 
-Ces résultats confirment que l'efficacité du parallélisme dépend fortement de la taille du problème, et qu'une sursouscription (plus de threads que de cœurs physiques) n'est pas nécessairement bénéfique.
-
-\subsubsection{Impact de l'Affinité sur les petites charges}
-
-Les résultats présentés dans cette section correspondent à une exécution avec 4 threads, ce choix étant représentatif du comportement observé pour l'ensemble des configurations testées sur des matrices de petite taille.
-
-\begin{table}[H]
-    \centering
-    \caption{Impact de l'affinité sur les performances (Matrices $28 \times 28$, 4 threads)}
-    \label{tab:affinity}
-    \begin{tabular}{llc}
-        \toprule
-        \textbf{Implémentation} & \textbf{Affinité} & \textbf{Temps moyen ($\mu$s)} \\
-        \midrule
-        OpenMP & \texttt{close} & 2.54 \\
-        OpenMP & \texttt{spread} & 4.43 \\
-        \midrule
-        BLAS & \texttt{close} & 0.82 \\
-        BLAS & \texttt{spread} & 0.81 \\
-        \bottomrule
-    \end{tabular}
-\end{table}
-
-Le cas spécifique des matrices $28 \times 28$ (taille des images MNIST) a fait l'objet d'une étude d'affinité approfondie.
-\begin{itemize}
-    \item \textbf{BLAS} : Le temps d'exécution reste constant à $\approx 0.81 \mu$s quelle que soit la stratégie d'affinité, démontrant l'efficacité extrême de son micro-noyau séquentiel.
-    \item \textbf{OpenMP} : La stratégie de placement des threads influe fortement sur les performances.
-    \begin{itemize}
-        \item \texttt{OMP\_PROC\_BIND=close} : 2.53 $\mu$s (limite les communications inter-cœur).
-        \item \texttt{OMP\_PROC\_BIND=spread} : 4.43 $\mu$s (coût de communication accru).
-    \end{itemize}
-\end{itemize}
-
-\textbf{Conclusion :} Pour les couches d'entrée du réseau ($784 \times 1$ ou $28 \times 28$), BLAS, dont l'implémentation reste effectivement séquentielle pour cette taille de problème, est imbattable (3x plus rapide que le meilleur OpenMP).
+Ainsi, l'efficacité du parallélisme dépend non seulement de la taille du problème, mais aussi d'une adéquation stricte entre nombre de threads et ressources matérielles disponibles.
 
 \subsubsection{Hiérarchie des performances et Speedup}
 
@@ -562,26 +593,56 @@ Afin de comprendre l'impact de ces optimisations sur le temps total d'apprentiss
 \textbf{Avant optimisation (Kernel Naïf) :}
 L'application est totalement limitée par le calcul (\emph{compute-bound}). La fonction \texttt{Matrix::matmul} consomme \textbf{94.8\%} du temps total (12.05s).
 
-\begin{figure}[H]
+\begin{table}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{Images/gprof_analyse_naive.png}
-    \caption{Profil d'exécution (gprof) - Version Naïve : Matmul domine.}
-    \label{fig:gprof_naive}
-\end{figure}
+    \caption{Profil d'exécution (gprof) - Version Naïve : \texttt{Matrix::matmul} domine (96.4\%)}
+    \label{tab:gprof_naive}
+    \begin{tabular}{lccl}
+        \toprule
+        \textbf{\% Time} & \textbf{Self (s)} & \textbf{Calls} & \textbf{Function Name} \\
+        \midrule
+        96.42 & 11.84 & 6256 & \texttt{Matrix::matmul} \\
+        1.06 & 0.13 & 1252 & \texttt{DataLoader::nextBatch} \\
+        0.73 & 0.09 & 3752 & \texttt{Matrix::transpose} \\
+        0.41 & 0.05 & 12216 & \texttt{Matrix::Matrix (constructor)} \\
+        0.24 & 0.03 & 95M & \texttt{Matrix::operator() const} \\
+        0.24 & 0.03 & 74M & \texttt{Matrix::operator() (mut)} \\
+        0.24 & 0.03 & 9380 & \texttt{Node::addGrad} \\
+        0.24 & 0.03 & 1 & \texttt{MNISTDataset::load} \\
+        0.16 & 0.02 & - & \texttt{\_init} \\
+        0.08 & 0.01 & 2504 & \texttt{MathOps::add} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 \textbf{Après optimisation (BLAS) :}
 Le temps passé dans \texttt{Matrix::matmul} s'effondre à moins de \textbf{1\%} ($\approx 0.5$s). Le goulot d'étranglement se déplace alors vers :
 \begin{itemize}
-    \item Le chargement des données (\texttt{MNISTDataset::load}) : $\approx 43\%$ du temps.
+    \item Le chargement des données (\texttt{MNISTDataset::load}) : $\approx 43\%$ du temps. Ce coût élevé s'explique par l'allocation et l'initialisation à zéro (inhérente au constructeur \texttt{std::vector}) d'un volume important de mémoire (376 Mo), suivies d'une copie avec conversion de type (\texttt{uint8} vers \texttt{double}) pour chaque pixel.
     \item Les allocations mémoire (\texttt{Matrix::Matrix}) : $\approx 29\%$ du temps.
 \end{itemize}
 
-\begin{figure}[H]
+\begin{table}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{Images/gprof_analyse_blas.png}
-    \caption{Profil d'exécution (gprof) - Version BLAS : Matmul négligeable.}
-    \label{fig:gprof_blas}
-\end{figure}
+    \caption{Profil d'exécution (gprof) - Version BLAS : \texttt{matmul} négligeable, overhead mémoire dominant}
+    \label{tab:gprof_blas}
+    \begin{tabular}{lccl}
+        \toprule
+        \textbf{\% Time} & \textbf{Self (s)} & \textbf{Calls} & \textbf{Function Name} \\
+        \midrule
+        42.86 & 0.03 & 1 & \texttt{MNISTDataset::load} \\
+        28.57 & 0.02 & 12216 & \texttt{Matrix::Matrix (init double)} \\
+        28.57 & 0.02 & 938 & \texttt{SGDOptimizer::step} \\
+        0.00 & 0.00 & 6256 & \texttt{Matrix::matmul} (optimisé par BLAS) \\
+        0.00 & 0.00 & 95M & \texttt{Matrix::operator() const} \\
+        0.00 & 0.00 & 74M & \texttt{Matrix::operator() (mut)} \\
+        0.00 & 0.00 & 40k & \texttt{std::mersenne\_twister} \\
+        0.00 & 0.00 & 18k & \texttt{Matrix::Matrix (copy)} \\
+        0.00 & 0.00 & 10k & \texttt{std::\_Hashtable...} \\
+        0.00 & 0.00 & 10k & \texttt{Node::Node} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 \textbf{Conséquence (Loi d'Amdahl) :}
 Bien que le noyau de calcul ait été accéléré de plusieurs centaines de fois au niveau micro-benchmark, l'accélération globale de l'application est limitée par les parties non optimisables, telles que le chargement des données et les allocations mémoire. Le temps total d'une époque, mesuré via le script dédié \texttt{benchmark\_e2e.sh} (compilation Release sans surcoût de profilage, moyenne sur 5 exécutions), passe ainsi de 13.27s à 1.74s, soit un \textbf{speedup end-to-end de 7.6x}. Ce résultat illustre clairement la loi d'Amdahl \cite{amdahl1967} : une fois le calcul optimisé, les gains supplémentaires nécessitent d'agir sur la gestion mémoire et les entrées/sorties.
@@ -604,6 +665,47 @@ Afin de valider la correction du modèle et de l'algorithme d'optimisation, nous
     \label{fig:training_curve}
 \end{figure}
 
+\subsubsection{Impact de l'Affinité sur les charges d'entrée (Input Layer)}
+
+在有了最佳的Batch size之后，我们可以以此为基础研究这个Batch size下的GEMM操作Affinity对性能的影响。
+
+Les résultats présentés dans cette section analysent l'impact de l'affinité sur les opérations typiques de la couche d'entrée avec une taille de batch $N=64$ (soit une multiplication $64 \times 784$, charge de travail comparable à une matrice carrée intermédiaire). Le tableau ci-dessous détaille les résultats pour 2, 4 et 8 threads.
+
+\begin{table}[H]
+    \centering
+    \caption{Impact de l'affinité sur les performances (Batch $N=64$, Couche d'entrée)}
+    \label{tab:affinity}
+    \begin{tabular}{llccc}
+        \toprule
+        \textbf{Threads} & \textbf{Affinité} & \textbf{Temps OMP ($\mu$s)} & \textbf{Temps BLAS ($\mu$s)} & \textbf{Ratio OMP/BLAS} \\
+        \midrule
+        2 & \texttt{close} & 3.17 & 0.85 & 3.7x \\
+        2 & \texttt{spread} & 4.89 & 0.81 & 6.0x \\
+        \midrule
+        4 & \texttt{close} & 2.54 & 0.82 & 3.1x \\
+        4 & \texttt{spread} & 4.43 & 0.81 & 5.5x \\
+        \midrule
+        8 & \texttt{close} & 2.41 & 0.81 & 3.0x \\
+        8 & \texttt{spread} & 4.64 & 0.81 & 5.7x \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+L'analyse de ces données permet de tirer plusieurs conclusions importantes sur le comportement du noyau de calcul pour cette taille de batch configurée ($N=64$) :
+
+\begin{itemize}
+    \item \textbf{Stabilité de BLAS} : Quelle que soit la configuration (nombre de threads ou affinité), BLAS maintient un temps d'exécution constant et optimal ($\approx 0.81 \mu$s). Cela confirme qu'il choisit dynamiquement de ne pas paralléliser cette taille de problème, évitant ainsi tout surcoût de synchronisation.
+    
+    \item \textbf{Impact critique de l'affinité sur OpenMP} :
+    \begin{itemize}
+        \item En mode \texttt{spread} (dispersion), les performances d'OpenMP stagnent autour de $4.5-4.9 \mu$s quel que soit le nombre de threads. Le coût des communications inter-cœurs domine totalement le gain potentiel du parallélisme.
+        \item En mode \texttt{close} (regroupement), OpenMP parvient à "scaler" légèrement (de 3.17 à 2.41 $\mu$s), mais reste nettement moins efficace que l'approche séquentielle optimisée de BLAS.
+    \end{itemize}
+\end{itemize}
+
+\textbf{Conclusion :} Pour les opérations de la couche d'entrée ($N \times 784$), l'utilisation de bibliothèques optimisées comme BLAS (même en mode séquentiel) est impérative, offrant un gain de performance facteur 3 par rapport à une parallélisation OpenMP, même avec une affinité optimale.
+
+
 \section{Déroulé du Projet}
 L'état de l'art a été rédigé conjointement par Jianye, Hao et Xiang, afin de présenter le contexte théorique du projet et les approches existantes en matière de réseaux neuronaux et de classification MNIST. L'équipe a ensuite organisé son travail en plusieurs phases successives, chacune étant portée par un ou plusieurs membres selon leurs affinités techniques.
 
@@ -611,14 +713,16 @@ La phase de conception a été initiée par Jianye, qui a rédigé la documentat
 
 La réalisation du moteur de différenciation automatique a été répartie entre Hao et Xiang, chacun prenant en charge une partie des opérations nécessaires au calcul du graphe et des gradients. Par la suite, Jianye a intégré l'ensemble de ces composants, généré une seconde version du diagramme UML pour refléter les ajustements apportés, et affiné la conception en fonction des problèmes rencontrés.
 
-Le développement du mécanisme d'entraînement a été amorcé par Xiang, tandis que Jianye et Hao poursuivent respectivement l'implémentation de l'optimiseur et des fonctions de perte. L'intégration du jeu de données MNIST et la validation du pipeline complet ont été assurées par Jianye. De plus, Jianye a mené de nombreux tests de performance et analyses de profilage pour optimiser l'ensemble du système.
+Le développement du mécanisme d'entraînement a été amorcé par Xiang, tandis que Jianye et Hao poursuivent respectivement l'implémentation de l'optimiseur et des fonctions de perte. L'intégration du jeu de données MNIST et la validation du pipeline complet ont été assurées par Jianye. 
+
+De plus, Jianye a mené de nombreux tests de performance et analyses de profilage pour optimiser l'ensemble du système.
 
 Enfin, la rédaction du rapport est réalisée collectivement, de manière collaborative.
 
 \section{Conclusion \& perspectives}
 Ce projet a permis de démystifier le fonctionnement interne des réseaux de neurones profonds en implémentant, \textit{from scratch}, un moteur complet d'apprentissage en C++. L'architecture retenue, basée sur un graphe de calcul dynamique (DAG) et la différenciation automatique, a démontré la flexibilité du C++ moderne (pointeurs intelligents, polymorphisme) pour modéliser des concepts mathématiques abstraits tout en garantissant une gestion rigoureuse de la mémoire.
 
-Sur le plan de la performance, l'analyse expérimentale a mis en évidence l'impact critique des optimisations bas niveau. Le passage d'une implémentation naïve ($O(N^3)$) à une utilisation efficace des bibliothèques BLAS et du parallélisme OpenMP a permis un gain de performance de plus de trois ordres de grandeur ($1200\times$), illustrant concrètement l'importance de la localité spatiale et de la vectorisation SIMD dans le calcul haute performance (HPC). L'étude a également confirmé la loi d'Amdahl : une fois le calcul matriciel optimisé, le goulot d'étranglement se déplace inévitablement vers la gestion des données (I/O) et les allocations mémoire.
+Sur le plan de la performance, l'analyse expérimentale a mis en évidence l'impact critique des optimisations bas niveau. Le passage d'une implémentation naïve ($O(N^3)$) à une utilisation efficace des bibliothèques BLAS et du parallélisme OpenMP a permis un gain de performance de plus de trois ordres de grandeur ($1200\times$), illustrant concrètement l'importance de la localité spatiale et de la vectorisation SIMD dans le calcul haute performance (HPC). Ces résultats s'expliquent par la loi d'Amdahl : une fois le calcul matriciel optimisé, le goulot d'étranglement se déplace inévitablement vers la gestion des données (I/O) et les allocations mémoire.
 
 \textbf{Limites et menaces à la validité :}
 Les conclusions de performance dépendent d'un protocole de mesure contrôlé (verrouillage de fréquence, affinité CPU) et peuvent varier sur d'autres architectures, avec d'autres implémentations BLAS, ou sous une charge système différente. Par ailleurs, l'analyse se concentre principalement sur le noyau \texttt{matmul} dense et ne couvre pas nécessairement l'ensemble des coûts d'un entraînement complet (pipeline de données, allocations, et surcoûts d'orchestration). Enfin, le choix d'un MLP sur MNIST limite l'extrapolation à des architectures plus modernes (CNN) et à des jeux de données plus complexes.
@@ -644,6 +748,10 @@ MIT Press, 2016.
 Yann LeCun, Léon Bottou, Yoshua Bengio, et Patrick Haffner.
 Gradient-based learning applied to document recognition.
 \textit{Proceedings of the IEEE}, 86(11):2278--2324, 1998.
+
+\bibitem{cour-GLHPC}
+m1-chps.github.io/glhpc/
+\textit{UVSQ, lecture5} 2025 .
 
 \bibitem{rumelhart1986}
 David E. Rumelhart, Geoffrey E. Hinton, et Ronald J. Williams.
