@@ -17,13 +17,23 @@ Implementation of a neural network from scratch in C++ for the MNIST dataset (PP
 
 //build
 
-rm -rf build          
-mkdir build          
-cd build              
-cmake ..             
-make -j                
+rm -rf build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+             
 
 
-//test après build
+//télécharger des image dans le floder minist
 
-./build/test_autodiff
+rm -rf mnist
+mkdir mnist
+cd mnist
+
+wget -O train-images-idx3-ubyte.gz  https://storage.googleapis.com/cvdf-datasets/mnist/train-images-idx3-ubyte.gz
+wget -O train-labels-idx1-ubyte.gz  https://storage.googleapis.com/cvdf-datasets/mnist/train-labels-idx1-ubyte.gz
+wget -O t10k-images-idx3-ubyte.gz   https://storage.googleapis.com/cvdf-datasets/mnist/t10k-images-idx3-ubyte.gz
+wget -O t10k-labels-idx1-ubyte.gz   https://storage.googleapis.com/cvdf-datasets/mnist/t10k-labels-idx1-ubyte.gz
+
+gunzip *.gz
+ls -lh
+
