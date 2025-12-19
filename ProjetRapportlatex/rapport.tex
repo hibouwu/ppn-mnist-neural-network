@@ -183,11 +183,19 @@ L'objectif général du projet est double :
 \end{enumerate}
 En parallèle, le projet vise à familiariser les étudiants avec l'analyse expérimentale, l'optimisation du code et la préparation aux travaux de performance qui seront approfondis au second semestre.
 
-\section{Guide de lecture}
-Le rapport est structuré de manière à accompagner progressivement le lecteur :
-La première partie présente le contexte, le problème à résoudre et un bref état de l'art autour de MNIST et des MLP. La deuxième partie décrit en détail l'implémentation (choix de conception, organisation du code, intégration). La troisième partie expose les expérimentations réalisées sur MNIST ainsi que les observations associées. La quatrième partie propose une première analyse de performances (\textit{profiling}) afin d'identifier les points critiques qui seront optimisés au second semestre. Enfin, un glossaire et des références sont placés en fin de document pour clarifier les notions techniques.
+\vspace{3cm}
 
-\vspace{2cm}
+\section{Guide de lecture}
+Le rapport est structuré de manière à accompagner progressivement le lecteur. Il s'articule autour des parties suivantes :
+\begin{enumerate}[label=\textbf{Partie~\arabic* :}, leftmargin=*]
+  \item \textbf{Contexte et État de l'art} : présentation du problème MNIST et du Perceptron Multicouche.
+  \item \textbf{Implémentation} : description détaillée de l'architecture logicielle, du moteur d'autodifférentiation et des choix techniques.
+  \item \textbf{Expérimentations} : double analyse portant sur les performances de calcul (HPC, profiling) et la validation de la convergence du modèle (Machine Learning).
+  \item \textbf{Déroulé du projet} : présentation de l'organisation du travail et de la répartition des tâches au sein de l'équipe.
+\end{enumerate}
+Enfin, une \textbf{Conclusion} dresse le bilan et esquisse les perspectives, suivie des \textbf{Annexes} techniques, des références et d'un glossaire.
+
+\clearpage
 
 \section{Contexte et État de l'art}
 
@@ -206,11 +214,11 @@ On commence par le cas d'un seul exemple. Une image MNIST de taille $28\times 28
 \[ z = xW + b \]
 où $z\in\mathbb{R}^{1\times n}$. Cette transformation correspond à une application affine de l'espace des pixels (dimension 784) vers un espace de représentation de dimension $n$, avant l'application de la non-linéarité $\sigma$.
 
-Dans la pratique, un traitement séquentiel (image par image) exploite imparfaitement les ressources matérielles. Afin d'augmenter le débit (\textit{throughput}), on recourt au calcul par mini-lots (\textit{mini-batches}), qui permet de reformuler une suite de produits vecteur-matrice en un unique produit matrice-matrice, particulièrement optimisé (SIMD, multi-cœurs, BLAS, et, le cas échéant, GPU).
+Dans la pratique, un traitement séquentiel (image par image) exploite imparfaitement les ressources matérielles. Afin d'augmenter le débit (\textit{throughput}), on recourt au calcul par \textit{mini-batchs} (\textit{mini-batches}), qui permet de reformuler une suite de produits vecteur-matrice en un unique produit matrice-matrice, particulièrement optimisé (SIMD, multi-cœurs, BLAS, et, le cas échéant, GPU).
 
 Plus précisément, en regroupant $N$ exemples, on définit la matrice d'entrées $X\in\mathbb{R}^{N\times 784}$. La propagation avant se généralise en :
 \[ Y = \sigma(XW + \mathbf{1}_N b) \]
-où $\mathbf{1}_N\in\mathbb{R}^{N\times 1}$ désigne un vecteur de uns et $\mathbf{1}_N b$ formalise la diffusion (\textit{broadcast}) du biais sur l'ensemble des $N$ exemples.
+où $\mathbf{1}_N\in\mathbb{R}^{N\times 1}$ désigne un vecteur de 1 et $\mathbf{1}_N b$ formalise la diffusion (\textit{broadcast}) du biais sur l'ensemble des $N$ exemples.
 
 Pour clarifier ce mécanisme, la figure suivante illustre d'abord le cas $xW$, puis son extension naturelle au cas matriciel avec $XW$.
 
@@ -223,47 +231,33 @@ Pour clarifier ce mécanisme, la figure suivante illustre d'abord le cas $xW$, p
 
 Cette figure illustre la structure hiérarchique du modèle (schéma purement illustratif : pour MNIST, chaque entrée est un vecteur de dimension 784, et un mini-batch correspond à une matrice $X$ de dimensions $N \times 784$) :
 
-\textbf{Couche d'entrée} ($x_0$ à $x_3$) : reçoit les données brutes (ici les pixels d'une image). 
+\textbf{Couche d'entrée} ($x_0$ à $x_3$) : reçoit les données brutes (ici les pixels d'une image).
 
-\textbf{Couches cachées} : couches intermédiaires où le réseau apprend des représentations abstraites ; chaque neurone est connecté à tous les neurones de la couche précédente (\textit{fully connected}). 
+\textbf{Couches cachées} : couches intermédiaires où le réseau apprend des représentations abstraites ; chaque neurone est connecté à tous les neurones de la couche précédente (\textit{fully connected}).
 
 \textbf{Couche de sortie} ($y$) : produit la prédiction finale (probabilités des classes pour MNIST).
 
 Bien que le schéma montre des connexions individuelles, notre implémentation vectorise ces opérations sous forme de produits matriciels $X \cdot W$. C'est cette opération matricielle que nous optimisons intensivement dans ce projet (BLAS, OpenMP).
 
-L'objectif de l'apprentissage est de minimiser une fonction de perte (\textit{loss}) $L$, qui mesure l'écart entre les prédictions et les valeurs attendues. L'algorithme de rétropropagation (\textit{backpropagation}) \cite{rumelhart1986} permet de calculer le gradient $\nabla L$ par rapport à tous les paramètres.
+L'objectif de l'apprentissage est de minimiser une fonction de \textit{loss} (\textit{loss}) $L$, qui quantifie l'écart entre les prédictions du modèle et les étiquettes réelles. Minimiser $L$ revient donc à réduire cet écart sur les données d'entraînement (et, idéalement, à améliorer la capacité de généralisation sur des exemples non vus). Dans la suite, la rétropropagation (\textit{backpropagation}) \cite{rumelhart1986} permet de calculer le gradient $\nabla L$ par rapport à tous les paramètres afin d'effectuer cette minimisation.
 
 \paragraph{Règle de la chaîne (\textit{chain rule})}
 Le réseau peut se voir comme une composition de fonctions $f(x) = f_n(f_{n-1}(\dots f_1(x)))$. Le gradient se calcule en remontant de la fin vers le début via la règle de la chaîne :
 \[ \frac{\partial L}{\partial x} = \frac{\partial L}{\partial y} \cdot \frac{\partial y}{\partial x} \]
-Cela conduit naturellement à une représentation sous forme de \textbf{graphe de calcul} (DAG), où chaque nœud est une opération élémentaire, connaissant ses parents et sa dérivée locale. Lors de la phase \textit{backward}, nous propageons le gradient accumulé depuis la perte jusqu'aux feuilles (les poids).
+Cela conduit naturellement à une représentation sous forme de \textbf{graphe de calcul} (DAG), où chaque nœud est une opération élémentaire, connaissant ses parents et sa dérivée locale. Lors de la phase \textit{backward}, nous propageons le gradient accumulé depuis la perte jusqu'aux feuilles (les poids). Dans le cas général, exprimer analytiquement le gradient d'un réseau profond est difficile et source d'erreurs. L'autodiff permet de le calculer automatiquement en appliquant systématiquement la règle de la chaîne, sans dériver explicitement les formules pour chaque architecture (p. ex. PyTorch, TensorFlow).
 
 \paragraph{Exemple : graphe de calcul et autodiff}
-Un \textbf{graphe de calcul} représente une expression comme un enchaînement d'opérations élémentaires. Par exemple, pour
-\[
-z = x \cdot w,\quad y = z + b,\quad L = y^2,
-\]
-le graphe contient trois nœuds d'opération (multiplication, addition, carré) reliés par des dépendances ($x,w \rightarrow z \rightarrow y \rightarrow L$).
-Lors du \textbf{passage avant}, chaque nœud calcule puis \emph{stocke} sa valeur (ici $z$ et $y$), afin d'éviter de recalculer ces intermédiaires lors du backward.
-Lors du \textbf{passage arrière} (autodiff en mode inverse), chaque nœud utilise sa \textbf{dérivée locale} et le gradient amont pour mettre à jour ses parents :
-\[
-\frac{\partial L}{\partial y} = 2y,\quad
-\frac{\partial y}{\partial z} = 1,\quad
-\frac{\partial y}{\partial b} = 1,\quad
-\frac{\partial z}{\partial x} = w,\quad
-\frac{\partial z}{\partial w} = x.
-\]
-On obtient alors, par composition, $\frac{\partial L}{\partial b} = \frac{\partial L}{\partial y}$, $\frac{\partial L}{\partial z} = \frac{\partial L}{\partial y}$, $\frac{\partial L}{\partial x} = \frac{\partial L}{\partial z}\cdot w$ et $\frac{\partial L}{\partial w} = \frac{\partial L}{\partial z}\cdot x$.
-Dans notre implémentation, cette logique se traduit par des nœuds \texttt{Node} stockant une \texttt{value} (résultat du forward) et une fonction \texttt{backwardFn\_} (dérivée locale + accumulation du gradient dans les parents).
-Enfin, la \textbf{rétropropagation} correspond au cas particulier où ce graphe de calcul est celui d'un réseau de neurones : c'est l'application de l'autodiff en mode inverse à une composition de couches.
+Un exemple détaillé est donné en Annexe~\ref{app:autodiff_example}.
 
 \subsection{Présentation des éléments modulables du MLP}
+
+Après avoir décrit le fonctionnement général du MLP et les principes du calcul de gradient, nous présentons maintenant les différents éléments modulables de cette architecture.
 
 \subsubsection{Fonctions d'activation}
 Les fonctions d'activation introduisent la non-linéarité dans le réseau. Elles sont cruciales pour deux raisons :
 \begin{enumerate}
     \item \textbf{Non-linéarité} : Sans elles, une superposition de couches linéaires resterait une simple transformation linéaire unique ($W_2(W_1 x) = W'x$), incapable de modéliser des problèmes complexes (comme XOR ou MNIST).
-    \item \textbf{Recadrage des valeurs} : Elles permettent souvent de maintenir les activations dans une plage bornée (ex: [0,1] pour Sigmoïde), évitant l'explosion des valeurs lors de la propagation dans des réseaux profonds.
+    \item \textbf{Recadrage des valeurs} : Elles permettent souvent de maintenir les activations dans une plage bornée (p. ex. $[0,1]$ pour la sigmoïde), évitant l'explosion des valeurs lors de la propagation dans des réseaux profonds.
 \end{enumerate}
 
 \textbf{Sigmoïde} : transforme l'entrée en une valeur entre 0 et 1, mais peut provoquer la saturation des gradients. 
@@ -273,7 +267,7 @@ Les fonctions d'activation introduisent la non-linéarité dans le réseau. Elle
 \textbf{ReLU} (\textit{Rectified Linear Unit}) : ne conserve que les valeurs positives ($ReLU(x) = \max(0, x)$) ; elle accélère l'apprentissage et constitue aujourd'hui un choix standard \cite{goodfellow2016}.
 
 \subsubsection{Algorithmes de descente de gradient}\label{sec:theory_sgd}
-L'apprentissage consiste à minimiser la fonction de perte grâce à la descente de gradient. L'algorithme met à jour les paramètres $\theta$ (poids et biais) itérativement :
+L'apprentissage consiste à minimiser la \textit{loss} grâce à la descente de gradient. L'algorithme met à jour les paramètres $\theta$ (poids et biais) itérativement :
 \[ \theta_{t+1} = \theta_t - \eta \cdot \nabla_\theta L \]
 où $\eta$ est le \textbf{taux d'apprentissage} (\textit{learning rate}).
 \begin{itemize}
@@ -281,18 +275,18 @@ où $\eta$ est le \textbf{taux d'apprentissage} (\textit{learning rate}).
     \item Un $\eta$ trop petit garantit la stabilité mais ralentit considérablement l'apprentissage.
 \end{itemize}
 
-\begin{lstlisting}[language=pseudo, caption={Algorithme simplifie SGD}]
+\begin{lstlisting}[language=pseudo, caption={Algorithme simplifié (SGD)}]
 Pour chaque epoch:
   Pour chaque mini-batch (X, Y):
     1. Forward: P = Model(X)
     2. Loss: L = LossFn(P, Y)
-    3. Backward: Calculer dL/dW (gradients) via autdiff
+    3. Backward: Calculer les gradients via autodiff
     4. Update: W = W - learning_rate * dL/dW
 \end{lstlisting}
 
 Si ce projet se concentre sur la méthode \textbf{SGD}, il convient de citer les évolutions majeures de l'état de l'art :
 \begin{itemize}
-    \item \textbf{SGD} (\textit{Stochastic Gradient Descent}) : met à jour les poids après chaque mini-lot (\textbf{méthode implémentée}).
+    \item \textbf{SGD} (\textit{Stochastic Gradient Descent}) : met à jour les poids après chaque \textit{mini-batch} (\textbf{méthode implémentée}).
     \item \textbf{Momentum} : ajoute une inertie pour lisser les oscillations et accélérer la convergence.
     \item \textbf{Adam} : combine Momentum et adaptation du taux d'apprentissage ; optimisateurs standards actuels.
 \end{itemize}
@@ -300,7 +294,7 @@ Si ce projet se concentre sur la méthode \textbf{SGD}, il convient de citer les
 \subsection{Travaux existants et évolution des architectures}
 
 \paragraph{Premières approches : MLP et réseaux simples}
-La première tentative d'utilisation des réseaux pour la reconnaissance des chiffres remonte aux années 1990.
+Les premières tentatives d'utilisation de réseaux de neurones pour la reconnaissance des chiffres remontent aux années 1990.
 Appliqués au jeu de données MNIST, ces modèles atteignaient déjà des taux de réussite proches de 97 à 98 \%. Cependant, leur performance restait limitée car ils ne tiraient pas parti de la structure spatiale des images et manquaient d'invariance aux translations.
 
 \paragraph{Réseaux convolutionnels (CNN)}
@@ -318,27 +312,29 @@ Le projet consiste à concevoir et implémenter un pipeline complet d'apprentiss
   \item un module de manipulation de tenseurs,
   \item un réseau de couches linéaires avec fonctions d'activation,
   \item un moteur de différenciation automatique (autodiff),
-  \item un mécanisme d'entraînement (optimiseur, fonction de perte, gestion des \textit{mini-batches}),
+  \item un mécanisme d'entraînement (optimiseur, \textit{loss}, gestion des \textit{mini-batches}),
   \item l'intégration du jeu de données MNIST et l'évaluation du modèle.
 \end{itemize}
 Ce développement a été réalisé en plusieurs phases successives décrites ci-dessous.
 
-\vspace{2cm}
+\clearpage
 
 \section{Implémentation}
 \subsection{Choix techniques et justification}
 \subsubsection{Implémentation}
-Choix du langage C++ pour sa performance et son contrôle fin de la mémoire, en cohérence avec l'orientation \emph{calcul haute performance} de l'UE. Implémentation d'un moteur de calcul et d'autodiff maison (Matrix, Node, MathOps) afin de comprendre explicitement la construction du graphe computationnel et le calcul des gradients \cite{goodfellow2016}, plutôt que de s'appuyer sur des bibliothèques haut niveau.
+Choix du langage C++ pour sa performance et son contrôle fin de la mémoire, en cohérence avec l'orientation \emph{calcul haute performance} de l'UE. Implémentation d'un moteur de calcul et d'autodifférentiation interne (Matrix, Node, MathOps) afin de comprendre explicitement la construction du graphe computationnel et le calcul des gradients \cite{goodfellow2016}, plutôt que de s'appuyer sur des bibliothèques de haut niveau.
 
 \subsubsection{Matrix / Node / graphe de calcul}
 \begin{itemize}
   \item Représentation des données numériques par une classe \texttt{Matrix} générique (doubles en 2D), offrant les opérations de base nécessaires au MLP (matmul, add, mul, transpose).
   \item Représentation du graphe computationnel par la classe \texttt{Node}, qui stocke la valeur courante, le gradient associé, les parents et une fonction de rétropropagation (\texttt{backwardFn\_}).
-  \item Utilisation d'un tri topologique (méthode statique \texttt{topoSort}) pour parcourir le graphe lors de la phase de backward, plutôt que d'utiliser une récursion profonde.
+  \item Utilisation d'un tri topologique (méthode statique \texttt{topoSort}) pour parcourir le graphe lors de la phase de rétropropagation, plutôt que d'utiliser une récursion profonde.
 \end{itemize}
 
 \subsubsection{Architecture générale}
 Choix d'un perceptron multicouche (MLP) à base de couches linéaires plutôt que de réseaux convolutifs ou récurrents, afin de se concentrer sur les mécanismes d'autodiff et de rétropropagation. Introduction d'une interface \texttt{ActivationFunction} (implémentée par ReLU, Sigmoid, Tanh) pour permettre de changer de fonction d'activation sans modifier la structure globale du code. Encapsulation de la combinaison « couche linéaire + activation » dans la structure \texttt{LayerNode}, puis construction du modèle complet via un vecteur de \texttt{LayerNode} dans \texttt{MLPNetwork}.
+
+\vspace{2cm}
 
 \subsection{Architecture du MLP et organisation du code}
 Cette section décrit l'architecture logicielle du projet ainsi que les relations entre les différents modules, telles que représentées dans le diagramme UML (Figure~\ref{fig:uml}). L'objectif est de mettre en évidence la séparation des responsabilités, l'organisation hiérarchique des composants et le flux global des données au sein du système.
@@ -356,19 +352,21 @@ Au-dessus du moteur de calcul, l'architecture du réseau neuronal est construite
 Les fonctions d'activation sont modélisées via l'interface abstraite \texttt{ActivationFunction}, permettant une implémentation interchangeable des activations telles que ReLU, Sigmoid ou Tanh. L'unité fonctionnelle de base du réseau est la structure \texttt{LayerNode}, qui combine une couche linéaire et une fonction d'activation en un bloc cohérent. Le modèle complet est représenté par la classe \texttt{MLPNetwork}, structurée comme une séquence de \texttt{LayerNode}, ce qui permet de composer facilement des réseaux multi-couches de profondeur variable. Cette conception favorise la modularité et permet de modifier l'architecture du réseau sans impacter le moteur de calcul sous-jacent.
 
 \subsubsection{Module d'entraînement}
-Le module d'entraînement regroupe l'ensemble des composants nécessaires à l'apprentissage du modèle et à son évaluation. L'abstraction \texttt{LossFunction} permet de définir différentes fonctions de perte, dont \texttt{MSELoss} et \texttt{CrossEntropyLoss}, utilisées respectivement pour des tests simples et pour la classification sur MNIST. La mise à jour des paramètres est assurée par la classe abstraite \texttt{Optimizer}, avec une implémentation basée sur la descente de gradient stochastique (\texttt{SGDOptimizer}).
+Le module d'entraînement regroupe l'ensemble des composants nécessaires à l'apprentissage du modèle et à son évaluation. L'abstraction \texttt{LossFunction} permet de définir différentes fonctions de \textit{loss}, dont \texttt{MSELoss} et \texttt{CrossEntropyLoss}, utilisées respectivement pour des tests simples et pour la classification sur MNIST. La mise à jour des paramètres est assurée par la classe abstraite \texttt{Optimizer}, avec une implémentation basée sur la descente de gradient stochastique (\texttt{SGDOptimizer}).
 
-Les données sont fournies par \texttt{MNISTDataset}, puis organisées en mini-batchs à l'aide de \texttt{DataLoader}. La classe \texttt{Trainer} coordonne l'ensemble du processus d'entraînement, en orchestrant le flux suivant : chargement des données, propagation avant dans le modèle, calcul de la perte, rétropropagation des gradients et mise à jour des paramètres. Cette séparation claire des rôles permet de faire évoluer indépendamment le modèle, la fonction de perte ou la stratégie d'optimisation, tout en conservant une architecture globale cohérente.
+Les données sont fournies par \texttt{MNISTDataset}, puis organisées en mini-batchs à l'aide de \texttt{DataLoader}. La classe \texttt{Trainer} coordonne l'ensemble du processus d'entraînement, en orchestrant le flux suivant : chargement des données, propagation avant dans le modèle, calcul de la \textit{loss}, rétropropagation des gradients et mise à jour des paramètres. Cette séparation claire des rôles permet de faire évoluer indépendamment le modèle, la fonction de \textit{loss} ou la stratégie d'optimisation, tout en conservant une architecture globale cohérente.
+
+\vspace{2cm}
+
+\subsection{Implémentation détaillée}
+Cette section décrit les principaux choix d'implémentation des classes et méthodes constituant le moteur de calcul, le réseau neuronal et le pipeline d'entraînement. Après avoir présenté l'architecture globale du projet, nous détaillons ici la manière dont elle se traduit concrètement dans le code. Le diagramme UML de la Figure~\ref{fig:uml} synthétise les principales classes et relations ; l'implémentation décrite ci-dessous suit cette organisation.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{Images/conception_detaillee.png}
-  \caption{Diagramme de classes UML}
+  \caption{Diagramme de classes UML (implémentation détaillée)}
   \label{fig:uml}
 \end{figure}
-
-\subsection{Implémentation détaillée}
-Cette section décrit les principaux choix d'implémentation des classes et méthodes constituant le moteur de calcul, le réseau neuronal et le pipeline d'entraînement. L'accent est mis sur la logique interne des composants, plutôt que sur les détails syntaxiques du code.
 
 \subsubsection{Implémentation de \texttt{Matrix}}
 La classe \texttt{Matrix} constitue la brique de base du calcul numérique. Les données sont encapsulées dans un \texttt{std::vector<double>}, garantissant une allocation mémoire contiguë. Ce choix est critique pour la performance : il maximise la localité spatiale et l'efficacité des caches CPU (L1/L2), un prérequis favorable aux optimisations vectorielles (SIMD).
@@ -403,14 +401,14 @@ De plus, l'initialisation intègre une gestion explicite de la graine aléatoire
 \subsubsection{Construction du graphe computationnel (\texttt{Node}, \texttt{MathOps})}
 Le moteur d'autodifférentiation repose sur la classe \texttt{Node}, dont la gestion mémoire est assurée par des pointeurs intelligents \texttt{std::shared\_ptr}. Cette approche automatise la gestion du cycle de vie des nœuds au sein du Graphe Acyclique Dirigé (DAG), évitant ainsi les fuites de mémoire complexes inhérentes aux graphes dynamiques.
 
-Chaque \texttt{Node} contient une valeur, un gradient, une liste de parents, et surtout une fonction de rétropropagation \texttt{backwardFn\_}, typée via \texttt{std::function}. Lorsqu'une opération est invoquée via \texttt{MathOps}, l'utilisation d'expressions Lambda (\emph{Modern C++}) permet de capturer efficacement le contexte local (clôtures) nécessaire au calcul du gradient, offrant une syntaxe concise et expressive. Certaines opérations (comme \texttt{add}) supportent un broadcasting simple ($1 \times M$ vers $N \times M$), notamment pour l'ajout du biais.
+Chaque \texttt{Node} contient une valeur, un gradient, une liste de parents, et surtout une fonction de rétropropagation \texttt{backwardFn\_}, typée via \texttt{std::function}. Lorsqu'une opération est invoquée via \texttt{MathOps}, l'utilisation d'expressions lambda (\emph{C++ moderne}) permet de capturer efficacement le contexte local (clôtures) nécessaire au calcul du gradient, offrant une syntaxe concise et expressive. Certaines opérations (comme \texttt{add}) supportent une diffusion (\textit{broadcasting}) simple ($1 \times M$ vers $N \times M$), notamment pour l'ajout du biais.
 
-\begin{lstlisting}[language=C++, caption={Utilisation de Lambdas et Smart Pointers (MathOps)}]
+\begin{lstlisting}[language=C++, caption={Utilisation de lambdas et de pointeurs intelligents (MathOps)}]
 // Exemple pour l'opération Mul (e.g. y = a * b)
 Node::Ptr mul(const Node::Ptr& a, const Node::Ptr& b) {
     auto node = std::make_shared<OperationNode>(...);
 
-    // Capture du contexte par valeur (smart pointers)
+    // Capture du contexte par valeur (pointeurs intelligents)
     node->setBackwardFn([a, b](const Matrix& grad){
         // Calcul local du gradient : dL/da = grad * b
         a->addGrad(grad.mul(b->value()));
@@ -423,7 +421,7 @@ Node::Ptr mul(const Node::Ptr& a, const Node::Ptr& b) {
 La phase de rétropropagation s'effectue en trois étapes :
 \begin{enumerate}[label=\arabic*.]
   \item un tri topologique du graphe computationnel ;
-  \item l'initialisation du gradient au niveau de la fonction de perte (explicitement, ou par défaut à 1 s'il n'est pas défini) ;
+  \item l'initialisation du gradient au niveau de la fonction de \textit{loss} (explicitement, ou par défaut à 1 s'il n'est pas défini) ;
   \item l'appel successif des fonctions \texttt{backwardFn\_} de chaque nœud dans l'ordre inverse du passage avant.
 \end{enumerate}
 Cette approche garantit une propagation correcte des gradients, tout en évitant les récursions profondes.
@@ -431,7 +429,7 @@ Cette approche garantit une propagation correcte des gradients, tout en évitant
 \subsubsection{Implémentation des couches du MLP}
 \paragraph{\texttt{LinearLayer}} La classe \texttt{LinearLayer} implémente la transformation affine du réseau. La méthode \texttt{forward(input)} réalise l'opération \texttt{output = input \texttimes{} weights + bias} à l'aide des opérateurs définis dans \texttt{MathOps}. Les paramètres sont initialisés via la méthode \texttt{randomInit()}, et la méthode \texttt{parameters()} permet d'exposer les nœuds entraînables au module d'optimisation.
 
-\paragraph{Fonctions d'activation} Les fonctions d'activation sont implémentées via l'héritage et le polymorphisme d'exécution (\emph{Runtime Polymorphism}). Une classe abstraite de base définit l'interface virtuelle pure \texttt{forward()}, permettant d'interchanger dynamiquement les algorithmes (\texttt{ReLU}, \texttt{Sigmoid}, \texttt{Tanh}) sans impacter le reste du réseau.
+\paragraph{Fonctions d'activation} Les fonctions d'activation sont implémentées via l'héritage et le polymorphisme d'exécution (\emph{polymorphisme à l'exécution}). Une classe abstraite de base définit l'interface virtuelle pure \texttt{forward()}, permettant d'interchanger dynamiquement les algorithmes (\texttt{ReLU}, \texttt{Sigmoid}, \texttt{Tanh}) sans impacter le reste du réseau.
 
 \begin{lstlisting}[language=C++, caption={Polymorphisme pour les activations}]
 class ActivationFunction {
@@ -442,19 +440,19 @@ public:
 };
 
 class ReLU : public ActivationFunction { 
-    /* Implementation concrète */ 
+    /* Implémentation concrète */ 
 };
 \end{lstlisting}
 
 \paragraph{\texttt{LayerNode} \& \texttt{MLPNetwork}} Un \texttt{LayerNode} combine une couche linéaire et une fonction d'activation en une unité cohérente. La classe \texttt{MLPNetwork} applique successivement ces blocs lors de la propagation avant, permettant de construire des réseaux multi-couches de manière flexible.
 
-\subsubsection{Implémentation de la fonction de loss et de l'optimisation}
-L'apprentissage du réseau repose sur l'association d'une fonction de loss et d'un algorithme d'optimisation, tous deux intégrés au moteur d'auto-différentiation. Les fonctions de loss sont définies via une interface abstraite \texttt{LossFunction}, qui impose la méthode \texttt{forward(pred, target)}. Celle-ci construit un nœud scalaire représentant la perte du batch, directement inséré dans le graphe de calcul.
+\subsubsection{Implémentation de la fonction de \textit{loss} et de l'optimisation}
+L'apprentissage du réseau repose sur l'association d'une fonction de \textit{loss} et d'un algorithme d'optimisation, tous deux intégrés au moteur d'autodifférentiation. Les fonctions de \textit{loss} sont définies via une interface abstraite \texttt{LossFunction}, qui impose la méthode \texttt{forward(pred, target)}. Celle-ci construit un nœud scalaire représentant la \textit{loss} du mini-batch, directement inséré dans le graphe de calcul.
 
-Deux fonctions de loss ont été implémentées :
+Deux fonctions de \textit{loss} ont été implémentées :
 \begin{enumerate}[label=\arabic*.]
-  \item \textbf{MSELoss} : utilisée principalement pour les tests et la validation du moteur d'auto-différentiation. Elle correspond à l'erreur quadratique moyenne entre prédictions et cibles, la perte retournée étant la somme sur le batch, normalisée par le nombre de sorties.
-  \item \textbf{CrossEntropyLoss} : utilisée pour la classification MNIST. Elle opère directement sur les logits du réseau et intègre une opération de softmax stable numériquement. Le gradient par rapport aux logits s'exprime simplement comme la différence entre les probabilités prédites et les labels one-hot, ce qui garantit une rétropropagation efficace et stable.
+  \item \textbf{MSELoss} : utilisée principalement pour les tests et la validation du moteur d'autodifférentiation. Elle correspond à l'erreur quadratique moyenne entre prédictions et cibles, la \textit{loss} retournée étant la somme sur le mini-batch, normalisée par le nombre de sorties.
+  \item \textbf{CrossEntropyLoss} : utilisée pour la classification MNIST. Elle opère directement sur les \textit{logits} du réseau et intègre une opération de \textit{softmax} stable numériquement. Le gradient par rapport aux \textit{logits} s'exprime simplement comme la différence entre les probabilités prédites et les labels \textit{one-hot}, ce qui garantit une rétropropagation efficace et stable.
 \end{enumerate}
 
 L'optimisation des paramètres est assurée par une interface abstraite \texttt{Optimizer}, tirant parti, là encore, du mécanisme de fonctions virtuelles du C++. La méthode \texttt{step()} est redéfinie par les classes filles (comme \texttt{SGDOptimizer}), ce qui offre une extensibilité immédiate pour l'ajout futur d'algorithmes plus complexes (Adam, RMSProp) sans modifier la boucle d'entraînement.
@@ -462,15 +460,15 @@ L'optimisation des paramètres est assurée par une interface abstraite \texttt{
 \subsubsection{Boucle d'entraînement}
 La boucle d'entraînement et d'évaluation est implémentée dans la classe \texttt{Trainer}. Elle repose sur une fonction centrale \texttt{runEpoch}, paramétrée par un indicateur permettant de distinguer les phases d'apprentissage et d'évaluation.
 
-Au début de chaque époque, le \texttt{DataLoader} est réinitialisé afin de parcourir l'ensemble des mini-batchs. Pour chaque batch, les matrices d'entrée et de cibles sont encapsulées dans des nœuds constants du graphe computationnel. La propagation avant est ensuite réalisée en appliquant successivement le modèle (\texttt{MLPNetwork}) aux données d'entrée, produisant les prédictions du réseau.
+Au début de chaque époque, le \texttt{DataLoader} est réinitialisé afin de parcourir l'ensemble des mini-batchs. Pour chaque mini-batch, les matrices d'entrée et de cibles sont encapsulées dans des nœuds constants du graphe computationnel. La propagation avant est ensuite réalisée en appliquant successivement le modèle (\texttt{MLPNetwork}) aux données d'entrée, produisant les prédictions du réseau.
 
-La fonction de perte est alors évaluée à partir des prédictions et des cibles, générant un nœud de perte généralement scalaire. La valeur numérique de la perte est accumulée afin de calculer une perte moyenne sur l'ensemble de l'époque. En parallèle, la précision (accuracy) est estimée au niveau du \texttt{Trainer} en comparant, pour chaque échantillon du batch, la classe prédite (argmax des logits) à la classe cible encodée en one-hot.
+La fonction de \textit{loss} est alors évaluée à partir des prédictions et des cibles, générant un nœud de \textit{loss} généralement scalaire. La valeur numérique de la \textit{loss} est accumulée afin de calculer une \textit{loss} moyenne sur l'ensemble de l'époque. En parallèle, la précision (\textit{accuracy}) est estimée au niveau du \texttt{Trainer} en comparant, pour chaque échantillon du mini-batch, la classe prédite (\textit{argmax} des \textit{logits}) à la classe cible encodée en \textit{one-hot}.
 
-Lorsque l'époque est exécutée en mode entraînement, la phase de rétropropagation est déclenchée pour chaque batch. Les gradients des paramètres sont d'abord réinitialisés, puis la méthode \texttt{backward} est appelée sur le nœud de perte afin de propager les gradients dans le graphe computationnel. Les paramètres du réseau sont enfin mis à jour à l'aide de l'optimiseur. En mode évaluation, les étapes de rétropropagation et de mise à jour des paramètres sont désactivées, ce qui permet de mesurer les performances du modèle sans modifier son état interne.
+Lorsque l'époque est exécutée en mode entraînement, la phase de rétropropagation est déclenchée pour chaque mini-batch. Les gradients des paramètres sont d'abord réinitialisés, puis la méthode \texttt{backward} est appelée sur le nœud de \textit{loss} afin de propager les gradients dans le graphe computationnel. Les paramètres du réseau sont enfin mis à jour à l'aide de l'optimiseur. En mode évaluation, les étapes de rétropropagation et de mise à jour des paramètres sont désactivées, ce qui permet de mesurer les performances du modèle sans modifier son état interne.
 
-À la fin de l'époque, la perte moyenne et la précision globale sont calculées à partir des quantités accumulées et retournées sous forme de métriques.
+À la fin de l'époque, la \textit{loss} moyenne et la précision globale sont calculées à partir des quantités accumulées et retournées sous forme de métriques.
 
-\vspace{2cm}
+\clearpage
 
 \section{Expérimentations}
 \subsection{Configuration de l'environnement}
@@ -490,12 +488,12 @@ Toutes les expériences ont été réalisées sur une machine avec les spécific
 Processeur & \begin{tabular}[t]{@{}l@{}}
 AMD Ryzen 9 8940HX with Radeon Graphics\\
 Architecture : x86\_64\\
-Cœurs / Threads : 16 physiques / 32 logiques (2 threads par cœur)\\
+Cœurs / Threads : 16 physiques / 32 logiques (2 threads/cœur)\\
 Fréquence : 421.8 MHz (min) à 5386 MHz (max)\\
-Cache L1d : 512 KiB total, répartis en 16 instances (32 KiB chacune)\\
-Cache L1i : 512 KiB total, répartis en 16 instances (32 KiB chacune)\\
-Cache L2 : 16 MiB total, répartis en 16 instances (1 MiB chacune)\\
-Cache L3 : 64 MiB total, répartis en 2 instances (32 MiB chacune)
+Cache L1d : 512 KiB total, répartis en 16 instances\\
+Cache L1i : 512 KiB total, répartis en 16 instances\\
+Cache L2 : 16 MiB total, répartis en 16 instances\\
+Cache L3 : 64 MiB total, répartis en 2 instances
 \end{tabular} \\
 Mémoire & 30 GiB de RAM système \\
 Swap & 8.0 GiB \\
@@ -525,11 +523,10 @@ Les optimisations de compilation ont été testées avec les flags \texttt{-O3 -
 
 \subsubsection{Configuration Spécifique et Protocole}\label{subsec:protocol}
 
-Afin de limiter la variabilité des résultats, les campagnes de mesure suivent un protocole systématique de verrouillage de fréquence et d'affinité CPU. Les huit premiers cœurs physiques sont forcés à 4.0~GHz à l'aide de \texttt{cpupower}, puis les exécutions sont liées explicitement à ce jeu de cœurs via \texttt{taskset}. Le script type est le suivant :
-Le détail des commandes de configuration (verrouillage de fréquence à 4.0~GHz, isolation des cœurs) est documenté dans le fichier \texttt{scripts/README.md} et appliqué via les scripts \texttt{benchmark\_affinity.sh} et \texttt{benchmark\_large.sh}. Ce protocole s'inspire des bonnes pratiques de notre ancien cours, adaptées ici à l'architecture AMD Ryzen. Les mesures de temps sont réalisées par le programme C++ \texttt{tests/test\_benchmark\_large.cpp}, dédié au benchmarking du noyau de calcul, qui intègre une horloge haute résolution (\texttt{std::chrono}) pour exclure les surcoûts liés au système d'exploitation. Le protocole inclut systématiquement un préchauffage (\emph{warm-up}) de 5 itérations pour stabiliser les caches (L1/L2) et le \emph{branch predictor} avant le début des mesures.
+Afin de limiter la variabilité des résultats, les campagnes de mesure suivent un protocole systématique de verrouillage de fréquence et d'affinité CPU. Les huit premiers cœurs physiques sont forcés à 4.0~GHz à l'aide de \texttt{cpupower}, puis les exécutions sont liées explicitement à ce jeu de cœurs via \texttt{taskset}. Le détail des commandes de configuration (verrouillage de fréquence à 4.0~GHz, isolation des cœurs) est documenté dans le fichier \texttt{scripts/README.md} et appliqué via les scripts \texttt{benchmark\_affinity.sh} et \texttt{benchmark\_large.sh}. Un exemple de script est également donné en Annexe~\ref{app:protocol}. Ce protocole s'inspire des bonnes pratiques de notre ancien cours, adaptées ici à l'architecture AMD Ryzen. Les mesures de temps sont réalisées par le programme C++ \texttt{tests/test\_benchmark\_large.cpp}, dédié au benchmarking du noyau de calcul, qui intègre une horloge haute résolution (\texttt{std::chrono}) pour exclure les surcoûts liés au système d'exploitation. Le protocole inclut systématiquement un préchauffage (\emph{warm-up}) de 5 itérations pour stabiliser les caches (L1/L2) et le \emph{branch predictor} avant le début des mesures.
 
 \paragraph{Maîtrise de l'aléatoire}
-Au-delà du contrôle matériel, la rigueur expérimentale est assurée par le verrouillage des sources d'aléatoire logiciel. L'initialisation des poids et le mélange des données (\textit{data shuffling}) dépendent désormais d'une graine unique fixée via la ligne de commande (`--seed`). Cela permet une reproduction bit-à-bit des courbes d'apprentissage et des métriques finales, condition indispensable pour comparer objectivement l'impact des différentes méthodes d'initialisation ou des hyperparamètres.
+Au-delà du contrôle matériel, la rigueur expérimentale est assurée par le verrouillage des sources d'aléatoire logiciel. L'initialisation des poids et le mélange des données (\textit{data shuffling}) dépendent d'une graine unique fixée via la ligne de commande (\texttt{--seed}). Cela permet une reproduction bit-à-bit des courbes d'apprentissage et des métriques finales, condition indispensable pour comparer objectivement l'impact des différentes méthodes d'initialisation ou des hyperparamètres.
 
 \subsection{Analyse des performances de calcul et d'entraînement}
 
@@ -572,7 +569,7 @@ Ainsi, l'efficacité du parallélisme dépend non seulement de la taille du prob
 
 \subsubsection{Hiérarchie des performances et Speedup}
 
-La comparaison globale des implémentations sur grandes matrices met en évidence quatre paliers de performance (Figure~\ref{fig:comparison}) :
+La comparaison globale des implémentations sur grandes matrices met en évidence cinq paliers de performance (Figure~\ref{fig:comparison}) :
 
 \begin{figure}[H]
     \centering
@@ -606,12 +603,12 @@ Afin de comprendre l'impact de ces optimisations sur le temps total d'apprentiss
 
 \begin{tabular}{@{}ll@{}}
 \textbf{Architecture} & : MLP 784 $\to$ 128 $\to$ 10 avec ReLU \\
-\textbf{Batch Size}   & : 64 \\
+\textbf{Taille du mini-batch} & : 64 \\
 \textbf{Données}      & : MNIST Train (60 000 images)
 \end{tabular}
 
 \textbf{Avant optimisation (Kernel Naïf) :}
-L'application est totalement limitée par le calcul (\emph{compute-bound}). La fonction \texttt{Matrix::matmul} consomme \textbf{94.8\%} du temps total (12.05s).
+L'application est totalement limitée par le calcul (\emph{compute-bound}). La fonction \texttt{Matrix::matmul} consomme \textbf{environ 96\%} du temps total (Tableau~\ref{tab:gprof_naive}).
 
 \begin{table}[H]
     \centering
@@ -638,7 +635,7 @@ L'application est totalement limitée par le calcul (\emph{compute-bound}). La f
 \textbf{Après optimisation (BLAS) :}
 Le temps passé dans \texttt{Matrix::matmul} s'effondre à moins de \textbf{1\%} ($\approx 0.5$s). Le goulot d'étranglement se déplace alors vers :
 \begin{itemize}
-    \item Le chargement des données (\texttt{MNISTDataset::load}) : $\approx 43\%$ du temps. Ce coût élevé s'explique par l'allocation et l'initialisation à zéro (inhérente au constructeur \texttt{std::vector}) d'un volume important de mémoire (376 Mo), suivies d'une copie avec conversion de type (\texttt{uint8} vers \texttt{double}) pour chaque pixel.
+    \item Le chargement des données (\texttt{MNISTDataset::load}) : $\approx 43\%$ du temps. Ce coût élevé s'explique par l'allocation et l'initialisation à zéro (inhérente au constructeur \texttt{std::vector}) d'un volume important de mémoire (376 Mo), suivies d'une copie avec conversion de type (\texttt{uint8\_t} vers \texttt{double}) pour chaque pixel.
     \item Les allocations mémoire (\texttt{Matrix::Matrix}) : $\approx 29\%$ du temps.
 \end{itemize}
 
@@ -678,7 +675,7 @@ Bien que le noyau de calcul ait été accéléré de plusieurs centaines de fois
 
 \subsubsection{Premiers tests de convergence}
 
-Afin de valider la correction du modèle et de l'algorithme d'optimisation, nous présentons la courbe d'apprentissage sur MNIST. L'ensemble des scripts et commandes utilisés pour reproduire ces expériences est disponible en Annexe \ref{app:scripts}.
+Afin de valider la correction du modèle et de l'algorithme d'optimisation, nous présentons la courbe d'apprentissage sur MNIST. L'ensemble des scripts et commandes utilisés pour reproduire ces expériences est disponible en Annexe~\ref{app:scripts}.
 
 Les paramètres utilisés pour ce premier test sont :
 
@@ -703,36 +700,36 @@ Les paramètres utilisés pour ce premier test sont :
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.8\textwidth]{Images/training_curve.png}
-    \caption{Courbe de perte (Loss) et de précision (Accuracy) sur les données d'entraînement (\textbf{60 000 images}) et validation (\textbf{10 000 images}).}
+    \caption{Courbe de \textit{loss} et de précision (\textit{accuracy}) sur les données d'entraînement (\textbf{60 000 images}) et de validation (\textbf{10 000 images}).}
     \label{fig:training_curve}
 \end{figure}
 
 \textbf{Commentaire sur la convergence (Figure~\ref{fig:training_curve}) :}
-Cette figure présente deux graphiques : la perte (à gauche) et la précision (à droite).
+Cette figure présente deux graphiques : la \textit{loss} (à gauche) et la précision (à droite).
 \begin{itemize}
-    \item \textbf{Courbe bleue (train)} : performance sur les données d'entraînement. Elle reflète la capacité du modèle à s'ajuster aux données vues.
-    \item \textbf{Courbe rouge (test)} : performance sur les données de test, jamais vues pendant l'entraînement.
+    \item \textbf{Courbe bleue (\textit{train})} : performance sur les données d'entraînement. Elle reflète la capacité du modèle à s'ajuster aux données vues.
+    \item \textbf{Courbe rouge (\textit{validation})} : performance sur les données de validation, jamais vues pendant l'entraînement.
 \end{itemize}
-\textbf{Pourquoi cet écart ?} La courbe rouge suit la bleue mais reste légèrement en retrait (perte plus élevée, précision plus faible). C'est attendu : un modèle performe généralement mieux sur les données d'entraînement que sur des données inédites. Si l'écart devenait très important, cela indiquerait un sur-apprentissage (\textit{overfitting}) ; ici, il reste modéré, suggérant une généralisation correcte.
+\textbf{Interprétation :} La courbe rouge suit la bleue mais reste légèrement en retrait (\textit{loss} plus élevée, précision plus faible). C'est attendu : un modèle obtient généralement de meilleures performances sur les données d'entraînement que sur des données inédites. Si l'écart devenait très important, cela indiquerait un sur-apprentissage (\textit{overfitting}) ; ici, il reste modéré, suggérant une généralisation correcte.
 
 \subsubsection{Impact du Taux d'Apprentissage (Learning Rate)}
 
-Nous avons évalué l'impact du taux d'apprentissage sur la convergence du modèle en testant les valeurs $\{0.025, 0.01, 0.0075, 0.005, 0.001\}$. Les autres hyperparamètres ont été fixés : Batch $N=64$, Hidden Layer $H=128$, Activation ReLU, et Initialisation He. Pour assurer la robustesse statistique, chaque configuration a été exécutée 3 fois avec des graines différentes.
+Nous avons évalué l'impact du taux d'apprentissage sur la convergence du modèle en testant les valeurs $\{0.025, 0.01, 0.0075, 0.005, 0.001\}$. Les autres hyperparamètres ont été fixés : batch $B=64$, couche cachée $H=128$, activation ReLU et initialisation He. Pour assurer la robustesse statistique, chaque configuration a été exécutée trois fois avec des graines différentes.
 
-La Figure \ref{fig:lr_results} présente les résultats obtenus.
+La Figure~\ref{fig:lr_results} présente les résultats obtenus.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=1.0\textwidth]{Images/combined_lr_results.png}
-    \caption{Impact du Learning Rate sur la convergence (10 Epochs, 3 Seeds). Les axes de précision utilisent une échelle discontinue pour visualiser simultanément les hautes précisions ($>90\%$) et les échecs de convergence ($<40\%$).}
+    \caption{Impact du \textit{learning rate} sur la convergence (10 époques, 3 graines). Les axes de précision utilisent une échelle discontinue pour visualiser simultanément les hautes précisions ($>90\%$) et les échecs de convergence ($<40\%$).}
     \label{fig:lr_results}
 \end{figure}
 
 \textbf{Analyse des résultats :}
 \begin{itemize}
-    \item \textbf{Taux trop faible ($LR=0.001$)} : Le modèle converge mais trop lentement. Après 10 époques, la précision de test plafonne à $\sim97.2\%$, inférieure à celle obtenue avec des taux plus élevés. Les mises à jour des poids sont trop petites pour atteindre l'optimum rapidement.
-    \item \textbf{Zone Optimale ($LR \in [0.005, 0.01]$)} : Ces taux offrent le meilleur compromis. La convergence est rapide et stable, atteignant une précision de $\sim97.9\%$ à $\sim98.0\%$. $LR=0.01$ est retenu pour sa rapidité.
-    \item \textbf{Taux trop élevé ($LR=0.025$)} : On observe une instabilité critique (Divergence). Les pas de gradient sont trop grands, faisant "sauter" l'optimiseur par-dessus les minima de la fonction de perte. La précision s'effondre à $\sim32.1\%$ avec une variance énorme ($\sigma \approx 0.06$), rendant l'entraînement inefficace.
+    \item \textbf{Taux trop faible ($LR=0.001$)} : Le modèle converge mais trop lentement. Après 10 époques, la précision de validation plafonne à $\sim97.2\%$, inférieure à celle obtenue avec des taux plus élevés. Les mises à jour des poids sont trop petites pour atteindre l'optimum rapidement.
+    \item \textbf{Zone optimale ($LR \in [0.005, 0.01]$)} : Ces taux offrent le meilleur compromis. La convergence est rapide et stable, atteignant une précision de $\sim97.9\%$ à $\sim98.0\%$. $LR=0.01$ est retenu pour sa rapidité.
+    \item \textbf{Taux trop élevé ($LR=0.025$)} : On observe une instabilité critique (divergence). Les pas de gradient sont trop grands, faisant "sauter" l'optimiseur par-dessus les minima de la \textit{loss}. La précision s'effondre à $\sim32.1\%$ avec une variance élevée ($\sigma \approx 0.06$), rendant l'entraînement inefficace.
 \end{itemize}
 
 Ces résultats expérimentaux confirment directement les intuitions théoriques présentées en section \ref{sec:theory_sgd} concernant les risques de divergence (taux trop grand) et la lenteur de convergence (taux trop faible).
@@ -743,12 +740,12 @@ Nous retenons donc \textbf{$LR=0.01$} comme valeur optimale pour la suite.
 
 En fixant $LR=0.01$, nous avons étudié l'impact de la taille de batch $\{16, 32, 64, 128, 256\}$ sur la stabilité et la performance.
 
-La Figure \ref{fig:batch_results} illustre ces résultats.
+La Figure~\ref{fig:batch_results} illustre ces résultats.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=1.0\textwidth]{Images/combined_batch_results.png}
-    \caption{Impact de la Taille de Batch (20 Epochs, $LR=0.01$, 3 Seeds). Les petits batchs (16, 32) convergent mieux mais sont plus lents à exécuter. Le batch 256 diverge avec ce LR fixe.}
+    \caption{Impact de la Taille de Batch (20 époques, $LR=0.01$, 3 graines). Les petits batchs (16, 32) convergent mieux mais sont plus lents à exécuter. Le batch 256 diverge avec ce $LR$ fixe.}
     \label{fig:batch_results}
 \end{figure}
 
@@ -756,21 +753,21 @@ La Figure \ref{fig:batch_results} illustre ces résultats.
 \begin{itemize}
     \item \textbf{Petits Batchs (16, 32)} : Offrent la meilleure précision finale ($\sim98.2\%$) grâce à l'introduction de bruit dans les gradients qui aide à la généralisation. Aucune différence significative n'est observée entre 16 et 32.
     \item \textbf{Batch Moyen (64)} : Un compromis idéal offrant une précision comparable ($\sim98.2\%$) avec une meilleure efficacité de calcul (plus grande parallélisation).
-    \item \textbf{Grands Batchs ($128, 256$)} : La performance se dégrade avec $N=128$, et le modèle diverge complètement avec $N=256$. Pour stabiliser $N=256$, il faudrait probablement augmenter le LR (Linear Scaling Rule) ou utiliser un Warmup, mais avec $LR=0.01$ fixe, cela échoue.
+    \item \textbf{Grands Batchs ($128, 256$)} : La performance se dégrade avec $B=128$, et le modèle diverge complètement avec $B=256$. Pour stabiliser $B=256$, il faudrait probablement ajuster le $LR$ (\textit{linear scaling rule}) ou utiliser un \textit{warm-up}, mais avec $LR=0.01$ fixe, cela échoue.
 \end{itemize}
 
-\textit{Note : Les grands batchs sont plus rapides à exécuter par époque, car les opérations matricielles plus larges exploitent mieux le parallélisme matériel (CPU/GPU) et la vectorisation. Les petits batchs génèrent davantage d'appel noyaux (overhead) et n'utilisent qu'une partie des unités de calcul, ce qui les rend plus lents malgré leur meilleure stabilité d'optimisation.}
+\textit{Note : Les grands batchs sont plus rapides à exécuter par époque, car les opérations matricielles plus larges exploitent mieux le parallélisme matériel (CPU/GPU) et la vectorisation. Les petits batchs génèrent davantage d'appels noyau (surcoût) et n'utilisent qu'une partie des unités de calcul, ce qui les rend plus lents malgré leur meilleure stabilité d'optimisation.}
 
 \subsubsection{Impact de la Taille de la Couche Cachée (Hidden Size)}
 
-Enfin, en fixant $LR=0.01$ et Batch $N=64$, nous avons évalué l'impact du nombre de neurones dans la couche cachée $\{64, 128, 256\}$ sur la capacité du modèle.
+Enfin, en fixant $LR=0.01$ et un batch $B=64$, nous avons évalué l'impact du nombre de neurones dans la couche cachée $\{64, 128, 256\}$ sur la capacité du modèle.
 
-La Figure \ref{fig:hidden_results} illustre ces résultats.
+La Figure~\ref{fig:hidden_results} illustre ces résultats.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=1.0\textwidth]{Images/combined_hidden_results.png}
-    \caption{Impact de la Taille de la Couche Cachée (20 Epochs, $LR=0.01, Batch=64$, 3 Seeds). L'augmentation de la taille améliore la précision, mais avec des rendements décroissants au-delà de 128 neurones.}
+    \caption{Impact de la Taille de la Couche Cachée (20 époques, $LR=0.01, B=64$, 3 graines). L'augmentation de la taille améliore la précision, mais avec des rendements décroissants au-delà de 128 neurones.}
     \label{fig:hidden_results}
 \end{figure}
 
@@ -785,7 +782,7 @@ La Figure \ref{fig:hidden_results} illustre ces résultats.
 
 Nous avons comparé les fonctions d'activation \texttt{ReLU}, \texttt{Sigmoid} et \texttt{Tanh} (avec $LR=0.01, Batch=64, H=128$). Pour garantir une comparaison équitable, nous avons utilisé l'initialisation de \textbf{He} pour ReLU et de \textbf{Xavier} pour Sigmoid/Tanh. De plus, nous avons inclus une initialisation dite "Manuelle" (\textit{Manual Init}), correspondant à une distribution uniforme simple $\mathcal{U} \sim [-0.1, 0.1]$. Cette méthode naïve sert de point de référence (baseline) pour évaluer l'efficacité des méthodes modernes.
 
-La Figure \ref{fig:activation_results} présente les courbes de convergence.
+La Figure~\ref{fig:activation_results} présente les courbes de convergence.
 
 \begin{figure}[H]
     \centering
@@ -794,9 +791,9 @@ La Figure \ref{fig:activation_results} présente les courbes de convergence.
     \label{fig:activation_results}
 \end{figure}
 
-\textbf{Analyse des performances (Précision Test Moyenne) :}
+\textbf{Analyse des performances (précision de validation moyenne) :}
 \begin{itemize}
-    \item \textbf{ReLU (Manual Init) [$\sim98.24\%$]} : Notre initialisation manuelle $[-0.1, 0.1]$ a obtenu une performance comparable à He Init. Cela s'explique par le fait que pour $N_{in}=784$, l'écart-type de cette distribution uniforme ($\sim0.057$) est très proche de l'optimum théorique de He ($\sim0.05$).
+    \item \textbf{ReLU (Manual Init) [$\sim98.24\%$]} : Notre initialisation manuelle $[-0.1, 0.1]$ a obtenu une performance comparable à l'initialisation de He. Cela s'explique par le fait que pour $N_{in}=784$, l'écart-type de cette distribution uniforme ($\sim0.057$) est très proche de l'optimum théorique de He ($\sim0.05$).
     \item \textbf{ReLU (He Init) [$\sim98.19\%$]} : La performance est quasi-identique à l'initialisation manuelle, confirmant la robustesse de ReLU sur ce problème.
     \item \textbf{Tanh (Xavier) [$\sim98.06\%$]} et \textbf{Sigmoid (Xavier) [$\sim98.00\%$]} : Bien que légèrement inférieures à ReLU, ces activations "historiques" performent bien ici car l'initialisation de Xavier empêche efficacement la saturation des gradients au début de l'entraînement. Sans cette initialisation spécifique, elles auraient probablement échoué à converger aussi vite.
 \end{itemize}
@@ -809,11 +806,11 @@ La Figure \ref{fig:activation_results} présente les courbes de convergence.
 \end{itemize}
 
 \textbf{Conclusion finale des expériences :}
-La configuration optimale retenue est : \textbf{LR=0.01, Batch=64, Hidden=128, Activation=ReLU, Init=He/Manual}.
+La configuration optimale retenue est : \textbf{$LR=0.01$, $B=64$, $H=128$, activation ReLU, init. He/Manual}.
 
 \subsubsection{Impact de l'Affinité sur les charges d'entrée (Input Layer)}
 
-Les résultats présentés dans cette section analysent l'impact de l'affinité sur les opérations typiques de la couche d'entrée avec une taille de batch $N=64$ (soit une multiplication $64 \times 784$, charge de travail comparable à une matrice carrée intermédiaire). Le tableau ci-dessous détaille les résultats pour 2, 4 et 8 threads.
+Les résultats présentés dans cette section analysent l'impact de l'affinité sur les opérations typiques de la couche d'entrée avec une taille de batch $B=64$ (soit une multiplication $64 \times 784 \times 128$, charge de travail comparable à une matrice carrée intermédiaire). Le tableau ci-dessous détaille les résultats pour 2 et 8 threads.
 
 \begin{table}[H]
     \centering
@@ -851,22 +848,22 @@ L'ensemble de ces expérimentations met en lumière la dualité du défi posé p
 \textbf{Aspect performance :} L'optimisation bas niveau s'avère critique. L'utilisation de bibliothèques vectorisées (BLAS) avec une affinité CPU contrôlée (\texttt{close}) offre des gains de performance considérables sur le noyau de calcul ; dans nos mesures, la configuration la plus efficace correspond à \textbf{8 threads} avec \texttt{OMP\_PROC\_BIND=close}. Cependant, l'accélération globale de l'apprentissage reste bornée par les coûts de gestion mémoire et de chargement de données (loi d'Amdahl), soulignant l'importance d'une optimisation holistique du système.
 
 \section{Déroulé du Projet}
-L'état de l'art a été rédigé conjointement par Jianye, Hao et Xiang, afin de présenter le contexte théorique du projet et les approches existantes en matière de réseaux neuronaux et de classification MNIST. L'équipe a ensuite organisé son travail en plusieurs phases successives, chacune étant portée par un ou plusieurs membres selon leurs affinités techniques.
+L'état de l'art a été rédigé conjointement par Jianye, Hao et Xiang, afin de présenter le contexte théorique du projet et les approches existantes en matière de réseaux de neurones et de classification sur MNIST. L'équipe a ensuite organisé son travail en plusieurs phases successives, chacune portée par un ou plusieurs membres selon leurs affinités techniques.
 
 La phase de conception a été initiée par Jianye, qui a rédigé la documentation préliminaire et produit la première version du diagramme UML, permettant de clarifier l'architecture générale du projet. La mise en place du premier prototype fonctionnel du MLP a ensuite été assurée par Abdennour, qui a développé les modules fondamentaux liés aux tenseurs, aux couches linéaires et aux fonctions d'activation.
 
 La réalisation du moteur de différenciation automatique a été répartie entre Hao et Xiang, chacun prenant en charge une partie des opérations nécessaires au calcul du graphe et des gradients. Par la suite, Jianye a intégré l'ensemble de ces composants, généré une seconde version du diagramme UML pour refléter les ajustements apportés, et affiné la conception en fonction des problèmes rencontrés.
 
-Le développement du mécanisme d'entraînement a été amorcé par Xiang, tandis que Jianye et Hao poursuivent respectivement l'implémentation de l'optimiseur et des fonctions de perte. L'intégration du jeu de données MNIST et la validation du pipeline complet ont été assurées par Jianye. 
+Le développement du mécanisme d'entraînement a été amorcé par Xiang, tandis que Jianye et Hao ont poursuivi respectivement l'implémentation de l'optimiseur et des fonctions de \textit{loss}. L'intégration du jeu de données MNIST et la validation du pipeline complet ont été assurées par Jianye.
 
-De plus, Jianye a mené de nombreux tests de performance et analyses de profilage pour optimiser l'ensemble du système, ainsi que la recherche expérimentale de la configuration optimale des composants du réseau de neurones.
+Jianye a également mené des tests de performance et des analyses de profilage afin d'optimiser l'ensemble du système, ainsi qu'une recherche expérimentale visant à identifier une configuration robuste des hyperparamètres.
 
-Enfin, la rédaction du rapport est réalisée collectivement, de manière collaborative.
+Enfin, la rédaction du rapport a été réalisée collectivement.
 
 \section{Conclusion \& perspectives}
-Ce projet a permis de démystifier le fonctionnement interne des réseaux de neurones profonds en implémentant, \textit{from scratch}, un moteur complet d'apprentissage en C++. L'architecture retenue, basée sur un graphe de calcul dynamique (DAG) et la différenciation automatique, a démontré la flexibilité du C++ moderne (pointeurs intelligents, polymorphisme) pour modéliser des concepts mathématiques abstraits tout en garantissant une gestion rigoureuse de la mémoire.
+Ce projet a permis de démystifier le fonctionnement interne des réseaux de neurones profonds en implémentant, à partir de zéro (\textit{from scratch}), un moteur complet d'apprentissage en C++. L'architecture retenue, basée sur un graphe de calcul dynamique (DAG) et la différenciation automatique, a démontré la flexibilité du C++ moderne (pointeurs intelligents, polymorphisme) pour modéliser des concepts mathématiques abstraits tout en garantissant une gestion rigoureuse de la mémoire.
 
-Sur le plan de la performance, l'analyse expérimentale a mis en évidence l'impact critique des optimisations bas niveau. Si le noyau de calcul (\texttt{matmul}) a bénéficié d'une accélération spectaculaire de plus de trois ordres de grandeur ($1200\times$) grâce à BLAS et OpenMP, l'accélération globale de l'application est restée plus modeste ($7.6\times$). Ce contraste illustre parfaitement la loi d'Amdahl : une fois le calcul matriciel optimisé, le goulot d'étranglement se déplace inévitablement vers la gestion des données (I/O) et les allocations mémoire.
+Sur le plan de la performance, l'analyse expérimentale a mis en évidence l'impact critique des optimisations bas niveau. Si le noyau de calcul (\texttt{matmul}) a bénéficié d'une accélération spectaculaire de plus de trois ordres de grandeur ($1200\times$) grâce à BLAS et OpenMP, l'accélération globale de l'application est restée plus modeste ($7.6\times$). Ce contraste illustre la loi d'Amdahl : une fois le calcul matriciel optimisé, le goulot d'étranglement se déplace inévitablement vers la gestion des données (\textit{I/O}) et les allocations mémoire.
 
 \textbf{Limites et menaces à la validité :}
 Les conclusions de performance dépendent d'un protocole de mesure contrôlé (verrouillage de fréquence, affinité CPU) et peuvent varier sur d'autres architectures, avec d'autres implémentations BLAS, ou sous une charge système différente. Par ailleurs, l'analyse se concentre principalement sur le noyau \texttt{matmul} dense et ne couvre pas nécessairement l'ensemble des coûts d'un entraînement complet (pipeline de données, allocations, et surcoûts d'orchestration). Enfin, le choix d'un MLP sur MNIST limite l'extrapolation à des architectures plus modernes (CNN) et à des jeux de données plus complexes.
@@ -874,13 +871,15 @@ Les conclusions de performance dépendent d'un protocole de mesure contrôlé (v
 \textbf{Perspectives :}
 Plusieurs axes d'amélioration pourraient enrichir ce projet :
 \begin{itemize}
-    \item \textbf{Support GPU (CUDA)} : Déporter les calculs matriciels sur GPU pour accélérer massivement l'entraînement, en réduisant les transferts hôte-périphérique.
+    \item \textbf{Support GPU (CUDA)} : Déporter les calculs matriciels sur GPU pour accélérer massivement l'entraînement, en réduisant les transferts hôte–périphérique.
     \item \textbf{Vectorisation Explicite (SIMD)} : Remplacer l'auto-vectorisation du compilateur par des intrinsèques (AVX-512) ou des micro-noyaux optimisés pour exploiter pleinement les unités de calcul du CPU.
-    \item \textbf{Optimisation Mémoire} : Implémenter un \textit{Memory Pool} ou une arène d'allocation pour supprimer le surcoût de \texttt{malloc/free} identifié lors du profilage.
-    \item \textbf{Parallélisme de Modèles} : Entraîner plusieurs instances du réseau en parallèle (par exemple pour l'exploration d'hyperparamètres), en complément du parallélisme de données déjà exploité par les mini-batchs.
+    \item \textbf{Optimisation Mémoire} : Implémenter un \textit{memory pool} ou une arène d'allocation pour supprimer le surcoût de \texttt{malloc}/\texttt{free} identifié lors du profilage.
+    \item \textbf{Parallélisme de Modèles} : Entraîner plusieurs instances du réseau en parallèle (par exemple pour l'exploration d'hyperparamètres), en complément du parallélisme de données déjà exploité par les \textit{mini-batchs}.
     \item \textbf{Extension aux CNN} : Intégrer des couches de convolution pour traiter des jeux de données plus complexes, une évolution naturelle envisagée pour la suite du cursus (S2).
-    \item \textbf{Parallélisme Distribué (MPI)} : Étendre l'entraînement à plusieurs nœuds de calcul en utilisant MPI pour paralléliser le traitement des batchs (\textit{Data Parallelism}).
+    \item \textbf{Parallélisme Distribué (MPI)} : Étendre l'entraînement à plusieurs nœuds de calcul en utilisant MPI pour paralléliser le traitement des \textit{mini-batchs} (\textit{data parallelism}).
 \end{itemize}
+
+\clearpage
 
 \section{Références}
 \begin{thebibliography}{11}
@@ -896,8 +895,8 @@ Gradient-based learning applied to document recognition.
 \textit{Proceedings of the IEEE}, 86(11):2278--2324, 1998.
 
 \bibitem{cour-GLHPC}
-m1-chps.github.io/glhpc/
-\textit{UVSQ, lecture5} 2025 .
+\url{https://m1-chps.github.io/glhpc/}
+\textit{UVSQ, lecture5}, 2025. Consulté le 17/12/2025.
 
 \bibitem{rumelhart1986}
 David E. Rumelhart, Geoffrey E. Hinton, et Ronald J. Williams.
@@ -924,66 +923,85 @@ A set of level 3 basic linear algebra subprograms.
 \section{Glossaire}
 \subsection*{Contexte et État de l'art}
 \begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
-\item[Autodifférentiation] Technique permettant d'évaluer automatiquement la dérivée d'une fonction spécifiée par un programme informatique, en appliquant récursivement la règle de la chaîne (\textit{chain rule}).
-\item[MLP] \textit{Multi-Layer Perceptron} (perceptron multicouche). Réseau feed-forward composé d'empilements de couches linéaires et de fonctions d'activation.
-\item[MNIST] \textit{Modified National Institute of Standards and Technology}. Jeu de données de chiffres manuscrits (28$\times$28) utilisé comme benchmark de classification.
-\item[HPC] \textit{High-Performance Computing}. Ensemble des techniques et architectures visant à maximiser les performances de calcul.
-\item[Backpropagation] Algorithme fondamental d'entraînement des réseaux de neurones, calculant le gradient de la fonction de perte par rapport à chaque poids du réseau en propageant l'erreur de la sortie vers l'entrée.
+\item[Autodifférentiation] Calcul automatique des gradients en appliquant la règle de la chaîne sur un graphe de calcul.
+\item[MLP] \textit{Multi-Layer Perceptron} : réseau \textit{feed-forward} (couches linéaires + activations).
+\item[MNIST] Jeu de données de chiffres manuscrits (28$\times$28, 10 classes) utilisé pour la classification.
+\item[HPC] \textit{High-Performance Computing} : techniques visant à maximiser le débit de calcul.
+\item[Backpropagation] Propagation inverse des gradients depuis la \textit{loss} vers les paramètres.
 \end{description}
 
 \subsection*{Architecture et Modèles (CNN)}
 \begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
-\item[CNN] \textit{Convolutional Neural Network}. Architecture de réseau de neurones utilisant des couches de convolution, adaptée aux données structurées spatialement (images).
+\item[CNN] \textit{Convolutional Neural Network} : réseau utilisant des couches de convolution, adapté aux données spatiales (images).
 \end{description}
 
 \subsection*{Implémentation : Tenseurs et Réseaux}
 \begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
-\item[Tensor/Matrix] Dans ce projet, structure de données fondamentale encapsulant un tableau contigu de scalaires et supportant les opérations mathématiques.
-\item[RNN] \textit{Recurrent Neural Network}. Architecture de réseau intégrant des connexions récurrentes, adaptée aux données séquentielles.
+\item[Tensor/Matrix] Structure de données pour stocker des valeurs et effectuer des opérations numériques (ici, matrices denses contiguës).
+\item[RNN] \textit{Recurrent Neural Network} : réseau récurrent, adapté aux données séquentielles.
 \end{description}
 
 \subsection*{Implémentation : Optimisation}
 \begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
-\item[SGD] \textit{Stochastic Gradient Descent}. Méthode d'optimisation mettant à jour les paramètres en suivant le gradient estimé sur des mini-batchs.
+\item[SGD] \textit{Stochastic Gradient Descent} : optimisation par mise à jour des paramètres à partir du gradient estimé sur un \textit{mini-batch}.
 \end{description}
 
 \subsection*{Implémentation : Calcul et Matériel}
 \begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
-\item[CPU] \textit{Central Processing Unit}. Processeur généraliste exécutant le programme et orchestrant le calcul.
-\item[SIMD] \textit{Single Instruction, Multiple Data}. Technique d'optimisation matérielle permettant à un processeur d'effectuer la même opération sur plusieurs points de données simultanément.
-\item[BLAS] \textit{Basic Linear Algebra Subprograms}. Une spécification standard d'API pour les bibliothèques effectuant des opérations d'algèbre linéaire numérique de bas niveau (comme le produit matriciel).
-\item[OpenMP] API multi-plateforme de support du parallélisme à mémoire partagée (multithreading) en C/C++ et Fortran.
-\item[DAG] \textit{Directed Acyclic Graph}. Structure de données utilisée pour représenter le graphe de calcul, où les nœuds sont les opérations et les arêtes les dépendances de données.
-\item[Logits] Valeurs réelles en sortie du réseau avant normalisation (par exemple avant softmax), interprétées comme des scores par classe.
-\item[One-hot] Encodage d'une classe par un vecteur binaire de dimension $K$ avec un unique 1 à l'indice de la classe, et 0 ailleurs.
-\item[Softmax] Fonction transformant un vecteur de scores en distribution de probabilités, fréquemment utilisée en sortie d'un classifieur multi-classes.
-\item[Epoch] Une itération complète de l'algorithme d'apprentissage sur l'ensemble du jeu de données d'entraînement.
+\item[CPU] \textit{Central Processing Unit} : processeur généraliste exécutant le programme.
+\item[SIMD] \textit{Single Instruction, Multiple Data} : exécution vectorielle de la même opération sur plusieurs données.
+\item[BLAS] \textit{Basic Linear Algebra Subprograms} : interface standard pour l'algèbre linéaire (p. ex. produits matriciels).
+\item[OpenMP] API de parallélisme à mémoire partagée pour C/C++ et Fortran.
+\item[DAG] \textit{Directed Acyclic Graph} : graphe orienté sans cycle, utilisé comme graphe de calcul.
+\item[Logits] Scores réels produits par le modèle avant normalisation (p. ex. avant \textit{softmax}).
+\item[One-hot] Encodage d'une classe par un vecteur binaire de dimension $K$ (un seul 1, le reste à 0).
+\item[Softmax] Transformation d'un vecteur de scores en probabilités (classification multi-classes).
+\item[Epoch] Passage complet sur le jeu d'entraînement.
 \end{description}
 
 \subsection*{Expérimentations : Configuration}
 \begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
-\item[Affinité CPU] Politique de placement liant l'exécution (processus/threads) à un sous-ensemble de cœurs CPU afin de réduire la variabilité et les coûts de migration.
-\item[Warm-up] Exécutions préalables avant mesure visant à stabiliser caches, prédicteur de branchement, et état d'exécution.
+\item[Affinité CPU] Restriction du placement des threads/processus à un sous-ensemble de cœurs pour réduire la variabilité.
+\item[Warm-up] Itérations de préchauffage avant mesure (stabilisation caches et exécution).
 \end{description}
 
 \subsection*{Expérimentations : Résultats}
 \begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
-\item[Speedup] Rapport entre un temps de référence et un temps optimisé (par exemple $T_1/T_p$), mesurant l'accélération obtenue.
-\item[I/O] \textit{Input/Output} (entrées/sorties). Accès aux données (lecture/écriture) pouvant devenir un goulot d'étranglement face à un noyau de calcul optimisé.
+\item[Speedup] Accélération : rapport entre un temps de référence et un temps optimisé (p. ex. $T_1/T_p$).
+\item[I/O] \textit{Input/Output} : lecture/écriture de données, pouvant devenir un goulot d'étranglement.
 \end{description}
 
 \subsection*{Perspectives (GPU)}
 \begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
-\item[CUDA] Plateforme et modèle de programmation de NVIDIA pour l'exécution de calculs sur GPU.
-\item[GPU] \textit{Graphics Processing Unit}. Processeur massivement parallèle, particulièrement efficace pour les opérations matricielles.
+\item[CUDA] Plateforme et modèle de programmation NVIDIA pour l'exécution sur GPU.
+\item[GPU] \textit{Graphics Processing Unit} : processeur massivement parallèle, efficace pour l'algèbre linéaire.
 \end{description}
 
 \subsection*{Autres concepts}
 \begin{description}[style=multiline, leftmargin=3cm, font=\bfseries]
-\item[Overfitting] Phénomène où un modèle apprend "par cœur" les données d'entraînement (bruit inclus) et perd sa capacité à généraliser sur de nouvelles données.
+\item[Overfitting] Sur-apprentissage : le modèle s'ajuste trop aux données d'entraînement et généralise moins bien.
 \end{description}
 
 \appendix
+\section{Exemple : graphe de calcul et autodiff}\label{app:autodiff_example}
+Un \textbf{graphe de calcul} représente une expression comme un enchaînement d'opérations élémentaires. Par exemple, pour
+\[
+z = x \cdot w,\quad y = z + b,\quad L = y^2,
+\]
+le graphe contient trois nœuds d'opération (multiplication, addition, carré) reliés par des dépendances ($x,w \rightarrow z \rightarrow y \rightarrow L$).
+Lors du \textbf{passage avant}, chaque nœud calcule puis \emph{stocke} sa valeur (ici $z$ et $y$), afin d'éviter de recalculer ces intermédiaires lors du backward.
+Lors du \textbf{passage arrière} (autodiff en mode inverse), chaque nœud utilise sa \textbf{dérivée locale} et le gradient amont pour mettre à jour ses parents :
+\[
+\frac{\partial L}{\partial y} = 2y,\quad
+\frac{\partial y}{\partial z} = 1,\quad
+\frac{\partial y}{\partial b} = 1,\quad
+\frac{\partial z}{\partial x} = w,\quad
+\frac{\partial z}{\partial w} = x.
+\]
+On obtient alors, par composition, $\frac{\partial L}{\partial b} = \frac{\partial L}{\partial y}$, $\frac{\partial L}{\partial z} = \frac{\partial L}{\partial y}$, $\frac{\partial L}{\partial x} = \frac{\partial L}{\partial z}\cdot w$ et $\frac{\partial L}{\partial w} = \frac{\partial L}{\partial z}\cdot x$.
+Dans notre implémentation, cette logique se traduit par des nœuds \texttt{Node} stockant une \texttt{value} (résultat du forward) et une fonction \texttt{backwardFn\_} (dérivée locale + accumulation du gradient dans les parents).
+Enfin, la \textbf{rétropropagation} correspond au cas particulier où ce graphe de calcul est celui d'un réseau de neurones : c'est l'application de l'autodiff en mode inverse à une composition de couches.
+
 \section{Protocole de Verrouillage des Fréquences}\label{app:protocol}
 Afin de garantir la reproductibilité des mesures, le script suivant est exécuté avant chaque campagne de test pour fixer la fréquence du CPU à 4.0 GHz sur les cœurs physiques.
 
@@ -1040,7 +1058,7 @@ for hidden in "${HIDDEN_SIZES[@]}"; do
              --seed $seed \
              > "$EXP_DIR/hidden_${hidden}_seed${seed}.log"
     done
-done
-\end{lstlisting}
+	done
+	\end{lstlisting}
 
 \end{document}
