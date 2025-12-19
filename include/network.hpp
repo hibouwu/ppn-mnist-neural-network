@@ -10,6 +10,7 @@
 #include "activation.hpp"
 #include <vector>
 #include <memory>
+#include <string>
 
 class MLPNetwork {
 public:
@@ -39,6 +40,35 @@ public:
      * @brief Get all trainable parameters (weights and biases) from all layers.
      */
     std::vector<Node::Ptr> getParameters() const;
+
+    /**
+     * @brief Build a MLP with ONE hidden layer:
+     *        input -> hidden -> output
+     *
+     * @param input_dim   e.g. 784
+     * @param hidden_dim  e.g. 128
+     * @param output_dim  e.g. 10
+     * @param activation_name  e.g. "relu", "tanh"
+     * @param init_name        e.g. "he", "xavier"
+     */
+    static MLPNetwork createSingleHidden(
+        int input_dim,
+        int hidden_dim,
+        int output_dim,
+        const std::string& activation_name,
+        const std::string& init_name,
+        unsigned int seed = 0
+    );
+
+    static MLPNetwork createMultiHidden(
+        int input_dim,
+        const std::vector<int>& hidden_dims,
+        int output_dim,
+        const std::string& activation_name,
+        const std::string& init_name,
+        unsigned int seed = 0
+    );
+
 };
 
 #endif
