@@ -354,7 +354,7 @@ Les données sont fournies par \texttt{MNISTDataset}, puis organisées en mini-b
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{Images/phase4-6.png}
+  \includegraphics[width=\textwidth]{Images/conception_detaillee.png}
   \caption{Diagramme de classes UML}
   \label{fig:uml}
 \end{figure}
@@ -383,7 +383,14 @@ Les opérations fondamentales nécessaires au MLP sont implémentées explicitem
 \end{itemize}
 Les opérations élémentaires \texttt{add}, \texttt{mul} et la transposition sont également disponibles.
 
-Ce choix d'implémentation permet de comparer différentes approches d'optimisation (telles que détaillées dans la section expérimentale) tout en conservant une maîtrise totale de la chaîne de calcul. Les paramètres du réseau sont initialisés aléatoirement dans une plage contrôlée afin de rompre la symétrie au démarrage de l'apprentissage.
+Ce choix d'implémentation permet de comparer différentes approches d'optimisation (telles que détaillées dans la section expérimentale) tout en conservant une maîtrise totale de la chaîne de calcul.
+
+Concernant l'initialisation des paramètres, nous avons enrichi la méthode \texttt{randomInit} pour supporter des stratégies avancées cruciales pour la convergence des réseaux profonds :
+\begin{itemize}
+    \item \textbf{He (Kaiming) Initialization} : ajustée pour les activations ReLU, utilisant une variance de $2/n_{in}$.
+    \item \textbf{Xavier (Glorot) Initialization} : adaptée aux activations Sigmoid/Tanh.
+\end{itemize}
+De plus, l'initialisation intègre une gestion explicite de la graine aléatoire (\textit{seed}), garantissant la reproductibilité exacte des poids initiaux entre deux exécutions.
 
 \subsubsection{Construction du graphe computationnel (\texttt{Node}, \texttt{MathOps})}
 Le moteur d'autodifférentiation repose sur la classe \texttt{Node}, dont la gestion mémoire est assurée par des pointeurs intelligents \texttt{std::shared\_ptr}. Cette approche automatise la gestion du cycle de vie des nœuds au sein du Graphe Acyclique Dirigé (DAG), évitant ainsi les fuites de mémoire complexes inhérentes aux graphes dynamiques.
@@ -510,6 +517,9 @@ Les optimisations de compilation ont été testées avec les flags \texttt{-O3 -
 
 Afin de limiter la variabilité des résultats, les campagnes de mesure suivent un protocole systématique de verrouillage de fréquence et d'affinité CPU. Les huit premiers cœurs physiques sont forcés à 4.0~GHz à l'aide de \texttt{cpupower}, puis les exécutions sont liées explicitement à ce jeu de cœurs via \texttt{taskset}. Le script type est le suivant :
 Le détail des commandes de configuration (verrouillage de fréquence à 4.0~GHz, isolation des cœurs) est documenté dans le fichier \texttt{scripts/README.md} et appliqué via les scripts \texttt{benchmark\_affinity.sh} et \texttt{benchmark\_large.sh}. Ce protocole s'inspire des bonnes pratiques de notre ancien cours, adaptées ici à l'architecture AMD Ryzen. Les mesures de temps sont réalisées par le programme C++ \texttt{tests/test\_benchmark\_large.cpp}, dédié au benchmarking du noyau de calcul, qui intègre une horloge haute résolution (\texttt{std::chrono}) pour exclure les surcoûts liés au système d'exploitation. Le protocole inclut systématiquement un préchauffage (\emph{warm-up}) de 5 itérations pour stabiliser les caches (L1/L2) et le \emph{branch predictor} avant le début des mesures.
+
+\paragraph{Maîtrise de l'aléatoire}
+Au-delà du contrôle matériel, la rigueur expérimentale est assurée par le verrouillage des sources d'aléatoire logiciel. L'initialisation des poids et le mélange des données (\textit{data shuffling}) dépendent désormais d'une graine unique fixée via la ligne de commande (`--seed`). Cela permet une reproduction bit-à-bit des courbes d'apprentissage et des métriques finales, condition indispensable pour comparer objectivement l'impact des différentes méthodes d'initialisation ou des hyperparamètres.
 
 \subsection{Analyse des performances de calcul et d'entraînement}
 
@@ -654,7 +664,9 @@ Bien que le noyau de calcul ait été accéléré de plusieurs centaines de fois
     \label{fig:e2e_benchmark}
 \end{figure}
 
-\section{Convergence de l'entraînement}
+\subsection{Convergence de l'entraînement}
+
+\subsubsection{Premières test de convergence}
 
 Afin de valider la correction du modèle et de l'algorithme d'optimisation, nous présentons la courbe d'apprentissage sur MNIST.
 
@@ -664,6 +676,30 @@ Afin de valider la correction du modèle et de l'algorithme d'optimisation, nous
     \caption{Courbe de perte (Loss) et de précision (Accuracy) sur les données d'entraînement/validation.}
     \label{fig:training_curve}
 \end{figure}
+
+\subsubsection{Impact du Taux d'Apprentissage (Learning Rate)}
+
+Nous avons évalué l'impact du taux d'apprentissage sur la convergence du modèle en testant les valeurs $\{0.025, 0.01, 0.0075, 0.005, 0.001\}$. Les autres hyperparamètres ont été fixés : Batch $N=64$, Hidden Layer $H=128$, Activation ReLU, et Initialisation He. Pour assurer la robustesse statistique, chaque configuration a été exécutée 3 fois avec des graines différentes.
+
+La Figure \ref{fig:lr_results} présente les résultats obtenus.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Images/combined_lr_results.png}
+    \caption{Impact du Learning Rate sur la convergence (10 Epochs, 3 Seeds). Les axes de précision utilisent une échelle discontinue pour visualiser simultanément les hautes précisions ($>90\%$) et les échecs de convergence ($<40\%$).}
+    \label{fig:lr_results}
+\end{figure}
+
+\textbf{Analyse des résultats :}
+\begin{itemize}
+    \item \textbf{Convergence Stable ($LR \le 0.01$)} : Les taux de $0.01$, $0.0075$ et $0.005$ permettent tous d'atteindre une précision de test élevée ($\sim98\%$). $LR=0.01$ offre la convergence la plus rapide.
+    \item \textbf{Divergence ($LR = 0.025$)} : Un taux d'apprentissage trop élevé (courbe bleue) empêche le modèle de converger vers un minimum global, la précision stagnant autour de $32\%$.
+\end{itemize}
+
+Nous retenons donc \textbf{$LR=0.01$} comme valeur optimale pour la suite.
+
+
+
 
 \subsubsection{Impact de l'Affinité sur les charges d'entrée (Input Layer)}
 
@@ -733,6 +769,8 @@ Plusieurs axes d'amélioration pourraient enrichir ce projet :
     \item \textbf{Support GPU (CUDA)} : Déporter les calculs matriciels sur GPU pour accélérer massivement l'entraînement, en réduisant les transferts hôte-périphérique.
     \item \textbf{Vectorisation Explicite (SIMD)} : Remplacer l'auto-vectorisation du compilateur par des intrinsèques (AVX-512) ou des micro-noyaux optimisés pour exploiter pleinement les unités de calcul du CPU.
     \item \textbf{Optimisation Mémoire} : Implémenter un \textit{Memory Pool} ou une arène d'allocation pour supprimer le surcoût de \texttt{malloc/free} identifié lors du profilage.
+    \item \textbf{Parallélisme de Modèles} : Entraîner plusieurs instances du réseau en parallèle (par exemple pour l'exploration d'hyperparamètres), en complément du parallélisme de données déjà exploité par les mini-batchs.
+    \item \textbf{Extension aux CNN} : Intégrer des couches de convolution pour traiter des jeux de données plus complexes, une évolution naturelle envisagée pour la suite du cursus (S2).
     \item \textbf{Parallélisme Distribué (MPI)} : Étendre l'entraînement à plusieurs nœuds de calcul en utilisant MPI pour paralléliser le traitement des batchs (\textit{Data Parallelism}).
 \end{itemize}
 
