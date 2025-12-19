@@ -23,12 +23,16 @@ public:
      */
     Node::Ptr forward(const Node::Ptr& input) const;
 
+    enum class InitType { Manual, He, Xavier };
+    
     /**
      * @brief Randomly initialize weights and bias.
-     * @param min Minimum value.
-     * @param max Maximum value.
+     * @param min Minimum value (Manual mode).
+     * @param max Maximum value (Manual mode).
+     * @param initType Manual, He, or Xavier.
+     * @param seed Random seed (0 for random).
      */
-    void randomInit(double min = -1.0, double max = 1.0);
+    void randomInit(double min = -1.0, double max = 1.0, InitType initType = InitType::Manual, unsigned int seed = 0);
 
     /**
      * @brief Return trainable parameters.

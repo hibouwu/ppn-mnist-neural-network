@@ -19,22 +19,31 @@ Matrix random_matrix(size_t rows, size_t cols) {
 }
 
 int main(int argc, char** argv) {
-    size_t size = 1024; // Default
-    int reps = 1;       // Default repetitions
+    size_t M = 1024, K = 1024, N = 1024; // Defaults
+    int reps = 1;
 
-    if (argc > 1) {
-        size = std::stoi(argv[1]);
-    }
-    if (argc > 2) {
+    // Cases:
+    // 1. ./bench size reps
+    // 2. ./bench M K N reps
+    if (argc == 3) {
+        M = K = N = std::stoi(argv[1]);
         reps = std::stoi(argv[2]);
+    } else if (argc == 5) {
+        M = std::stoi(argv[1]);
+        K = std::stoi(argv[2]);
+        N = std::stoi(argv[3]);
+        reps = std::stoi(argv[4]);
+    } else if (argc > 1) {
+        M = K = N = std::stoi(argv[1]);
+        if (argc > 2) reps = std::stoi(argv[2]);
     }
 
-    // std::cout << "Benchmarking Matrix Multiplication (" << size << "x" << size << "), Reps: " << reps << "..." << std::endl;
+    // std::cout << "Benchmarking Matrix Multiplication (" << M << "x" << K << " * " << K << "x" << N << "), Reps: " << reps << "..." << std::endl;
 
-    // Create two large random matrices
-    Matrix A = random_matrix(size, size);
-    Matrix B = random_matrix(size, size);
-    Matrix C(size, size); 
+    // Create matrices A (MxK) and B (KxN)
+    Matrix A = random_matrix(M, K);
+    Matrix B = random_matrix(K, N);
+    Matrix C(M, N); 
 
     // Warmup (Always run a few times to heat up cache)
     // For very small sizes, we might want more warmups, but 5 is a safe minimum.

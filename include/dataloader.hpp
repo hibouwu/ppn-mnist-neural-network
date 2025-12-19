@@ -8,7 +8,7 @@
 
 class DataLoader {
 public:
-    DataLoader(const Matrix& inputs, const Matrix& targets, size_t batchSize);
+    DataLoader(const Matrix& inputs, const Matrix& targets, size_t batchSize, unsigned int seed = 0);
 
     void reset();
     bool hasNext() const;
@@ -21,6 +21,7 @@ private:
     size_t batchSize_;
     size_t currentIndex_;
     std::vector<size_t> indices_;
+    unsigned int seed_;
 };
 
 #endif // DATALOADER_HPP

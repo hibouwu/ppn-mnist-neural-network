@@ -1,11 +1,11 @@
 # Guide des scripts de test
 
-## Préparer l’environnement expérimental
+## Préparer l'environnement expérimental
 
 ```bash
-# 1. Préparer l’environnement (sudo requis)
+# 1. Préparer l'environnement (sudo requis)
 # ------------------------------------------------------------------
-echo "Configuration de l’environnement..."
+echo "Configuration de l'environnement..."
 # Placer le gouverneur CPU en mode performance
 sudo cpupower frequency-set -g performance
 # Verrouiller la fréquence à 4.0 GHz (4000MHz)
@@ -34,14 +34,14 @@ Conclusions :
 
 1. **Instabilité des petites matrices (Small Matrix Instability)** :
    - **Observation** : lors des premiers tests, la boucle externe en Bash introduisait de fortes variations sur les petites matrices (64x64) même en mono-thread.
-   - **Optimisation** : la boucle a été déplacée **à l’intérieur du C++ (Internal Loop)**, supprimant le bruit du lancement de processus et de l’ordonnanceur.
-   - **Résultat** : l’écart type tombe au **niveau microseconde (~2us)**, prouvant qu’avec une méthodologie correcte, les petites tailles sont très stables.
-   - **Conclusion** : malgré la stabilité, pour les matrices < 256x256 il est recommandé d’utiliser `OMP_NUM_THREADS=1`, car le overhead Fork/Join annule ou dépasse le gain du multithreading.
+   - **Optimisation** : la boucle a été déplacée **à l'intérieur du C++ (Internal Loop)**, supprimant le bruit du lancement de processus et de l'ordonnanceur.
+   - **Résultat** : l'écart type tombe au **niveau microseconde (~2us)**, prouvant qu'avec une méthodologie correcte, les petites tailles sont très stables.
+   - **Conclusion** : malgré la stabilité, pour les matrices < 256x256 il est recommandé d'utiliser `OMP_NUM_THREADS=1`, car le overhead Fork/Join annule ou dépasse le gain du multithreading.
 
    > **Étude de cas : Active Spin vs Passive Wait**
    > Même sans bruit de mesure, on observe :
    > - **8 threads (Active Spin)** : quand threads <= cœurs physiques, OpenMP busy-wait et devient très sensible au bruit système.
-   > - **16 threads (Passive Wait)** : quand threads > cœurs physiques, OpenMP passe en attente passive (yield) et la stabilité moyenne s’améliore.
+   > - **16 threads (Passive Wait)** : quand threads > cœurs physiques, OpenMP passe en attente passive (yield) et la stabilité moyenne s'améliore.
  
 2. **Méthodologie statistique** :
    - **Moyenne interne** : chaque point exécute 50-100 itérations dans C++ et prend moyenne et écart type haute précision.
@@ -51,11 +51,11 @@ Conclusions :
 3. **Affinité cœur et sursouscription** :
    - **Contexte** : les expériences utilisent `taskset -c 0-7`, limitant strictement à 8 cœurs physiques.
    - **Constat clé** : le meilleur nombre de threads est **fixé à 8**.
-   - **Pénalité d’oversubscription** : avec 16 threads, l’OS fait du context switch sur 8 cœurs.
+   - **Pénalité d'oversubscription** : avec 16 threads, l'OS fait du context switch sur 8 cœurs.
      - Pour **BLAS** (pipelines saturés), chaque switch est une perte pure : **~40% plus lent** (0.05s → 0.08s sur 2048x2048).
 
 4. **BLAS vs OpenMP maison** :
-   - **BLAS** : utilise fortement le CPU (AVX/FMA), très sensible à la limite de cœurs, s’effondre en oversubscription.
+   - **BLAS** : utilise fortement le CPU (AVX/FMA), très sensible à la limite de cœurs, s'effondre en oversubscription.
    - **OpenMP maison** :
      - Notre `dgemm_omp` parallélise mais la pipeline mono-thread est moins efficace que BLAS (bulles/attentes).
      - Donc à 16 threads sur 8 cœurs, le coût de switch peut parfois masquer des bulles et ne pas dégrader autant que BLAS, voire être légèrement plus rapide sur les grandes tailles.
@@ -70,8 +70,8 @@ Conclusions :
      - **Moyennes (256x256 à 512x512)** : 4 threads, bon compromis gain/stabilité.
      - **Grandes (>= 1024x1024)** : égal aux cœurs physiques (8 ici).
      - **Pour la suite, nous testerons par défaut 4 et 8 threads.**
-   - **BLAS** : utilisation CPU extrême, très sensible à l’oversubscription, donc threads = cœurs (8 ici).
-     - Sur petites matrices, l’impact du nombre de threads est faible.
+   - **BLAS** : utilisation CPU extrême, très sensible à l'oversubscription, donc threads = cœurs (8 ici).
+     - Sur petites matrices, l'impact du nombre de threads est faible.
      - Sur grandes matrices, choisir le nombre de cœurs physiques (8 ici).
    - **Pour les matrices 28x28 (ou 784x1) du projet** :
      - Préconiser BLAS mono-thread.
@@ -86,10 +86,10 @@ Résultats : [output/outputresult/scaling_plot.png](output/outputresult/scaling_
 ![temps plot](output/outputresult/scaling_plot.png)
 ![scaling speedup plot](output/outputresult/scaling_speedup_plot.png)
 
-### Lancer le test d’affinité
+### Lancer le test d'affinité
 
 ```bash
-# Test d’affinité (matrice 28x28)
+# Test d'affinité (matrice 28x28)
 # ------------------------------------------------------------------
 # Parcourt automatiquement différents nombres de threads et stratégies (default, close, spread)
 echo "Running Affinity Benchmark..."
@@ -99,19 +99,19 @@ echo "Running Affinity Benchmark..."
 cat output/affinity_comparison.csv
 ```
 
-**Test d’affinité (cas 28x28)** :
+**Test d'affinité (cas 28x28)** :
     -   **Contexte** : matrices 28x28, on teste `OMP_PROC_BIND` & `OMP_PLACES`.
     -   **Résultats** :
         -   **OpenMP** : `close` est meilleur à 4 threads (2.53us), devant `spread` (4.43us) et `default` (3.92us). Limiter la communication inter-cœur est vital sur si petite charge.
-        -   **BLAS** : temps constant ~0.81us, preuve d’un micro-noyau mono-thread ultra optimisé insensible aux réglages externes.
+        -   **BLAS** : temps constant ~0.81us, preuve d'un micro-noyau mono-thread ultra optimisé insensible aux réglages externes.
     -   **Conclusion** : pour 28x28, **BLAS est imbattable** (0.8us vs 2.5us pour le meilleur OMP). Si OpenMP est imposé : `4 threads + OMP_PROC_BIND=close`.
 
-## Tester l’impact des niveaux d’optimisation sur la multiplication
+## Tester l'impact des niveaux d'optimisation sur la multiplication
 
 ```bash
-# 2. Lancer le test des niveaux d’optimisation
+# 2. Lancer le test des niveaux d'optimisation
 # ------------------------------------------------------------------
-echo "Début des tests d’optimisation..."
+echo "Début des tests d'optimisation..."
 ./scripts/benchmark_large.sh
 # ou
 # Lier le script aux 8 premiers cœurs (0-7)
@@ -121,7 +121,7 @@ sudo taskset -c 0-7 bash scripts/benchmark_large.sh
 Résultats : [output/outputresult/impl_comparison.csv](output/outputresult/impl_comparison.csv)
 
 ```bash
-# Générer les graphiques de comparaison et d’accélération
+# Générer les graphiques de comparaison et d'accélération
 python3 scripts/plot_comparison.py
 ```
 
@@ -134,9 +134,9 @@ Conclusions :
 
 1. **Hiérarchie de performance** :
    - **Naïf (`ijk`)** : très lent, explosion $O(N^3)$ ; plusieurs secondes à 2048x2048.
-   - **Réordonné (`ikj`)** : simple changement d’ordre tire parti de la localité cache, gros gain.
-   - **OpenMP maison** : le parallélisme apporte un gain d’ordre de grandeur.
-   - **BLAS (OpenBLAS)** : SIMD + optimisations asm, plus de **1200x plus rapide** que l’implémentation naïve.
+   - **Réordonné (`ikj`)** : simple changement d'ordre tire parti de la localité cache, gros gain.
+   - **OpenMP maison** : le parallélisme apporte un gain d'ordre de grandeur.
+   - **BLAS (OpenBLAS)** : SIMD + optimisations asm, plus de **1200x plus rapide** que l'implémentation naïve.
 
 2. **Stratégie de visualisation (linéaire + unités adaptatives)** :
    - Échelle **linéaire**, pas logarithmique, pour montrer le gouffre (`ijk` très haut, les autres au ras du sol).
@@ -146,16 +146,16 @@ Conclusions :
      - On garde ainsi lisibilité micro + macro.
 
 3. **Accélération (Speedup)** :
-   - Les “marches” d’accélération sont claires ; BLAS atteint **~1200x** sur la plus grande taille, preuve que l’optimisation algorithmique l’emporte sur le seul hardware.
+   - Les “marches” d'accélération sont claires ; BLAS atteint **~1200x** sur la plus grande taille, preuve que l'optimisation algorithmique l'emporte sur le seul hardware.
 
 4. **Recommandations** :
    - **Optimisation algorithmique** : réordonnancement et parallélisation sont clés.
-   - **Bibliothèques optimisées** : pour l’usage réel, préférer OpenBLAS / Intel MKL, etc.
+   - **Bibliothèques optimisées** : pour l'usage réel, préférer OpenBLAS / Intel MKL, etc.
    - **Dans ce projet (matrices 28x28), le meilleur speedup est 15.3x avec BLAS 8 threads**, mais vu la faible stabilité et le faible gain du multithreading sur petites tailles, nous retenons BLAS mono-thread comme option par défaut.
 
-## Profiling des multiplications en cours d’entraînement
+## Profiling des multiplications en cours d'entraînement
 
-Pour analyser les goulots d’étranglement, nous profilons l’implémentation **Naïve** et **BLAS** sur toute la chaîne.
+Pour analyser les goulots d'étranglement, nous profilons l'implémentation **Naïve** et **BLAS** sur toute la chaîne.
 
 ### 1. Activer le profiling et compiler
 
@@ -179,7 +179,7 @@ cd ..
 
 ### 2. Lancer le profiling (implémentations séparées)
 
-On bascule d’implémentation via la variable `MATMUL_IMPL`, avec `taskset` pour simuler l’environnement limité.
+On bascule d'implémentation via la variable `MATMUL_IMPL`, avec `taskset` pour simuler l'environnement limité.
 
 ```bash
 # A. Identifier le goulot : implémentation naïve (ijk)
@@ -195,7 +195,7 @@ echo "Profiling BLAS Implementation..."
 MATMUL_IMPL=blas sudo taskset -c 0-7 ./build/ppn_train
 gprof build/ppn_train gmon.out > analysis_blas.txt
 
-# 3. Restaurer l’environnement
+# 3. Restaurer l'environnement
 # ------------------------------------------------------------------
 sudo cpupower frequency-set -g powersave
 sudo cpupower frequency-set -d 421MHz -u 5386MHz
@@ -203,23 +203,23 @@ sudo cpupower frequency-set -d 421MHz -u 5386MHz
 
 ### 3. Analyse comparative des résultats
 
-Sur 1 epoch d’entraînement, les rapports donnent :
+Sur 1 epoch d'entraînement, les rapports donnent :
 
 #### A. Avant optimisation (Naïf) — goulot identifié
 *   **Bouchon** : `Matrix::matmul` prend **12.05s**, soit **94.8%** du temps total.
 *   **Appels fréquents** : 6 256 appels en 1 epoch.
-*   **Conclusion** : la multiplication matricielle est le tueur de perf, il faut l’optimiser.
+*   **Conclusion** : la multiplication matricielle est le tueur de perf, il faut l'optimiser.
 
 #### B. Après optimisation (BLAS) — goulot levé
 *   **Gain massif** : `Matrix::matmul` réduit à **~0.5s**, chute drastique de la part CPU.
-*   **Bascule des coûts** : le temps est désormais surtout dans l’I/O et l’allocation :
+*   **Bascule des coûts** : le temps est désormais surtout dans l'I/O et l'allocation :
     -   **Chargement des données (`MNISTDataset::load`)** : ~43% (coût one-shot)
     -   **Allocations (`Matrix::Matrix`)** : ~29% (création/destruction fréquentes)
     -   **Pur calcul** : < 1% (grâce à BLAS)
 
 ### 4. Accélération End-to-End (macro-benchmark)
 
-Quelle accélération E2E quand l’opérateur est 1000x plus rapide ?
+Quelle accélération E2E quand l'opérateur est 1000x plus rapide ?
 
 | Implémentation | Temps total | Speedup | Note |
 | :--- | :--- | :--- | :--- |
@@ -228,7 +228,7 @@ Quelle accélération E2E quand l’opérateur est 1000x plus rapide ?
 | **OpenMP** | 2.03s | 6.5x | Parallélisme |
 | **BLAS** | **1.74s** | **7.6x** | **Résultat final** |
 
-**Conclusion** : malgré un opérateur 1000x plus rapide, **Amdahl** limite le gain global à **~7.6x** à cause de l’I/O et de l’allocation. C’est tout de même un saut majeur (de “très lent” à “presque instantané”).
+**Conclusion** : malgré un opérateur 1000x plus rapide, **Amdahl** limite le gain global à **~7.6x** à cause de l'I/O et de l'allocation. C'est tout de même un saut majeur (de “très lent” à “presque instantané”).
 
 ```bash
 # Revenir au mode économie ou schedutil (souvent powersave)
@@ -261,10 +261,33 @@ echo "Generating gprof report..."
 gprof build/ppn_train gmon.out > analysis_final.txt
 echo "Report saved to analysis_final.txt"
 
-# 5. Restaurer l’environnement CPU
+# 5. Restaurer l'environnement CPU
 echo "Restoring CPU environment..."
 sudo cpupower frequency-set -g powersave
 sudo cpupower frequency-set -d 421MHz -u 5386MHz
 
 echo "All done!"
 ```
+
+## Manuel de l'entraînement testé
+
+### 1. Compilation
+
+Assurez-vous d'être à la racine du projet :
+
+```bash
+mkdir -p build
+cd build
+cmake ..
+make ppn_train
+cd ..
+```
+
+### 2. Exemples d'utilisation
+
+```bash
+./scripts/exp_learning_rate.sh
+python3 scripts/analyze_results_lr.py
+python3 scripts/plot_lr_curves.py
+```
+

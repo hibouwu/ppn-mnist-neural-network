@@ -33,7 +33,10 @@ public:
     Matrix transpose() const;
 
     // Initialisation aléatoire
-    void randomInit(double min = -1.0, double max = 1.0);
+    // use_normal=false -> Uniform(param1, param2)
+    // use_normal=true  -> Normal(mean=param1, stddev=param2)
+    // seed=0 -> random_device, seed!=0 -> fixed
+    void randomInit(double param1 = -1.0, double param2 = 1.0, bool use_normal = false, unsigned int seed = 0);
 
     // Affichage
     void print() const;

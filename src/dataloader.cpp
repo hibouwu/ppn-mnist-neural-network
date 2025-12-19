@@ -3,8 +3,8 @@
 #include <random>
 #include <numeric>
 
-DataLoader::DataLoader(const Matrix& inputs, const Matrix& targets, size_t batchSize)
-    : inputs_(inputs), targets_(targets), batchSize_(batchSize), currentIndex_(0) {
+DataLoader::DataLoader(const Matrix& inputs, const Matrix& targets, size_t batchSize, unsigned int seed)
+    : inputs_(inputs), targets_(targets), batchSize_(batchSize), currentIndex_(0), seed_(seed) {
     
     // Initialize indices
     indices_.resize(inputs_.rows);
@@ -17,8 +17,13 @@ void DataLoader::reset() {
 }
 
 void DataLoader::shuffle() {
-    std::random_device rd;
-    std::mt19937 g(rd());
+    std::mt19937 g;
+    if (seed_ == 0) {
+        std::random_device rd;
+        g.seed(rd());
+    } else {
+        g.seed(seed_);
+    }
     std::shuffle(indices_.begin(), indices_.end(), g);
 }
 

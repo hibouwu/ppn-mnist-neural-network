@@ -15,22 +15,38 @@ namespace fs = std::filesystem;
 #include "trainer.hpp"
 #include "activation.hpp"
 
-// Simple configuration struct
+// configuration struct
 struct Config {
     int epochs = 1;
     int batch_size = 64;
     double learning_rate = 0.01;
     int hidden_size = 128;
     std::string data_dir = "mnist";
+    unsigned int seed = 0; // 0 = random
+    std::string activation = "relu"; // relu, sigmoid, tanh
+    std::string init = "he"; // he, xavier, manual
 };
 
 int main(int argc, char** argv) {
     Config cfg;
-    if (argc > 1) {
-        try {
-            cfg.epochs = std::stoi(argv[1]);
-        } catch (...) {
-            std::cerr << "Invalid epoch argument, using default: " << cfg.epochs << std::endl;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--epochs" && i + 1 < argc) {
+            cfg.epochs = std::stoi(argv[++i]);
+        } else if (arg == "--batch_size" && i + 1 < argc) {
+            cfg.batch_size = std::stoi(argv[++i]);
+        } else if (arg == "--learning_rate" && i + 1 < argc) {
+            cfg.learning_rate = std::stod(argv[++i]);
+        } else if (arg == "--hidden_size" && i + 1 < argc) {
+            cfg.hidden_size = std::stoi(argv[++i]);
+        } else if (arg == "--data_dir" && i + 1 < argc) {
+            cfg.data_dir = argv[++i];
+        } else if (arg == "--seed" && i + 1 < argc) {
+            cfg.seed = static_cast<unsigned int>(std::stoul(argv[++i]));
+        } else if (arg == "--activation" && i + 1 < argc) {
+            cfg.activation = argv[++i];
+        } else if (arg == "--init" && i + 1 < argc) {
+            cfg.init = argv[++i];
         }
     }
     std::cout << "Starting training with config:" << "\n"
@@ -38,6 +54,9 @@ int main(int argc, char** argv) {
               << "  Batch Size: " << cfg.batch_size << "\n"
               << "  Learning Rate: " << cfg.learning_rate << "\n"
               << "  Hidden Size: " << cfg.hidden_size << "\n"
+              << "  Seed: " << cfg.seed << "\n"
+              << "  Activation: " << cfg.activation << "\n"
+              << "  Init: " << cfg.init << "\n"
               << std::endl;
 
     // 1. Prepare Data
@@ -48,17 +67,30 @@ int main(int argc, char** argv) {
     std::cout << "Loaded " << dataset.getTrainImages().rows << " training samples and " 
               << dataset.getTestImages().rows << " test samples." << std::endl;
 
-    DataLoader trainLoader(dataset.getTrainImages(), dataset.getTrainLabels(), cfg.batch_size);
-    DataLoader testLoader(dataset.getTestImages(), dataset.getTestLabels(), cfg.batch_size); // Keep testLoader for later use
+    DataLoader trainLoader(dataset.getTrainImages(), dataset.getTrainLabels(), cfg.batch_size, cfg.seed);
+    DataLoader testLoader(dataset.getTestImages(), dataset.getTestLabels(), cfg.batch_size, cfg.seed); // Keep testLoader for later use
 
     // 2. Build Model (784 -> 128 -> 10)
     std::cout << "Building MLP Network..." << std::endl;
     MLPNetwork model;
     
-    // Layer 1: 784 -> 128 + ReLU
+    // Parse Init Type
+    LinearLayer::InitType initType = LinearLayer::InitType::Manual;
+    if (cfg.init == "he") initType = LinearLayer::InitType::He;
+    else if (cfg.init == "xavier") initType = LinearLayer::InitType::Xavier;
+    
+    // Parse Activation
+    // Layer 1: 784 -> Hidden
     auto fc1 = std::make_unique<LinearLayer>(784, cfg.hidden_size);
-    fc1->randomInit(-0.1, 0.1);
-    model.addLayer(std::move(fc1), std::make_unique<ReLU>());
+    fc1->randomInit(-0.1, 0.1, initType, cfg.seed);
+    
+    std::unique_ptr<ActivationFunction> act1;
+    if (cfg.activation == "relu") act1 = std::make_unique<ReLU>();
+    else if (cfg.activation == "sigmoid") act1 = std::make_unique<Sigmoid>();
+    else if (cfg.activation == "tanh") act1 = std::make_unique<Tanh>();
+    else act1 = std::make_unique<ReLU>(); // default
+
+    model.addLayer(std::move(fc1), std::move(act1));
 
     // Layer 2: 128 -> 10 + Sigmoid (or Softmax implicitly via CrossEntropy)
     // Note: Our CrossEntropyLoss expects LOGITS (raw outputs), so we usually 
@@ -85,8 +117,8 @@ int main(int argc, char** argv) {
     // Using Sigmoid is safe-ish, just squashes logits.
     
     auto fc2 = std::make_unique<LinearLayer>(cfg.hidden_size, 10);
-    fc2->randomInit(-0.1, 0.1);
-    // Ideally use Identity, here passing nullptr means no activation (Raw Logits)
+    fc2->randomInit(-0.1, 0.1, initType, cfg.seed);
+    // Output layer: No activation (Raw Logits for CrossEntropy)
     model.addLayer(std::move(fc2), nullptr);
 
     // 3. Setup Loss & Optimizer

@@ -97,3 +97,7 @@ add_test(NAME OptimizerTest COMMAND test_optimizer)
 add_executable(test_benchmark_large tests/test_benchmark_large.cpp ${SOURCES})
 target_link_libraries(test_benchmark_large PUBLIC ${OPENBLAS_LIB} mnist_reader_lib)
 
+
+add_executable(test_init tests/test_init.cpp ${SOURCES})
+target_link_libraries(test_init PRIVATE ${OPENBLAS_LIB} mnist_reader_lib)
+add_test(NAME InitTest COMMAND test_init)

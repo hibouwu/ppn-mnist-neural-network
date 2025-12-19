@@ -316,12 +316,29 @@ Matrix Matrix::transpose() const {
     return result;
 }
 
-void Matrix::randomInit(double min, double max) {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<> dis(min, max);
-    for (auto& val : data) {
-        val = dis(gen);
+void Matrix::randomInit(double param1, double param2, bool use_normal, unsigned int seed) {
+    // If seed is 0, use random_device (random seed)
+    // If seed != 0, use fixed seed
+    std::mt19937 gen;
+    if (seed == 0) {
+        std::random_device rd;
+        gen.seed(rd());
+    } else {
+        gen.seed(seed);
+    }
+
+    if (use_normal) {
+        // param1 = mean, param2 = stddev
+        std::normal_distribution<> dis(param1, param2);
+        for (auto& val : data) {
+            val = dis(gen);
+        }
+    } else {
+        // param1 = min, param2 = max
+        std::uniform_real_distribution<> dis(param1, param2);
+        for (auto& val : data) {
+            val = dis(gen);
+        }
     }
 }
 

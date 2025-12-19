@@ -11,15 +11,17 @@ make -j8 test_benchmark_large
 cd ..
 
 # Define parameters
-size=28
-iterations=100000 # High repetitions for tiny matrix
+M=64
+K=784
+N=128
+iterations=10000 # Enough for meaningful measurement
 
 implementations=("omp" "blas")
-thread_counts=(1 2 4 6 8 16)
+thread_counts=(2 4 8) # Focused set for report
 affinity_modes=("default" "close" "spread")
 
 echo "Implementation,Threads,Affinity,Mean,StdDev" > output/affinity_comparison.csv
-echo "=== Benchmarking Affinity for Size ${size}x${size} ==="
+echo "=== Benchmarking Affinity for ${M}x${K} * ${K}x${N} ==="
 
 for impl in "${implementations[@]}"; do
     for t in "${thread_counts[@]}"; do
@@ -50,7 +52,7 @@ for impl in "${implementations[@]}"; do
             # Run Benchmark
             echo "Running: $impl | Threads: $t | Affinity: $aff"
             
-            output=$(MATMUL_IMPL=$impl ./build/test_benchmark_large $size $iterations)
+            output=$(MATMUL_IMPL=$impl ./build/test_benchmark_large $M $K $N $iterations)
             
             # Parse output
             mean=$(echo "$output" | grep "Done. Mean:" | awk '{print $3}')

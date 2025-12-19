@@ -10,7 +10,7 @@ class Matrix {
   +add(other: Matrix): Matrix
   +mul(other: Matrix): Matrix
   +transpose(): Matrix
-  +randomInit(min: double, max: double): void
+  +randomInit(param1: double, param2: double, use_normal: bool, seed: uint): void
   +print(): void
   +operator()(r: size_t, c: size_t): double
 }
@@ -58,14 +58,20 @@ class Tanh
 ActivationFunction <|.. ReLU
 ActivationFunction <|.. Sigmoid
 ActivationFunction <|.. Tanh
+ReLU ..> MathOps : uses >
+Sigmoid ..> MathOps : uses >
+Tanh ..> MathOps : uses >
 
 class LinearLayer {
+  + {static} enum InitType { Manual, He, Xavier }
   -in_dim: size_t
   -out_dim: size_t
   -weights_: Node
   -bias_: Node
   +forward(input: Node): Node
-  +randomInit(min: double, max: double): void
+  +forward(input: Node): Node
+  +randomInit(min: double, max: double, initType: InitType, seed: uint): void
+  +parameters(): vector~shared_ptr<Node>~
   +parameters(): vector~shared_ptr<Node>~
 }
 LinearLayer o-- Node : weights, bias
