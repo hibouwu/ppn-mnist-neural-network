@@ -798,7 +798,7 @@ La Figure~\ref{fig:activation_results} présente les courbes de convergence.
     \item \textbf{Tanh (Xavier) [$\sim98.06\%$]} et \textbf{Sigmoid (Xavier) [$\sim98.00\%$]} : Bien que légèrement inférieures à ReLU, ces activations "historiques" performent bien ici car l'initialisation de Xavier empêche efficacement la saturation des gradients au début de l'entraînement. Sans cette initialisation spécifique, elles auraient probablement échoué à converger aussi vite.
 \end{itemize}
 
-\textbf{Synthèse théorique (Quand utiliser quoi ?) :}
+\textbf{Synthèse théorique :}
 \begin{itemize}
     \item \textbf{ReLU} : Le standard actuel pour les \textbf{couches cachées} des réseaux profonds (CNN, MLP). Elle évite le problème de disparition du gradient (Vanishing Gradient) et est très rapide à calculer.
     \item \textbf{Sigmoid} : Principalement utilisée pour la \textbf{couche de sortie} dans les problèmes de classification binaire (probabilité $p \in [0,1]$). À éviter dans les couches cachées profondes car elle sature (gradient $\to 0$).
