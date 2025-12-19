@@ -168,7 +168,9 @@ Aurélien Delval / Hugo Bolloré / Pablo Oliveira
 
 \renewcommand{\contentsname}{Sommaire}
 \tableofcontents
-
+\newpage
+\listoffigures
+\listoftables
 \newpage
 
 \section{Introduction}
@@ -200,11 +202,18 @@ Soit $x$ le vecteur d'entrée, $w$ le vecteur de poids et $b$ le biais. La sorti
 \[ y = \sigma(w \cdot x + b) \]
 
 \paragraph{Passage au calcul matriciel}
-Pour des raisons d'efficacité (parallélisation, vectorisation SIMD), nous ne calculons pas les activations neurone par neurone pour chaque image. Nous travaillons au contraire par \textit{mini-batches}.
-Concrètement, chaque image ($28 \times 28$) est d'abord aplatie (\textit{flattened}) en un vecteur ligne de dimension 784. Nous regroupons ensuite $N$ de ces vecteurs (correspondant au \textit{batch size}) afin de former une matrice d'entrée $X$ de dimensions $(N \times 784)$.
-Si $W$ est la matrice des poids de la couche (dimensions $784 \times \text{neurones}$), le passage avant pour l'ensemble du batch s'écrit alors sous forme de multiplication matricielle :
-\[ Y = \sigma(X \cdot W + B) \]
-où $B$ est le biais (un vecteur ligne de dimensions $(1 \times \text{neurones})$) diffusé (\textit{broadcasted}) sur les $N$ exemples du mini-batch.
+On commence par le cas d'un seul exemple. Une image MNIST de taille $28\times 28$ est vectorisée (\textit{flattened}) en un vecteur d'entrée $x\in\mathbb{R}^{1\times 784}$. Pour une couche entièrement connectée comportant $n$ neurones, on introduit une matrice de poids $W\in\mathbb{R}^{784\times n}$ et un biais $b\in\mathbb{R}^{1\times n}$. La pré-activation s'écrit alors :
+\[ z = xW + b \]
+où $z\in\mathbb{R}^{1\times n}$. Cette transformation correspond à une application affine de l'espace des pixels (dimension 784) vers un espace de représentation de dimension $n$, avant l'application de la non-linéarité $\sigma$.
+
+Dans la pratique, un traitement séquentiel (image par image) exploite imparfaitement les ressources matérielles. Afin d'augmenter le débit (\textit{throughput}), on recourt au calcul par mini-lots (\textit{mini-batches}), qui permet de reformuler une suite de produits vecteur-matrice en un unique produit matrice-matrice, particulièrement optimisé (SIMD, multi-cœurs, BLAS, et, le cas échéant, GPU).
+
+Plus précisément, en regroupant $N$ exemples, on définit la matrice d'entrées $X\in\mathbb{R}^{N\times 784}$. La propagation avant se généralise en :
+\[ Y = \sigma(XW + \mathbf{1}_N b) \]
+où $\mathbf{1}_N\in\mathbb{R}^{N\times 1}$ désigne un vecteur de uns et $\mathbf{1}_N b$ formalise la diffusion (\textit{broadcast}) du biais sur l'ensemble des $N$ exemples.
+
+Pour clarifier ce mécanisme, la figure suivante illustre d'abord le cas $xW$, puis son extension naturelle au cas matriciel avec $XW$.
+
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.7\textwidth]{Images/LayersOfMLP.png}
@@ -213,10 +222,14 @@ où $B$ est le biais (un vecteur ligne de dimensions $(1 \times \text{neurones})
 \end{figure}
 
 Cette figure illustre la structure hiérarchique du modèle (schéma purement illustratif : pour MNIST, chaque entrée est un vecteur de dimension 784, et un mini-batch correspond à une matrice $X$ de dimensions $N \times 784$) :
-\textbf{Couche d'entrée} ($x_0$ à $x_3$) : reçoit les données brutes (ici les pixels d'une image). \textbf{Couches cachées} : couches intermédiaires où le réseau apprend des représentations abstraites ; chaque neurone est connecté à tous les neurones de la couche précédente (\textit{fully connected}). \textbf{Couche de sortie} ($y$) : produit la prédiction finale (probabilités des classes pour MNIST).
-Bien que le schéma montre des connexions individuelles, notre implémentation vectorise ces opérations sous forme de produits matriciels $X \cdot W$.
 
-C'est cette opération matricielle que nous optimisons intensivement dans ce projet (BLAS, OpenMP).
+\textbf{Couche d'entrée} ($x_0$ à $x_3$) : reçoit les données brutes (ici les pixels d'une image). 
+
+\textbf{Couches cachées} : couches intermédiaires où le réseau apprend des représentations abstraites ; chaque neurone est connecté à tous les neurones de la couche précédente (\textit{fully connected}). 
+
+\textbf{Couche de sortie} ($y$) : produit la prédiction finale (probabilités des classes pour MNIST).
+
+Bien que le schéma montre des connexions individuelles, notre implémentation vectorise ces opérations sous forme de produits matriciels $X \cdot W$. C'est cette opération matricielle que nous optimisons intensivement dans ce projet (BLAS, OpenMP).
 
 L'objectif de l'apprentissage est de minimiser une fonction de perte (\textit{loss}) $L$, qui mesure l'écart entre les prédictions et les valeurs attendues. L'algorithme de rétropropagation (\textit{backpropagation}) \cite{rumelhart1986} permet de calculer le gradient $\nabla L$ par rapport à tous les paramètres.
 
@@ -690,15 +703,15 @@ Les paramètres utilisés pour ce premier test sont :
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.8\textwidth]{Images/training_curve.png}
-    \caption{Courbe de perte (Loss) et de précision (Accuracy) sur les données d'entraînement/validation.}
+    \caption{Courbe de perte (Loss) et de précision (Accuracy) sur les données d'entraînement (\textbf{60 000 images}) et validation (\textbf{10 000 images}).}
     \label{fig:training_curve}
 \end{figure}
 
 \textbf{Commentaire sur la convergence (Figure~\ref{fig:training_curve}) :}
 Cette figure présente deux graphiques : la perte (à gauche) et la précision (à droite).
 \begin{itemize}
-    \item \textbf{Courbe bleue (train)} : performance sur les données d'entraînement (\textbf{60 000 images}). Elle reflète la capacité du modèle à s'ajuster aux données vues.
-    \item \textbf{Courbe rouge (test)} : performance sur les données de test (\textbf{10 000 images}), jamais vues pendant l'entraînement.
+    \item \textbf{Courbe bleue (train)} : performance sur les données d'entraînement. Elle reflète la capacité du modèle à s'ajuster aux données vues.
+    \item \textbf{Courbe rouge (test)} : performance sur les données de test, jamais vues pendant l'entraînement.
 \end{itemize}
 \textbf{Pourquoi cet écart ?} La courbe rouge suit la bleue mais reste légèrement en retrait (perte plus élevée, précision plus faible). C'est attendu : un modèle performe généralement mieux sur les données d'entraînement que sur des données inédites. Si l'écart devenait très important, cela indiquerait un sur-apprentissage (\textit{overfitting}) ; ici, il reste modéré, suggérant une généralisation correcte.
 
@@ -853,7 +866,7 @@ Enfin, la rédaction du rapport est réalisée collectivement, de manière colla
 \section{Conclusion \& perspectives}
 Ce projet a permis de démystifier le fonctionnement interne des réseaux de neurones profonds en implémentant, \textit{from scratch}, un moteur complet d'apprentissage en C++. L'architecture retenue, basée sur un graphe de calcul dynamique (DAG) et la différenciation automatique, a démontré la flexibilité du C++ moderne (pointeurs intelligents, polymorphisme) pour modéliser des concepts mathématiques abstraits tout en garantissant une gestion rigoureuse de la mémoire.
 
-Sur le plan de la performance, l'analyse expérimentale a mis en évidence l'impact critique des optimisations bas niveau. Le passage d'une implémentation naïve ($O(N^3)$) à une utilisation efficace des bibliothèques BLAS et du parallélisme OpenMP a permis un gain de performance de plus de trois ordres de grandeur ($1200\times$), illustrant concrètement l'importance de la localité spatiale et de la vectorisation SIMD dans le calcul haute performance (HPC). Ces résultats s'expliquent par la loi d'Amdahl : une fois le calcul matriciel optimisé, le goulot d'étranglement se déplace inévitablement vers la gestion des données (I/O) et les allocations mémoire.
+Sur le plan de la performance, l'analyse expérimentale a mis en évidence l'impact critique des optimisations bas niveau. Si le noyau de calcul (\texttt{matmul}) a bénéficié d'une accélération spectaculaire de plus de trois ordres de grandeur ($1200\times$) grâce à BLAS et OpenMP, l'accélération globale de l'application est restée plus modeste ($7.6\times$). Ce contraste illustre parfaitement la loi d'Amdahl : une fois le calcul matriciel optimisé, le goulot d'étranglement se déplace inévitablement vers la gestion des données (I/O) et les allocations mémoire.
 
 \textbf{Limites et menaces à la validité :}
 Les conclusions de performance dépendent d'un protocole de mesure contrôlé (verrouillage de fréquence, affinité CPU) et peuvent varier sur d'autres architectures, avec d'autres implémentations BLAS, ou sous une charge système différente. Par ailleurs, l'analyse se concentre principalement sur le noyau \texttt{matmul} dense et ne couvre pas nécessairement l'ensemble des coûts d'un entraînement complet (pipeline de données, allocations, et surcoûts d'orchestration). Enfin, le choix d'un MLP sur MNIST limite l'extrapolation à des architectures plus modernes (CNN) et à des jeux de données plus complexes.

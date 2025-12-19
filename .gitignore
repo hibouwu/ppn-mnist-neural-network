@@ -55,4 +55,6 @@ trancripts.txt
 *.fls
 *.synctex.gz
 *.pdf
-*.brf
+ProjetRapportlatex/*.brf
+ProjetRapportlatex/*.lot
+ProjetRapportlatex/*.lof
