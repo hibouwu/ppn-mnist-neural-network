@@ -39,10 +39,13 @@
 \usepackage{moreverb}
 \usepackage{fancyhdr}
 
+% Rendre les listes moins "visuelles" et plus compactes (réduit la fatigue à la lecture)
+\setlist[itemize]{label=\textendash, leftmargin=*, nosep}
+
 \lstset{
-    basicstyle=\ttfamily\footnotesize,
-    breaklines=true,
-    frame=single,
+	    basicstyle=\ttfamily\footnotesize,
+	    breaklines=true,
+	    frame=single,
     backgroundcolor=\color{gray!5},
     literate={é}{{\'e}}1 {è}{{\`e}}1 {à}{{\`a}}1 {ç}{{\c{c}}}1 {œ}{{\oe}}1 {ù}{{\`u}}1 {É}{{\'E}}1 {È}{{\`E}}1 {À}{{\`A}}1 {Ç}{{\c{C}}}1 {Œ}{{\OE}}1 {Ê}{{\^E}}1 {ê}{{\^e}}1 {î}{{\^i}}1 {ô}{{\^o}}1 {û}{{\^u}}1
 }
@@ -634,10 +637,10 @@ L'application est totalement limitée par le calcul (\emph{compute-bound}). La f
 
 \textbf{Après optimisation (BLAS) :}
 Le temps passé dans \texttt{Matrix::matmul} s'effondre à moins de \textbf{1\%} ($\approx 0.5$s). Le goulot d'étranglement se déplace alors vers :
-\begin{itemize}
-    \item Le chargement des données (\texttt{MNISTDataset::load}) : $\approx 43\%$ du temps. Ce coût élevé s'explique par l'allocation et l'initialisation à zéro (inhérente au constructeur \texttt{std::vector}) d'un volume important de mémoire (376 Mo), suivies d'une copie avec conversion de type (\texttt{uint8\_t} vers \texttt{double}) pour chaque pixel.
-    \item Les allocations mémoire (\texttt{Matrix::Matrix}) : $\approx 29\%$ du temps.
-\end{itemize}
+\par\smallskip
+\noindent\textbf{Chargement des données (\texttt{MNISTDataset::load}).} Il représente $\approx 43\%$ du temps. Ce coût élevé s'explique par l'allocation et l'initialisation à zéro (inhérente au constructeur \texttt{std::vector}) d'un volume important de mémoire (376 Mo), suivies d'une copie avec conversion de type (\texttt{uint8\_t} vers \texttt{double}) pour chaque pixel.
+\par\smallskip
+\noindent\textbf{Allocations mémoire (\texttt{Matrix::Matrix}).} Elles représentent $\approx 29\%$ du temps.
 
 \begin{table}[H]
     \centering
@@ -706,10 +709,10 @@ Les paramètres utilisés pour ce premier test sont :
 
 \textbf{Commentaire sur la convergence (Figure~\ref{fig:training_curve}) :}
 Cette figure présente deux graphiques : la \textit{loss} (à gauche) et la précision (à droite).
-\begin{itemize}
-    \item \textbf{Courbe bleue (\textit{train})} : performance sur les données d'entraînement. Elle reflète la capacité du modèle à s'ajuster aux données vues.
-    \item \textbf{Courbe rouge (\textit{validation})} : performance sur les données de validation, jamais vues pendant l'entraînement.
-\end{itemize}
+\par\smallskip
+\noindent\textbf{Courbe bleue (\textit{train}).} Performance sur les données d'entraînement, reflétant la capacité du modèle à s'ajuster aux données vues.
+\par\smallskip
+\noindent\textbf{Courbe rouge (\textit{validation}).} Performance sur les données de validation, jamais vues pendant l'entraînement.
 \textbf{Interprétation :} La courbe rouge suit la bleue mais reste légèrement en retrait (\textit{loss} plus élevée, précision plus faible). C'est attendu : un modèle obtient généralement de meilleures performances sur les données d'entraînement que sur des données inédites. Si l'écart devenait très important, cela indiquerait un sur-apprentissage (\textit{overfitting}) ; ici, il reste modéré, suggérant une généralisation correcte.
 
 \subsubsection{Impact du Taux d'Apprentissage (Learning Rate)}
@@ -726,11 +729,12 @@ La Figure~\ref{fig:lr_results} présente les résultats obtenus.
 \end{figure}
 
 \textbf{Analyse des résultats :}
-\begin{itemize}
-    \item \textbf{Taux trop faible ($LR=0.001$)} : Le modèle converge mais trop lentement. Après 10 époques, la précision de validation plafonne à $\sim97.2\%$, inférieure à celle obtenue avec des taux plus élevés. Les mises à jour des poids sont trop petites pour atteindre l'optimum rapidement.
-    \item \textbf{Zone optimale ($LR \in [0.005, 0.01]$)} : Ces taux offrent le meilleur compromis. La convergence est rapide et stable, atteignant une précision de $\sim97.9\%$ à $\sim98.0\%$. $LR=0.01$ est retenu pour sa rapidité.
-    \item \textbf{Taux trop élevé ($LR=0.025$)} : On observe une instabilité critique (divergence). Les pas de gradient sont trop grands, faisant "sauter" l'optimiseur par-dessus les minima de la \textit{loss}. La précision s'effondre à $\sim32.1\%$ avec une variance élevée ($\sigma \approx 0.06$), rendant l'entraînement inefficace.
-\end{itemize}
+\par\smallskip
+\noindent\textbf{Taux trop faible ($LR=0.001$).} Le modèle converge, mais trop lentement. Après 10 époques, la précision de validation plafonne à $\sim97.2\%$, inférieure à celle obtenue avec des taux plus élevés, car les mises à jour des poids sont trop petites pour atteindre l'optimum rapidement.
+\par\smallskip
+\noindent\textbf{Zone optimale ($LR \in [0.005, 0.01]$).} Ces taux offrent le meilleur compromis, avec une convergence rapide et stable, atteignant une précision de $\sim97.9\%$ à $\sim98.0\%$. Nous retenons $LR=0.01$ pour sa rapidité.
+\par\smallskip
+\noindent\textbf{Taux trop élevé ($LR=0.025$).} On observe une instabilité critique (divergence) : les pas de gradient sont trop grands et l'optimiseur franchit les minima de la \textit{loss}, conduisant à une précision d'environ $\sim32.1\%$ et à une variance élevée ($\sigma \approx 0.06$), rendant l'entraînement inefficace.
 
 Ces résultats expérimentaux confirment directement les intuitions théoriques présentées en section \ref{sec:theory_sgd} concernant les risques de divergence (taux trop grand) et la lenteur de convergence (taux trop faible).
 
@@ -750,11 +754,12 @@ La Figure~\ref{fig:batch_results} illustre ces résultats.
 \end{figure}
 
 \textbf{Analyse :}
-\begin{itemize}
-    \item \textbf{Petits Batchs (16, 32)} : Offrent la meilleure précision finale ($\sim98.2\%$) grâce à l'introduction de bruit dans les gradients qui aide à la généralisation. Aucune différence significative n'est observée entre 16 et 32.
-    \item \textbf{Batch Moyen (64)} : Un compromis idéal offrant une précision comparable ($\sim98.2\%$) avec une meilleure efficacité de calcul (plus grande parallélisation).
-    \item \textbf{Grands Batchs ($128, 256$)} : La performance se dégrade avec $B=128$, et le modèle diverge complètement avec $B=256$. Pour stabiliser $B=256$, il faudrait probablement ajuster le $LR$ (\textit{linear scaling rule}) ou utiliser un \textit{warm-up}, mais avec $LR=0.01$ fixe, cela échoue.
-\end{itemize}
+\par\smallskip
+\noindent\textbf{Petits batchs (16, 32).} Ils offrent la meilleure précision finale ($\sim98.2\%$), vraisemblablement grâce au bruit introduit dans l'estimation du gradient, qui peut favoriser la généralisation. Aucune différence significative n'est observée entre 16 et 32.
+\par\smallskip
+\noindent\textbf{Batch moyen (64).} Il constitue un compromis, avec une précision comparable ($\sim98.2\%$) et une meilleure efficacité de calcul (parallélisation plus importante).
+\par\smallskip
+\noindent\textbf{Grands batchs ($128, 256$).} La performance se dégrade avec $B=128$, et le modèle diverge avec $B=256$. Pour stabiliser $B=256$, il faudrait probablement ajuster le $LR$ (\textit{linear scaling rule}) ou utiliser un \textit{warm-up}, ce qui n'est pas le cas ici avec $LR=0.01$ fixe.
 
 \textit{Note : Les grands batchs sont plus rapides à exécuter par époque, car les opérations matricielles plus larges exploitent mieux le parallélisme matériel (CPU/GPU) et la vectorisation. Les petits batchs génèrent davantage d'appels noyau (surcoût) et n'utilisent qu'une partie des unités de calcul, ce qui les rend plus lents malgré leur meilleure stabilité d'optimisation.}
 
@@ -772,11 +777,12 @@ La Figure~\ref{fig:hidden_results} illustre ces résultats.
 \end{figure}
 
 \textbf{Analyse :}
-\begin{itemize}
-    \item \textbf{Capacité Limitée ($H=64$)} : Le modèle sous-apprend légèrement, atteignant une précision de $\sim97.6\%$. Cela suggère que 64 neurones ne suffisent pas tout à fait à capturer toute la complexité de MNIST avec cette architecture simple.
-    \item \textbf{Compromis Optimal ($H=128$)} : Avec une précision de $\sim98.2\%$, cette configuration offre un gain significatif par rapport à $H=64$ sans augmenter excessivement le coût de calcul.
-    \item \textbf{Rendements Décroissants ($H=256$)} : Bien que cette configuration offre la meilleure précision ($\sim98.3\%$), le gain de $0.1\%$ est marginal par rapport au doublement du coût de calcul de la couche cachée. Pour cette tâche, $H=128$ est suffisant.
-\end{itemize}
+\par\smallskip
+\noindent\textbf{Capacité limitée ($H=64$).} Le modèle sous-apprend légèrement, avec une précision d'environ $\sim97.6\%$. Cela suggère que 64 neurones ne suffisent pas à capturer toute la complexité de MNIST avec cette architecture.
+\par\smallskip
+\noindent\textbf{Compromis ($H=128$).} La précision atteint $\sim98.2\%$, avec un gain significatif par rapport à $H=64$ sans accroître excessivement le coût de calcul.
+\par\smallskip
+\noindent\textbf{Rendements décroissants ($H=256$).} La meilleure précision est obtenue ($\sim98.3\%$), mais le gain ($\approx 0.1\%$) reste marginal au regard du doublement du coût de calcul. Pour cette tâche, $H=128$ apparaît suffisant.
 
 \subsubsection{Impact de la Fonction d'Activation et de l'Initialisation}
 
@@ -792,18 +798,20 @@ La Figure~\ref{fig:activation_results} présente les courbes de convergence.
 \end{figure}
 
 \textbf{Analyse des performances (précision de validation moyenne) :}
-\begin{itemize}
-    \item \textbf{ReLU (Manual Init) [$\sim98.24\%$]} : Notre initialisation manuelle $[-0.1, 0.1]$ a obtenu une performance comparable à l'initialisation de He. Cela s'explique par le fait que pour $N_{in}=784$, l'écart-type de cette distribution uniforme ($\sim0.057$) est très proche de l'optimum théorique de He ($\sim0.05$).
-    \item \textbf{ReLU (He Init) [$\sim98.19\%$]} : La performance est quasi-identique à l'initialisation manuelle, confirmant la robustesse de ReLU sur ce problème.
-    \item \textbf{Tanh (Xavier) [$\sim98.06\%$]} et \textbf{Sigmoid (Xavier) [$\sim98.00\%$]} : Bien que légèrement inférieures à ReLU, ces activations "historiques" performent bien ici car l'initialisation de Xavier empêche efficacement la saturation des gradients au début de l'entraînement. Sans cette initialisation spécifique, elles auraient probablement échoué à converger aussi vite.
-\end{itemize}
+\par\smallskip
+\noindent\textbf{ReLU (Manual Init) [$\sim98.24\%$].} Notre initialisation manuelle $[-0.1, 0.1]$ obtient une performance comparable à l'initialisation de He. Cela s'explique par le fait que, pour $N_{in}=784$, l'écart-type de cette distribution uniforme ($\sim0.057$) est proche de l'optimum théorique de He ($\sim0.05$).
+\par\smallskip
+\noindent\textbf{ReLU (He Init) [$\sim98.19\%$].} La performance est quasi-identique à l'initialisation manuelle, confirmant la robustesse de ReLU sur ce problème.
+\par\smallskip
+\noindent\textbf{Tanh (Xavier) [$\sim98.06\%$] et Sigmoid (Xavier) [$\sim98.00\%$].} Bien que légèrement inférieures à ReLU, ces activations restent compétitives ici car l'initialisation de Xavier limite la saturation des gradients au début de l'entraînement. Sans cette initialisation, la convergence aurait été sensiblement dégradée.
 
 \textbf{Synthèse théorique :}
-\begin{itemize}
-    \item \textbf{ReLU} : Le standard actuel pour les \textbf{couches cachées} des réseaux profonds (CNN, MLP). Elle évite le problème de disparition du gradient (Vanishing Gradient) et est très rapide à calculer.
-    \item \textbf{Sigmoid} : Principalement utilisée pour la \textbf{couche de sortie} dans les problèmes de classification binaire (probabilité $p \in [0,1]$). À éviter dans les couches cachées profondes car elle sature (gradient $\to 0$).
-    \item \textbf{Tanh} : Préférée à la Sigmoid dans les couches cachées si l'on souhaite des sorties centrées sur 0 (utile pour les RNNs), mais souffre aussi de saturation.
-\end{itemize}
+\par\smallskip
+\noindent\textbf{ReLU.} Standard actuel pour les \textbf{couches cachées} des réseaux profonds (CNN, MLP) : elle atténue le problème de disparition du gradient et reste très rapide à calculer.
+\par\smallskip
+\noindent\textbf{Sigmoid.} Principalement utilisée en \textbf{sortie} pour la classification binaire (probabilité $p \in [0,1]$). Elle est généralement à éviter dans les couches cachées profondes en raison de sa saturation (gradient $\to 0$).
+\par\smallskip
+\noindent\textbf{Tanh.} Souvent préférée à Sigmoid dans les couches cachées lorsque l'on souhaite des sorties centrées sur 0 (utile notamment pour certains RNN), mais elle souffre également de saturation.
 
 \textbf{Conclusion finale des expériences :}
 La configuration optimale retenue est : \textbf{$LR=0.01$, $B=64$, $H=128$, activation ReLU, init. He/Manual}.
@@ -832,12 +840,10 @@ Les résultats présentés dans cette section analysent l'impact de l'affinité 
 \end{table}
 
 L'analyse de ces données pour une multiplication $64 \times 784 \times 128$ révèle :
-
-\begin{itemize}
-    \item \textbf{Impact de l'Affinité sur BLAS} : L'utilisation de l'affinité \texttt{close} est critique. À 8 threads, elle permet de descendre à $45 \mu$s, contre $68 \mu$s en configuration par défaut (\texttt{default}), soit un gain de \textbf{33\%}. La configuration \texttt{spread} est la moins performante ($75 \mu$s), dispersant les threads loin des caches partagés.
-    
-    \item \textbf{Impact sur OpenMP} : Notre implémentation naïve réagit différemment. À 8 threads, le mode \texttt{default} ($149 \mu$s) et \texttt{close} ($152 \mu$s) sont équivalents, tandis que \texttt{spread} dégrade massivement les performances ($236 \mu$s). Cela indique que le système d'exploitation place par défaut les threads de manière raisonnablement compacte, mais que forcer la dispersion nuit gravement à la cohérence de cache pour notre algorithme.
-\end{itemize}
+\par\smallskip
+\noindent\textbf{Impact de l'affinité sur BLAS.} Le mode \texttt{close} est déterminant : à 8 threads, il réduit le temps à $45 \mu$s, contre $68 \mu$s en configuration \texttt{default}, soit un gain d'environ \textbf{33\%}. Le mode \texttt{spread} est le moins performant ($75 \mu$s), car il disperse les threads et pénalise la localité des caches partagés.
+\par\smallskip
+\noindent\textbf{Impact sur OpenMP.} Notre implémentation réagit différemment : à 8 threads, \texttt{default} ($149 \mu$s) et \texttt{close} ($152 \mu$s) sont comparables, tandis que \texttt{spread} dégrade fortement les performances ($236 \mu$s). Cela suggère que le placement par défaut est déjà relativement compact, et que forcer la dispersion nuit à la cohérence de cache de notre algorithme.
 
 \textbf{Conclusion :} Pour les opérations de la couche d'entrée ($64 \times 784 \times 128$), l'utilisation de bibliothèques optimisées comme BLAS est impérative. Cependant, ces bibliothèques sont très sensibles à la localité : pour obtenir le gain de performance maximal (facteur $\times 4$ face à OpenMP), il est crucial de configurer l'affinité des threads (mode \texttt{close}) afin de minimiser les latences cache.
 
@@ -870,14 +876,14 @@ Les conclusions de performance dépendent d'un protocole de mesure contrôlé (v
 
 \textbf{Perspectives :}
 Plusieurs axes d'amélioration pourraient enrichir ce projet :
-\begin{itemize}
-    \item \textbf{Support GPU (CUDA)} : Déporter les calculs matriciels sur GPU pour accélérer massivement l'entraînement, en réduisant les transferts hôte–périphérique.
-    \item \textbf{Vectorisation Explicite (SIMD)} : Remplacer l'auto-vectorisation du compilateur par des intrinsèques (AVX-512) ou des micro-noyaux optimisés pour exploiter pleinement les unités de calcul du CPU.
-    \item \textbf{Optimisation Mémoire} : Implémenter un \textit{memory pool} ou une arène d'allocation pour supprimer le surcoût de \texttt{malloc}/\texttt{free} identifié lors du profilage.
-    \item \textbf{Parallélisme de Modèles} : Entraîner plusieurs instances du réseau en parallèle (par exemple pour l'exploration d'hyperparamètres), en complément du parallélisme de données déjà exploité par les \textit{mini-batchs}.
-    \item \textbf{Extension aux CNN} : Intégrer des couches de convolution pour traiter des jeux de données plus complexes, une évolution naturelle envisagée pour la suite du cursus (S2).
-    \item \textbf{Parallélisme Distribué (MPI)} : Étendre l'entraînement à plusieurs nœuds de calcul en utilisant MPI pour paralléliser le traitement des \textit{mini-batchs} (\textit{data parallelism}).
-\end{itemize}
+\par\smallskip
+\noindent\textbf{Support GPU (CUDA).} Déporter les calculs matriciels sur GPU afin d'accélérer fortement l'entraînement, tout en minimisant les transferts hôte–périphérique.
+\par\smallskip
+\noindent\textbf{Vectorisation explicite (SIMD).} Remplacer l'auto-vectorisation du compilateur par des intrinsèques (AVX-512) ou des micro-noyaux optimisés pour exploiter pleinement les unités de calcul.
+\par\smallskip
+\noindent\textbf{Optimisation mémoire.} Mettre en place un \textit{memory pool} ou une arène d'allocation pour réduire le surcoût de \texttt{malloc}/\texttt{free} mis en évidence par le profilage.
+\par\smallskip
+\noindent\textbf{Extensions à l'échelle.} Explorer le \textbf{parallélisme de modèles} (exécution de plusieurs instances pour l'exploration d'hyperparamètres), l'\textbf{extension aux CNN} pour traiter des jeux de données plus complexes, ainsi que le \textbf{parallélisme distribué (MPI)} pour paralléliser le traitement des \textit{mini-batchs} (\textit{data parallelism}).
 
 \clearpage
 
