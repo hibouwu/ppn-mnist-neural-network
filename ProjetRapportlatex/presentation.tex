@@ -139,7 +139,7 @@ Objectif : $\sim$98\% de précision
 \column{0.48\textwidth}
 \begin{figure}
 \centering
-\includegraphics[width=\textwidth,height=0.65\textheight,keepaspectratio]{Images/LayersOfMLP.png}
+\includegraphics[width=\linewidth,height=0.6\textheight,keepaspectratio]{Images/LayersOfMLP.png}
 \caption{Structure hiérarchique du MLP}
 \end{figure}
 
@@ -214,9 +214,9 @@ Gradients :
 
 \begin{frame}{Architecture logicielle}
 \begin{center}
-\includegraphics[width=0.95\textwidth,height=0.75\textheight,keepaspectratio]{Images/conception_detaillee.png}
+\includegraphics[width=0.9\textwidth,height=0.65\textheight,keepaspectratio]{Images/conception_detaillee.png}
 \end{center}
-\vspace{-0.3cm}
+\vspace{-0.15cm}
 \begin{center}
 \small
 Architecture en couches : du calcul matriciel au pipeline d'entraînement
@@ -240,7 +240,7 @@ MLPNetwork MLPNetwork::createMultiHidden(
     MLPNetwork net;
     int prev = input_dim;
     
-    // Couches cachées : prev -> h + activation
+    // Couches cachees : prev -> h + activation
     for (int h : hidden_dims) {
         net.addLayer(
             makeLinear(prev, h, init_name, seed),
@@ -389,13 +389,13 @@ Node::Ptr mul(const Node::Ptr& a, const Node::Ptr& b) {
 \vspace{0.2cm}
 
 \begin{lstlisting}[language=C++]
-// Implémentation SGD (optimizer.cpp)
+// Implementation SGD (optimizer.cpp)
 void SGDOptimizer::step() {
     for (auto& p : parameters_) {
         Matrix& val = const_cast<Matrix&>(p->value());
         const Matrix& grad = p->grad();
         for(size_t i=0; i<val.data.size(); ++i) {
-            val.data[i] -= lr_ * grad.data[i]; // W = W - η∇W
+            val.data[i] -= lr_ * grad.data[i]; // W = W - eta * grad
         }
     }
 }
@@ -452,14 +452,14 @@ Mesures fiables et reproductibles pour comparer les optimisations
 \begin{columns}[c]
 \column{0.49\textwidth}
 \begin{center}
-\includegraphics[width=\textwidth,height=0.52\textheight,keepaspectratio]{Images/scaling_plot.png}
+\includegraphics[width=\linewidth,height=0.46\textheight,keepaspectratio]{Images/scaling_plot.png}
 \vspace{-0.15cm}
 {\scriptsize Temps d'exécution vs threads}
 \end{center}
 
 \column{0.49\textwidth}
 \begin{center}
-\includegraphics[width=\textwidth,height=0.52\textheight,keepaspectratio]{Images/scaling_speedup_plot.png}
+\includegraphics[width=\linewidth,height=0.46\textheight,keepaspectratio]{Images/scaling_speedup_plot.png}
 \vspace{-0.15cm}
 {\scriptsize Speedup vs threads}
 \end{center}
@@ -478,7 +478,7 @@ Mesures fiables et reproductibles pour comparer les optimisations
 \begin{frame}{Hiérarchie des performances}
 \vspace{-0.3cm}
 \begin{center}
-\includegraphics[width=0.88\textwidth,height=0.57\textheight,keepaspectratio]{Images/comparison_grid_plot.png}
+\includegraphics[width=0.82\textwidth,height=0.5\textheight,keepaspectratio]{Images/comparison_grid_plot.png}
 \vspace{-0.15cm}
 {\scriptsize Comparaison des implémentations matmul (matrices 2048×2048)}
 \end{center}
@@ -525,7 +525,7 @@ OpenMP (8T) & $\sim$150 & 20× & Parallélisation \\
 
 \column{0.44\textwidth}
 \begin{center}
-\includegraphics[width=\textwidth,height=0.48\textheight,keepaspectratio]{Images/e2e_benchmark_plot.png}
+\includegraphics[width=\linewidth,height=0.42\textheight,keepaspectratio]{Images/e2e_benchmark_plot.png}
 \vspace{-0.15cm}
 {\scriptsize Répartition temps E2E}
 \end{center}
@@ -542,7 +542,7 @@ OpenMP (8T) & $\sim$150 & 20× & Parallélisation \\
 \begin{frame}{Convergence : premiers résultats}
 \vspace{-0.2cm}
 \begin{center}
-\includegraphics[width=0.85\textwidth,height=0.6\textheight,keepaspectratio]{Images/training_curve.png}
+\includegraphics[width=0.8\textwidth,height=0.52\textheight,keepaspectratio]{Images/training_curve.png}
 \vspace{-0.15cm}
 {\scriptsize Loss et Accuracy (LR=0.01, Batch=64, Hidden=128, ReLU, 20 époques)}
 \end{center}
@@ -571,7 +571,7 @@ Rapide et stable
 
 \begin{frame}{Impact du Learning Rate}
 \begin{figure}
-\includegraphics[width=0.9\textwidth]{Images/combined_lr_results.png}
+\includegraphics[width=0.85\textwidth,height=0.48\textheight,keepaspectratio]{Images/combined_lr_results.png}
 \caption{Influence du taux d'apprentissage (10 époques, 3 graines)}
 \end{figure}
 
@@ -579,14 +579,14 @@ Rapide et stable
 
 \begin{itemize}
     \item \textbf{LR = 0.001} : Trop lent ($\sim$97.2\%)
-    \item \textbf{LR ∈ [0.005, 0.01]} : \textcolor{green}{\textbf{Zone optimale}} ($\sim$98.0\%)
+    \item \textbf{LR $\in [0.005, 0.01]$} : \textcolor{green}{\textbf{Zone optimale}} ($\sim$98.0\%)
     \item \textbf{LR = 0.025} : \textcolor{red}{\textbf{Divergence}} ($\sim$32.1\%, variance élevée)
 \end{itemize}
 \end{frame}
 
 \begin{frame}{Impact du Batch Size}
 \begin{center}
-\includegraphics[width=0.95\textwidth,height=0.65\textheight,keepaspectratio]{Images/combined_batch_results.png}
+\includegraphics[width=0.88\textwidth,height=0.55\textheight,keepaspectratio]{Images/combined_batch_results.png}
 \vspace{-0.2cm}
 \small Influence de la taille de batch (20 époques, LR=0.01, 3 graines, Hidden=128)
 \end{center}
@@ -596,7 +596,7 @@ Rapide et stable
 \begin{columns}[T]
 \column{0.33\textwidth}
 \centering
-\textbf{B ∈ \{16, 32\}}\\
+\textbf{B $\in \{16, 32\}$}\\
 Meilleur accuracy\\
 Plus lent
 
@@ -608,7 +608,7 @@ Plus lent
 
 \column{0.33\textwidth}
 \centering
-\textcolor{red}{\textbf{B ∈ \{128, 256\}}}\\
+\textcolor{red}{\textbf{B $\in \{128, 256\}$}}\\
 \textcolor{red}{Dégradation}\\
 \textcolor{red}{LR fixe inadapté}
 \end{columns}
@@ -619,7 +619,7 @@ Plus lent
 \begin{columns}[c]
 \column{0.48\textwidth}
 \begin{center}
-\includegraphics[width=\textwidth,height=0.48\textheight,keepaspectratio]{Images/combined_hidden_results.png}
+\includegraphics[width=\linewidth,height=0.42\textheight,keepaspectratio]{Images/combined_hidden_results.png}
 \vspace{-0.15cm}
 {\scriptsize Taille de couche cachée}
 \end{center}
@@ -636,7 +636,7 @@ Plus lent
 
 \column{0.48\textwidth}
 \begin{center}
-\includegraphics[width=\textwidth,height=0.48\textheight,keepaspectratio]{Images/combined_activation_results.png}
+\includegraphics[width=\linewidth,height=0.42\textheight,keepaspectratio]{Images/combined_activation_results.png}
 \vspace{-0.15cm}
 {\scriptsize Fonctions d'activation}
 \end{center}
@@ -711,10 +711,10 @@ Développement incrémental avec validation continue à chaque étape
 \begin{frame}{Conclusion}
 \begin{block}{Réalisations}
 \begin{itemize}
-    \item ✓ Implémentation complète \textbf{from scratch} en C++
-    \item ✓ Moteur d'autodiff fonctionnel et élégant (DAG + lambdas)
-    \item ✓ Validation ML : \textbf{$\sim$98.2\%} de précision sur MNIST
-    \item ✓ Optimisation HPC : speedup \textbf{200×} sur le noyau de calcul
+    \item $\checkmark$ Implémentation complète \textbf{from scratch} en C++
+    \item $\checkmark$ Moteur d'autodiff fonctionnel et élégant (DAG + lambdas)
+    \item $\checkmark$ Validation ML : \textbf{$\sim$98.2\%} de précision sur MNIST
+    \item $\checkmark$ Optimisation HPC : speedup \textbf{200×} sur le noyau de calcul
 \end{itemize}
 \end{block}
 
@@ -771,7 +771,7 @@ Développement incrémental avec validation continue à chaque étape
 \end{center}
 \end{frame}
 
-\begin{frame}[standout]
+\begin{frame}[plain]
 \Huge Merci de votre attention !
 
 \vspace{1cm}
@@ -781,17 +781,17 @@ Développement incrémental avec validation continue à chaque étape
 % Slides de backup
 \appendix
 
-\begin{frame}[allowframebreaks]{Détails techniques : Matrix operations}
+\begin{frame}[allowframebreaks,fragile]{Détails techniques : Matrix operations}
 \textbf{Implémentation du produit matriciel}
 
 \begin{lstlisting}[language=C++]
-// Version naïve (ijk) - mauvaise localité cache
+// Version naive (ijk) - mauvaise localite cache
 for (int i = 0; i < m; ++i)
     for (int j = 0; j < p; ++j)
         for (int k = 0; k < n; ++k)
             C(i,j) += A(i,k) * B(k,j);
 
-// Version réordonnée (ikj) - meilleure localité
+// Version reordonnee (ikj) - meilleure localite
 for (int i = 0; i < m; ++i)
     for (int k = 0; k < n; ++k)
         for (int j = 0; j < p; ++j)
