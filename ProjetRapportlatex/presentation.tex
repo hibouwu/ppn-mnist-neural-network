@@ -15,6 +15,7 @@
 \usepackage{listings}
 \usepackage{xcolor}
 \usepackage{tikz}
+\usetikzlibrary{positioning}
 \usepackage{adjustbox}
 
 % Configuration listings
@@ -61,9 +62,9 @@
 \begin{block}{Déroulement}
 \begin{itemize}
     \item Contexte et problématique (5 min)
-    \item Architecture et implémentation (8 min)
-    \item Résultats expérimentaux (10 min)
-    \item Conclusion et perspectives (2 min)
+    \item Architecture et implémentation (7 min)
+    \item Résultats expérimentaux (7 min)
+    \item Conclusion et perspectives (1 min)
 \end{itemize}
 \end{block}
 \end{frame}
@@ -214,53 +215,24 @@ Gradients :
 
 \begin{frame}{Architecture logicielle}
 \begin{center}
-\includegraphics[width=0.9\textwidth,height=0.65\textheight,keepaspectratio]{Images/conception_detaillee.png}
+\begin{tikzpicture}[
+    layer/.style={draw, rounded corners, minimum width=9cm, minimum height=0.7cm, font=\small},
+    arrow/.style={->, thick, >=stealth}
+]
+% Layers from bottom to top
+\node[layer, fill=blue!20] (matrix) at (0,0) {\textbf{Matrix/Tensor} -- Opérations mathématiques bas niveau};
+\node[layer, fill=blue!30] (autodiff) at (0,0.9) {\textbf{Node + MathOps} -- Moteur d'autodifférenciation};
+\node[layer, fill=green!20] (layers) at (0,1.8) {\textbf{LinearLayer + Activation} -- Composants réseau};
+\node[layer, fill=green!30] (network) at (0,2.7) {\textbf{MLPNetwork} -- Assemblage multi-couches};
+\node[layer, fill=orange!20] (lossopt) at (0,3.6) {\textbf{Loss + Optimizer} -- CrossEntropy, SGD};
+\node[layer, fill=orange!30] (trainer) at (0,4.5) {\textbf{Trainer} -- Boucle forward $\to$ backward $\to$ update};
+\node[layer, fill=red!20] (main) at (0,5.4) {\textbf{main.cpp} -- Point d'entrée CLI};
+
+% Side labels
+\node[left=0.3cm of matrix, font=\scriptsize, text=gray] {Bas niveau};
+\node[left=0.3cm of main, font=\scriptsize, text=gray] {Haut niveau};
+\end{tikzpicture}
 \end{center}
-\vspace{-0.15cm}
-\begin{center}
-\small
-Architecture en couches : du calcul matriciel au pipeline d'entraînement
-\end{center}
-\end{frame}
-
-\begin{frame}[fragile]{Construction du modèle MLPNetwork}
-{\small
-Le réseau est construit par composition modulaire avec support multi-couches :
-}
-
-\vspace{0.1cm}
-
-\begin{lstlisting}[language=C++]
-// Architecture flexible (network.cpp)
-MLPNetwork MLPNetwork::createMultiHidden(
-    int input_dim, const std::vector<int>& hidden_dims,
-    int output_dim, const std::string& activation_name,
-    const std::string& init_name, unsigned int seed
-) {
-    MLPNetwork net;
-    int prev = input_dim;
-    
-    // Couches cachees : prev -> h + activation
-    for (int h : hidden_dims) {
-        net.addLayer(
-            makeLinear(prev, h, init_name, seed),
-            makeActivation(activation_name)
-        );
-        prev = h;
-    }
-    
-    // Couche de sortie : logits, sans activation
-    net.addLayer(makeLinear(prev, output_dim, init_name, seed),
-                 nullptr);
-    return net;
-}
-\end{lstlisting}
-
-\vspace{0.1cm}
-
-{\small
-\textbf{Exemple} : \texttt{--hidden\_sizes 256,128,64} crée 784→256→128→64→10
-}
 \end{frame}
 
 \begin{frame}{Noyau de calcul : Matrix}
@@ -321,19 +293,15 @@ Graine contrôlée (\texttt{--seed})
 \vspace{0.1cm}
 
 \begin{lstlisting}[language=C++]
-// Exemple : Multiplication y = a * b (math_ops.cpp)
-Node::Ptr mul(const Node::Ptr& a, const Node::Ptr& b) {
-    Matrix out = a->value().mul(b->value());
-    auto node = std::make_shared<OperationNode>(
-        OpKind::MUL, out, {a, b}
-    );
+// La puissance des Lambdas pour l'Autodiff (math_ops.cpp)
+// Capture du contexte {a, b} par closure
+node->setBackwardFn([a, b](const Matrix& grad) {
     
-    node->setBackwardFn([a, b](const Matrix& grad) {
-        a->addGrad(grad.mul(b->value())); // dL/da = grad * b
-        b->addGrad(grad.mul(a->value())); // dL/db = grad * a
-    });
-    return node;
-}
+    // Application directe de la Chain Rule
+    a->addGrad(grad.mul(b->value())); // dL/da = grad * b
+    b->addGrad(grad.mul(a->value())); // dL/db = grad * a
+    
+});
 \end{lstlisting}
 
 \vspace{0.1cm}
@@ -354,6 +322,46 @@ Node::Ptr mul(const Node::Ptr& a, const Node::Ptr& b) {
     \item Typage via \texttt{OpKind}
 \end{itemize}
 \end{columns}
+}
+\end{frame}
+
+\begin{frame}[fragile]{Construction du modèle MLPNetwork}
+{\small
+Le réseau est construit par composition modulaire avec support multi-couches :
+}
+
+\vspace{0.1cm}
+
+\begin{lstlisting}[language=C++]
+// Architecture flexible (network.cpp)
+MLPNetwork MLPNetwork::createMultiHidden(
+    int input_dim, const std::vector<int>& hidden_dims,
+    int output_dim, const std::string& activation_name,
+    const std::string& init_name, unsigned int seed
+) {
+    MLPNetwork net;
+    int prev = input_dim;
+    
+    // Couches cachees : prev -> h + activation
+    for (int h : hidden_dims) {
+        net.addLayer(
+            makeLinear(prev, h, init_name, seed),
+            makeActivation(activation_name)
+        );
+        prev = h;
+    }
+    
+    // Couche de sortie : logits, sans activation
+    net.addLayer(makeLinear(prev, output_dim, init_name, seed),
+                 nullptr);
+    return net;
+}
+\end{lstlisting}
+
+\vspace{0.1cm}
+
+{\small
+\textbf{Exemple} : \texttt{--hidden\_sizes 256,128,64} crée 784→256→128→64→10
 }
 \end{frame}
 
@@ -391,7 +399,7 @@ Node::Ptr mul(const Node::Ptr& a, const Node::Ptr& b) {
 \begin{lstlisting}[language=C++]
 // Implementation SGD (optimizer.cpp)
 void SGDOptimizer::step() {
-    for (auto& p : parameters_) {
+for (auto& p : parameters_) {
         Matrix& val = const_cast<Matrix&>(p->value());
         const Matrix& grad = p->grad();
         for(size_t i=0; i<val.data.size(); ++i) {

@@ -57,3 +57,6 @@ trancripts.txt
 ProjetRapportlatex/*.brf
 ProjetRapportlatex/*.lot
 ProjetRapportlatex/*.lof
+ProjetRapportlatex/*.vrb
+ProjetRapportlatex/*.snm
+ProjetRapportlatex/*.nav
