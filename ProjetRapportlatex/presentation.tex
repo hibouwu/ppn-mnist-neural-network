@@ -60,9 +60,9 @@
 
 \begin{block}{Déroulement}
 \begin{itemize}
-    \item Contexte et problématique (5 min)
-    \item Architecture et implémentation (7 min)
-    \item Résultats expérimentaux (7 min)
+    \item Contexte et problématique (6 min)
+    \item Architecture et implémentation (5 min)
+    \item Résultats expérimentaux (8 min)
     \item Conclusion et perspectives (1 min)
 \end{itemize}
 \end{block}
@@ -70,6 +70,10 @@
 
 % ============================================================
 \section{Introduction et Contexte}
+\begin{frame}[plain,noframenumbering]
+    \centering
+    \Huge \textbf{Introduction et Contexte}
+\end{frame}
 % ============================================================
 
 \begin{frame}{Contexte du projet}
@@ -124,14 +128,18 @@
 
 \column{0.4\textwidth}
 \centering
-\textit{[Image MNIST]}\\
-\vspace{0.3cm}
+\includegraphics[width=\linewidth,keepaspectratio]{Images/MnistExamples.png}
+\vspace{0.1cm}
 Objectif : $\sim$98\% de précision
 \end{columns}
 \end{frame}
 
 % ============================================================
 \section{Fondements théoriques}
+\begin{frame}[plain,noframenumbering]
+    \centering
+    \Huge \textbf{Fondements théoriques}
+\end{frame}
 % ============================================================
 
 \begin{frame}{Architecture du MLP}
@@ -139,8 +147,35 @@ Objectif : $\sim$98\% de précision
 \column{0.48\textwidth}
 \begin{figure}
 \centering
-\includegraphics[width=\linewidth,height=0.6\textheight,keepaspectratio]{Images/LayersOfMLP.png}
-\caption{Structure hiérarchique du MLP}
+\begin{tikzpicture}[scale=0.6, transform shape]
+    % Input Layer
+    \foreach \i in {1,...,4}
+        \node[circle, draw, fill=blue!10, minimum size=0.8cm] (I\i) at (0, -\i*1.2) {$x_{\i}$};
+    
+    % Hidden Layer
+    \foreach \h in {1,...,5}
+        \node[circle, draw, fill=green!10, minimum size=0.8cm] (H\h) at (3, -\h*1.0 - 0.5) {$h_{\h}$};
+        
+    % Output Layer
+    \foreach \o in {1,...,2}
+        \node[circle, draw, fill=red!10, minimum size=0.8cm] (O\o) at (6, -\o*1.5 - 2.0) {$y_{\o}$};
+        
+    % Connections Input -> Hidden
+    \foreach \i in {1,...,4}
+        \foreach \h in {1,...,5}
+            \draw[->, gray!50] (I\i) -- (H\h);
+            
+    % Connections Hidden -> Output
+    \foreach \h in {1,...,5}
+        \foreach \o in {1,...,2}
+            \draw[->, gray!50] (H\h) -- (O\o);
+            
+    % Labels
+    \node[above] at (0, -0.5) {Entrée ($784$)};
+    \node[above] at (3, -0.5) {Cachée ($128$)};
+    \node[above] at (6, -2.5) {Sortie ($10$)};
+\end{tikzpicture}
+\caption{Structure simple avec \textbf{une seule} couche cachée}
 \end{figure}
 
 \column{0.48\textwidth}
@@ -163,6 +198,59 @@ Sortie :
     \item $N$ exemples simultanément
 \end{itemize}
 \end{columns}
+\end{frame}
+
+\begin{frame}{Composants Mathématiques du Modèle}
+\begin{columns}[T]
+\column{0.31\textwidth}
+\begin{block}{Activation ($\sigma$) : ReLU}
+\[ f(x) = \max(0, x) \]
+\end{block}
+\begin{itemize}
+    \item \small Introduit la non-linéarité
+    \item \small Gradient simple (0 ou 1)
+    \item \small Évite la saturation
+\end{itemize}
+
+\column{0.31\textwidth}
+\begin{block}{Coût ($L$) : CrossEntropy}
+\[ L = -\sum y_i \log(\hat{y}_i) \]
+\end{block}
+\begin{itemize}
+    \item \small Adaptée à la classification
+    \item \small Pénalise les erreurs confiantes
+\end{itemize}
+
+\column{0.31\textwidth}
+\begin{block}{Optimisation : SGD}
+\[ W \leftarrow W - \eta \nabla_W L \]
+\end{block}
+\begin{itemize}
+    \item \small $\eta$ : Taux d'apprentissage
+    \item \small Mise à jour vers le minimum
+\end{itemize}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Transition : Pourquoi l'Autodifférenciation ?}
+\begin{block}{Le défi du gradient manuel}
+\begin{itemize}
+    \item Pour un réseau simple (1 couche), dériver à la main est faisable.
+    \item \textbf{Problème} : Avec $N$ couches, la Règle de la Chaîne devient ingérable.
+    \[ \frac{\partial L}{\partial W_1} = \frac{\partial L}{\partial Y} \frac{\partial Y}{\partial H_n} \dots \frac{\partial H_2}{\partial H_1} \frac{\partial H_1}{\partial W_1} \]
+    \item Chaque modification d'architecture (activation, couche) obligerait à refaire les maths.
+\end{itemize}
+\end{block}
+
+\vspace{0.5cm}
+
+\begin{alertblock}{La solution : Différenciation Automatique}
+\begin{itemize}
+    \item Décomposer le calcul en opérations élémentaires (Graphe).
+    \item Appliquer la Règle de la Chaîne localement et automatiquement.
+    \item \textbf{Gain} : Flexibilité totale de l'architecture sans recoder les gradients.
+\end{itemize}
+\end{alertblock}
 \end{frame}
 
 \begin{frame}{Autodifférenciation et Graphe de Calcul}
@@ -210,29 +298,11 @@ Gradients :
 
 % ============================================================
 \section{Implémentation}
-% ============================================================
-
-\begin{frame}{Architecture logicielle}
-\begin{center}
-\begin{tikzpicture}[
-    layer/.style={draw, rounded corners, minimum width=9cm, minimum height=0.7cm, font=\small},
-    arrow/.style={->, thick, >=stealth}
-]
-% Layers from bottom to top
-\node[layer, fill=blue!20] (matrix) at (0,0) {\textbf{Matrix/Tensor} -- Opérations mathématiques bas niveau};
-\node[layer, fill=blue!30] (autodiff) at (0,0.9) {\textbf{Node + MathOps} -- Moteur d'autodifférenciation};
-\node[layer, fill=green!20] (layers) at (0,1.8) {\textbf{LinearLayer + Activation} -- Composants réseau};
-\node[layer, fill=green!30] (network) at (0,2.7) {\textbf{MLPNetwork} -- Assemblage multi-couches};
-\node[layer, fill=orange!20] (lossopt) at (0,3.6) {\textbf{Loss + Optimizer} -- CrossEntropy, SGD};
-\node[layer, fill=orange!30] (trainer) at (0,4.5) {\textbf{Trainer} -- Boucle forward $\to$ backward $\to$ update};
-\node[layer, fill=red!20] (main) at (0,5.4) {\textbf{main.cpp} -- Point d'entrée CLI};
-
-% Side labels
-\node[left=0.3cm of matrix, font=\scriptsize, text=gray] {Bas niveau};
-\node[left=0.3cm of main, font=\scriptsize, text=gray] {Haut niveau};
-\end{tikzpicture}
-\end{center}
+\begin{frame}[plain,noframenumbering]
+    \centering
+    \Huge \textbf{Implémentation}
 \end{frame}
+% ============================================================
 
 \begin{frame}{Noyau de calcul : Matrix}
 \begin{block}{Choix de conception}
@@ -323,19 +393,15 @@ Le réseau est construit par composition modulaire avec support multi-couches :
 }
 
 \begin{lstlisting}[language=C++]
-// Architecture flexible (network.cpp)
-MLPNetwork MLPNetwork::createMultiHidden(
-    int input_dim, const vector<int>& hidden_dims,
-    int output_dim, const string& activation, ...) {
-    MLPNetwork net;
-    int prev = input_dim;
-    for (int h : hidden_dims) {
-        net.addLayer(makeLinear(prev, h, ...), makeActivation(activation));
-        prev = h;
-    }
-    net.addLayer(makeLinear(prev, output_dim, ...), nullptr); // sortie
-    return net;
+// Construction flexible (Support multi-couches)
+int prev = input_dim;
+for (int h : hidden_dims) {
+    // Couche cachée + Activation (ReLU/Sigmoid...)
+    net.addLayer(makeLinear(prev, h), makeActivation(act));
+    prev = h;
 }
+// Couche de sortie (Logits bruts)
+net.addLayer(makeLinear(prev, output_dim), nullptr);
 \end{lstlisting}
 
 {\small
@@ -385,46 +451,14 @@ void SGDOptimizer::step() {
 \end{lstlisting}
 \end{frame}
 
-\begin{frame}{DataLoader et main.cpp}
-\begin{columns}[T]
-\column{0.48\textwidth}
-{\small
-\textbf{MNISTDataset}
-\begin{itemize}
-    \item Lecture binaire IDX
-    \item Normalisation $[0,1]$
-    \item Labels one-hot encoded
-\end{itemize}
 
-\vspace{0.2cm}
-\textbf{DataLoader}
-\begin{itemize}
-    \item Charge MNIST (60k/10k)
-    \item Génère mini-batchs $(X, Y)$
-    \item Shuffle (seed contrôlé)
-    \item \texttt{reset()}, \texttt{nextBatch()}
-\end{itemize}
-}
-
-\column{0.48\textwidth}
-{\small
-\textbf{main.cpp (CLI)}
-\begin{itemize}
-    \item Parse arguments\\
-    \texttt{--epochs}, \texttt{--lr}, \texttt{--batch\_size}\\
-    \texttt{--hidden\_sizes}, \texttt{--activation}\\
-    \texttt{--init}, \texttt{--seed}
-    \item Crée : Dataset, DataLoader,\\
-    MLPNetwork, Loss, Optimizer, Trainer
-    \item Boucle d'entraînement par époques
-    \item Sauvegarde métriques CSV
-\end{itemize}
-}
-\end{columns}
-\end{frame}
 
 % ============================================================
 \section{Expérimentations}
+\begin{frame}[plain,noframenumbering]
+    \centering
+    \Huge \textbf{Expérimentations}
+\end{frame}
 % ============================================================
 
 \begin{frame}{Configuration expérimentale}
@@ -452,7 +486,7 @@ void SGDOptimizer::step() {
     \item \textbf{Fréquence verrouillée} : 4.0 GHz
     \item \textbf{Affinité CPU} : \texttt{taskset}
     \item \textbf{Warm-up} : 5 itérations
-    \item \textbf{Graine fixée} : reproductibilité
+    \item \textbf{Graines fixées} : moyenne sur 3 runs (42, 43, 44)
 \end{itemize}
 
 \vspace{0.3cm}
@@ -630,7 +664,7 @@ OpenMP (8T) & $\sim$150ms & 20× & Parallélisation \\
 \textbf{Analyse}
 \begin{itemize}
     \item Petits (16-32) : Lents
-    \item Grands (128+) : Généralisent mal
+    \item Grands (128+) : Moins bonne généralisation (tendance au surapprentissage)
 \end{itemize}
 
 \vspace{0.3cm}
@@ -671,14 +705,14 @@ OpenMP (8T) & $\sim$150ms & 20× & Parallélisation \\
 \small
 \textbf{Analyse}
 \begin{itemize}
-    \item ReLU : Pas de saturation
-    \item Sigmoid/Tanh : Trainent
+    \item Sigmoïde : La moins performante (saturation).
+    \item Autres : Résultats similaires et satisfaisants.
 \end{itemize}
 
 \vspace{0.3cm}
 \textbf{Conclusion}
 \begin{itemize}
-    \item ReLU est supérieur grâce à sa sparsité et un gradient non saturant.
+    \item Peu de variation globale, sauf pour la Sigmoïde qui décroche nettement.
 \end{itemize}
 \end{columns}
 \end{frame}
@@ -715,29 +749,14 @@ Initialisation & : & \textbf{He} \\
 \end{frame}
 
 % ============================================================
-\section{Organisation et Conclusion}
+\section{Conclusion et Perspectives}
+\begin{frame}[plain,noframenumbering]
+    \centering
+    \Huge \textbf{Conclusion et Perspectives}
+\end{frame}
 % ============================================================
 
-\begin{frame}{Organisation du projet}
-\begin{block}{Répartition des tâches}
-\begin{itemize}
-    \item \textbf{État de l'art} : Jianye, Hao, Xiang (collectif)
-    \item \textbf{Conception} : Jianye (documentation, UML)
-    \item \textbf{Prototype MLP} : Abdennour (tenseurs, couches, activations)
-    \item \textbf{Moteur autodiff} : Hao + Xiang (graphe, opérations)
-    \item \textbf{Intégration} : Jianye (pipeline complet, MNIST)
-    \item \textbf{Entraînement} : Xiang (boucle), Jianye + Hao (optimizer, loss)
-    \item \textbf{Optimisation HPC} : Jianye (profiling, benchmarks, Grid Search)
-    \item \textbf{Rapport} : Collectif
-\end{itemize}
-\end{block}
 
-\vspace{0.3cm}
-
-\begin{alertblock}{Méthodologie}
-Développement incrémental avec validation continue à chaque étape
-\end{alertblock}
-\end{frame}
 
 \begin{frame}{Conclusion}
 \begin{block}{Réalisations}
@@ -780,11 +799,14 @@ Développement incrémental avec validation continue à chaque étape
 \end{itemize}
 
 \column{0.5\textwidth}
-\textbf{Parallélisme à l'échelle}
+\textbf{Parallélisme de Données \& Entraînement}
 \begin{itemize}
-    \item Data parallelism (MPI)
-    \item Model parallelism
-    \item Pipeline de données optimisé
+    \item \textbf{Data Parallelism (MPI)} :\\
+    Traitement distribué sur plusieurs nœuds.
+    \item \textbf{Batch Gradient Descent} :\\
+    Parallélisme de haut niveau sur les lots.
+    \item \textbf{Réseaux Indépendants} :\\
+    Entraînement parallèle + Synchronisation périodique.
 \end{itemize}
 
 \vspace{0.3cm}
@@ -811,6 +833,28 @@ Développement incrémental avec validation continue à chaque étape
 
 % Slides de backup
 \appendix
+
+\begin{frame}{Architecture logicielle}
+\begin{center}
+\begin{tikzpicture}[
+    layer/.style={draw, rounded corners, minimum width=9cm, minimum height=0.7cm, font=\small},
+    arrow/.style={->, thick, >=stealth}
+]
+% Layers from bottom to top
+\node[layer, fill=blue!20] (matrix) at (0,0) {\textbf{Matrix/Tensor} -- Opérations mathématiques bas niveau};
+\node[layer, fill=blue!30] (autodiff) at (0,0.9) {\textbf{Node + MathOps} -- Moteur d'autodifférenciation};
+\node[layer, fill=green!20] (layers) at (0,1.8) {\textbf{LinearLayer + Activation} -- Composants réseau};
+\node[layer, fill=green!30] (network) at (0,2.7) {\textbf{MLPNetwork} -- Assemblage multi-couches};
+\node[layer, fill=orange!20] (lossopt) at (0,3.6) {\textbf{Loss + Optimizer} -- CrossEntropy, SGD};
+\node[layer, fill=orange!30] (trainer) at (0,4.5) {\textbf{Trainer} -- Boucle forward $\to$ backward $\to$ update};
+\node[layer, fill=red!20] (main) at (0,5.4) {\textbf{main.cpp} -- Point d'entrée CLI};
+
+% Side labels
+\node[left=0.3cm of matrix, font=\scriptsize, text=gray] {Bas niveau};
+\node[left=0.3cm of main, font=\scriptsize, text=gray] {Haut niveau};
+\end{tikzpicture}
+\end{center}
+\end{frame}
 
 \begin{frame}[allowframebreaks,fragile]{Détails techniques : Matrix operations}
 \textbf{Implémentation du produit matriciel}
@@ -855,6 +899,46 @@ for (int i = 0; i < m; ++i)
     \item Calcul des trois gradients lors du backward
     \item Accumulation dans les nœuds parents
 \end{itemize}
+\end{frame}
+
+\end{frame}
+
+\begin{frame}{DataLoader et main.cpp}
+\begin{columns}[T]
+\column{0.48\textwidth}
+{\small
+\textbf{MNISTDataset}
+\begin{itemize}
+    \item Lecture binaire IDX
+    \item Normalisation $[0,1]$
+    \item Labels one-hot encoded
+\end{itemize}
+
+\vspace{0.2cm}
+\textbf{DataLoader}
+\begin{itemize}
+    \item Charge MNIST (60k/10k)
+    \item Génère mini-batchs $(X, Y)$
+    \item Shuffle (seed contrôlé)
+    \item \texttt{reset()}, \texttt{nextBatch()}
+\end{itemize}
+}
+
+\column{0.48\textwidth}
+{\small
+\textbf{main.cpp (CLI)}
+\begin{itemize}
+    \item Parse arguments\\
+    \texttt{--epochs}, \texttt{--lr}, \texttt{--batch\_size}\\
+    \texttt{--hidden\_sizes}, \texttt{--activation}\\
+    \texttt{--init}, \texttt{--seed}
+    \item Crée : Dataset, DataLoader,\\
+    MLPNetwork, Loss, Optimizer, Trainer
+    \item Boucle d'entraînement par époques
+    \item Sauvegarde métriques CSV
+\end{itemize}
+}
+\end{columns}
 \end{frame}
 
 \end{document}
