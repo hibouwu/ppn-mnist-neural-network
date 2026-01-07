@@ -467,7 +467,7 @@ void SGDOptimizer::step() {
 \textbf{Matériel}
 \begin{itemize}
     \item AMD Ryzen 9 8940HX
-    \item 16 cœurs / 32 threads
+    \item 32 cœurs / 64 threads
     \item 30 GiB RAM
     \item Cache L3 : 64 MiB
 \end{itemize}
@@ -522,38 +522,17 @@ Mesures fiables et reproductibles pour comparer les optimisations
 }
 \end{frame}
 
-\begin{frame}{Hiérarchie : Comparaison Graphique}
+\begin{frame}{Hiérarchie : Impact des optimisations sur les performances}
 \begin{center}
-\includegraphics[width=0.9\textwidth,height=0.7\textheight,keepaspectratio]{Images/comparison_grid_plot.png}
+\includegraphics[width=0.9\textwidth,height=0.7\textheight,keepaspectratio]{Images/comparison_speedup_grid.png}
 \end{center}
 \vspace{-0.2cm}
 {\small
 \begin{center}
-\textbf{Observation :} Plus la taille augmente, plus l'optimisation mémoire et la parallélisation creusent l'écart.\\
-\textbf{Conclusion :} L'exploitation de la hiérarchie mémoire est indispensable à grande échelle.
-\end{center}
-}
-\end{frame}
+\textbf{Observation :} Les gains de performance augmentent fortement avec la taille du problème.\\
+\textbf{Conclusion :} Les performances à grande échelle reposent sur une exploitation efficace
+de la hiérarchie mémoire.
 
-\begin{frame}{Hiérarchie : Mesures de Speedup (2048×2048)}
-\begin{center}
-\Large
-\begin{tabular}{lccc}
-\toprule
-\textbf{Version} & \textbf{Temps} & \textbf{Speedup} & \textbf{Technique} \\
-\midrule
-Naïf ($ijk$) & $\sim$3000ms & 1× & Baseline \\
-Réordonné ($ikj$) & $\sim$800ms & 3.75× & Localité cache \\
-OpenMP (8T) & $\sim$150ms & 20× & Parallélisation \\
-\textbf{BLAS} & \textbf{15ms} & \textbf{200×} & \textbf{Vect. + SIMD} \\
-\bottomrule
-\end{tabular}
-\end{center}
-\vspace{0.2cm}
-{\small
-\begin{center}
-\textbf{Observation :} Chaque niveau d'optimisation (localité, threads, SIMD) apporte un gain cumulatif majeur.\\
-\textbf{Conclusion :} Les performances maximales exigent une combinaison complète (Approche BLAS).
 \end{center}
 }
 \end{frame}
@@ -561,15 +540,17 @@ OpenMP (8T) & $\sim$150ms & 20× & Parallélisation \\
 \begin{frame}{Profiling et Loi d'Amdahl}
 \vspace{-0.2cm}
 \begin{columns}[c]
+
 \column{0.55\textwidth}
 \begin{center}
 \includegraphics[width=\linewidth,height=0.55\textheight,keepaspectratio]{Images/e2e_benchmark_plot.png}
 \end{center}
 
 \vspace{0.1cm}
-\begin{alertblock}{\small Speedup Global}
+\begin{alertblock}{\small Speedup global}
 \centering
-\textbf{7.6×} (Limité par Loi d'Amdahl)
+\textbf{7.6$\times$} \\
+\small (limité par la loi d'Amdahl)
 \end{alertblock}
 
 \column{0.45\textwidth}
@@ -577,20 +558,20 @@ OpenMP (8T) & $\sim$150ms & 20× & Parallélisation \\
 \textbf{Analyse}
 \begin{itemize}
     \item Naïf : \textbf{96\%} du temps dans matmul (Compute-bound)
-    \item BLAS : matmul devient négligeable (\textbf{< 1\%})
+    \item BLAS : matmul négligeable (\textbf{$< 1\%$})
 \end{itemize}
 
 \vspace{0.2cm}
 \textbf{Conclusion}
 \begin{itemize}
-    \item Goulot d'étranglement déplacé vers I/O et Alloc
-    \item Partie non-optimisable limite le gain total
+    \item Goulot d'étranglement $\to$ \textbf{E/S} et \textbf{allocations mémoire}.
+    \item Gain total limité par loi d'Amdahl
 \end{itemize}
 }
 \end{columns}
 \end{frame}
 
-\begin{frame}{Convergence : Courbe d'apprentissage}
+\begin{frame}{Analyse de la sensibilité au learning rate}
 \begin{center}
 \includegraphics[width=0.9\textwidth,height=0.75\textheight,keepaspectratio]{Images/training_curve.png}
 \end{center}
@@ -664,7 +645,7 @@ OpenMP (8T) & $\sim$150ms & 20× & Parallélisation \\
 \textbf{Analyse}
 \begin{itemize}
     \item Petits (16-32) : Lents
-    \item Grands (128+) : Moins bonne généralisation (tendance au surapprentissage)
+    \item Grands (128+) : Apparition d'un écart train-test, signe de surapprentissage
 \end{itemize}
 
 \vspace{0.3cm}
@@ -764,7 +745,7 @@ Initialisation & : & \textbf{He} \\
     \item $\checkmark$ Implémentation complète \textbf{from scratch} en C++
     \item $\checkmark$ Moteur d'autodiff fonctionnel et élégant (DAG + lambdas)
     \item $\checkmark$ Validation ML : \textbf{$\sim$98.2\%} de précision sur MNIST
-    \item $\checkmark$ Optimisation HPC : speedup \textbf{200×} sur le noyau de calcul
+    \item $\checkmark$ Optimisation HPC : speedup \textbf{200$\times$} sur le noyau de calcul
 \end{itemize}
 \end{block}
 
@@ -899,8 +880,6 @@ for (int i = 0; i < m; ++i)
     \item Calcul des trois gradients lors du backward
     \item Accumulation dans les nœuds parents
 \end{itemize}
-\end{frame}
-
 \end{frame}
 
 \begin{frame}{DataLoader et main.cpp}
