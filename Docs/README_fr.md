@@ -11,7 +11,6 @@ L'objectif principal est de comprendre les mécanismes internes des frameworks d
 ## Fonctionnalités
 
 * **Moteur d'Autodifférentiation** : Implémentation d'un graphe de calcul dynamique (DAG) supportant la différenciation automatique en mode inverse.
-* **Moteur d'Autodifférentiation** : Implémentation d'un graphe de calcul dynamique (DAG) supportant la différenciation automatique en mode inverse.
 * **Opérations Tensorielles Optimisées** : Multiplication matricielle optimisée utilisant le "cache blocking", le multithreading OpenMP et l'intégration optionnelle de BLAS.
 * **Réseau de Neurones Configurable** : Prise en charge de configurations arbitraires de couches, de fonctions d'activation (ReLU, Sigmoid, Tanh) et de stratégies d'initialisation (He, Xavier).
 * **Pipeline d'Entraînement** : Boucle d'apprentissage complète avec Descente de Gradient Stochastique (SGD), perte CrossEntropy et traitement par mini-batch.
@@ -116,9 +115,8 @@ Les tests de performance ont été réalisés sur un processeur **AMD Ryzen**. L
 ## Documentation
 
 * [**Rapport Technique Complet (PDF)**](../ProjetRapportlatex/rapport.pdf)
-* [Spécification des besoins](demande_fr.md)
+* [Spécification des besoins](requirements_fr.md)
 * [Conception détaillée](conception_detaillee_fr.md)
-* [Sujet Théorique : Autodiff & Backpropagation](PPN_NN.md)
 
 ## Auteurs
 

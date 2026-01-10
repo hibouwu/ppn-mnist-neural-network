@@ -113,8 +113,9 @@ We benchmarked the implementation on an **AMD Ryzen** processor. The optimized B
 
 ## Documentation
 
-* [Technical Report (French)](Docs/PPN_NN.md)
+* [Technical Report (French)](ProjetRapportlatex/rapport.pdf)
 * Detailed Design: [Docs/conception_detaillee_fr.md](Docs/conception_detaillee_fr.md)
+* Requirements (French): [Docs/requirements_fr.md](Docs/requirements_fr.md)
 
 ## Authors
 

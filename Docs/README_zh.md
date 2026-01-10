@@ -115,8 +115,7 @@ cmake --build . -j$(nproc)
 ## 文档
 
 * [**完整技术报告 (PDF)**](../ProjetRapportlatex/rapport.pdf)
-* [技术主题：自动微分与反向传播](PPN_NN_zh.md)
-* [需求说明书 (中文)](demande_zh.md)
+* [需求说明书 (中文)](requirements_zh.md)
 * 详细设计: [Docs/conception_detaillee_fr.md](conception_detaillee_fr.md)
 
 ## 作者

@@ -61,7 +61,7 @@ Le projet implémente un moteur de Deep Learning complet en C++ moderne (C++17),
 ## Choix de Conception
 
 | Aspect | Choix | Justification |
-|--------|-------|---------------|
+| -------- | ------- | --------------- |
 | Langage | C++17 | Contrôle mémoire, performance, cohérence HPC |
 | Graphe de calcul | Dynamique (DAG) | Flexibilité architecturale |
 | Gestion mémoire | `shared_ptr` | Graphes non-linéaires, pas de fuites |
@@ -70,7 +70,7 @@ Le projet implémente un moteur de Deep Learning complet en C++ moderne (C++17),
 
 ## Flux de Données (Mini-batch)
 
-```
+```txt
 DataLoader → MLPNetwork.forward() → LossFunction → backward() → Optimizer.step()
 ```
 
