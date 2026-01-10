@@ -1,6 +1,6 @@
 # MLP 与 MNIST 自动微分引擎
 
-[English](README.md) | [Français](README_fr.md) | **[中文](README_zh.md)**
+[English](../README.md) | [Français](README_fr.md) | **[中文](README_zh.md)**
 
 本项目包含了一个使用 C++ 从零编写的多层感知机 (MLP) 神经网络的完整实现。
 
@@ -101,7 +101,7 @@ cmake --build . -j$(nproc)
 输入 (784) -> 线性层 -> ReLU -> 线性层 -> Softmax -> 输出 (10)
 ```
 
-[查看详细架构图 (UML)](Docs/Images/phase4-6.png)
+[查看详细架构图 (UML)](Images/phase4-6.png)
 
 ## 性能表现
 
@@ -114,10 +114,10 @@ cmake --build . -j$(nproc)
 
 ## 文档
 
-* [**完整技术报告 (PDF)**](ProjetRapportlatex/rapport.pdf)
-* [技术主题：自动微分与反向传播](Docs/PPN_NN_zh.md)
-* [需求说明书 (中文)](Docs/demande_zh.md)
-* 详细设计: [Docs/conception_detaillee_fr.md](Docs/conception_detaillee_fr.md)
+* [**完整技术报告 (PDF)**](../ProjetRapportlatex/rapport.pdf)
+* [技术主题：自动微分与反向传播](PPN_NN_zh.md)
+* [需求说明书 (中文)](demande_zh.md)
+* 详细设计: [Docs/conception_detaillee_fr.md](conception_detaillee_fr.md)
 
 ## 作者
 

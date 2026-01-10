@@ -1,6 +1,6 @@
 # MLP & Autodifferentiation Engine for MNIST
 
-**[English](README.md)** | [Français](README_fr.md) | [中文](README_zh.md)
+**[English](README.md)** | [Français](Docs/README_fr.md) | [中文](Docs/README_zh.md)
 
 This repository contains a complete implementation of a multi-layer perceptron (MLP) neural network written from scratch in C++.
 

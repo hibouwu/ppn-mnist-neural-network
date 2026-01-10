@@ -1,6 +1,6 @@
 # MLP & Moteur d'Autodifférentiation pour MNIST
 
-[English](README.md) | **[Français](README_fr.md)** | [中文](README_zh.md)
+[English](../README.md) | **[Français](README_fr.md)** | [中文](README_zh.md)
 
 Ce dépôt contient l'implémentation complète d'un réseau de neurones multicouche (MLP) écrit "from scratch" en C++.
 
@@ -102,7 +102,7 @@ L'architecture du réseau repose sur un graphe dynamique d'opérations.
 Entrée (784) -> Linéaire -> ReLU -> Linéaire -> Softmax -> Sortie (10)
 ```
 
-[Voir le diagramme d'architecture détaillé (UML)](Docs/Images/phase4-6.png)
+[Voir le diagramme d'architecture détaillé (UML)](Images/phase4-6.png)
 
 ## Performance
 
@@ -115,10 +115,10 @@ Les tests de performance ont été réalisés sur un processeur **AMD Ryzen**. L
 
 ## Documentation
 
-* [**Rapport Technique Complet (PDF)**](ProjetRapportlatex/rapport.pdf)
-* [Spécification des besoins](Docs/demande_fr.md)
-* [Conception détaillée](Docs/conception_detaillee_fr.md)
-* [Sujet Théorique : Autodiff & Backpropagation](Docs/PPN_NN.md)
+* [**Rapport Technique Complet (PDF)**](../ProjetRapportlatex/rapport.pdf)
+* [Spécification des besoins](demande_fr.md)
+* [Conception détaillée](conception_detaillee_fr.md)
+* [Sujet Théorique : Autodiff & Backpropagation](PPN_NN.md)
 
 ## Auteurs
 
