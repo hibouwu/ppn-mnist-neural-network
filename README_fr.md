@@ -1,97 +1,131 @@
-🌐 [English](README.md) | **[Français](README_fr.md)** | [中文](README_zh.md)
-
 # MLP & Moteur d'Autodifférentiation pour MNIST
 
-Implémentation d'un réseau de neurones from scratch en C++ pour le dataset MNIST.  
-**Projet :** PPN (Projet de Programmation Numérique), M1 CHPS, UVSQ / Université Paris-Saclay
+[English](README.md) | **[Français](README_fr.md)** | [中文](README_zh.md)
 
-## ✨ Fonctionnalités
+Ce dépôt contient l'implémentation complète d'un réseau de neurones multicouche (MLP) écrit "from scratch" en C++.
 
-- **Implémentation MLP** : Perceptron multicouche entièrement configurable avec propagation avant et arrière
-- **Moteur d'Autodifférentiation** : Autodiff en mode inverse utilisant un graphe de calcul dynamique (DAG)
-- **Optimisations Multiples** : Multiplication matricielle naïve, cache-optimisée, OpenMP et BLAS
-- **Pipeline d'Entraînement** : Optimiseur SGD, perte CrossEntropy, entraînement par mini-batch
-- **~98.2% de Précision** sur l'ensemble de validation MNIST
+Ce projet a été développé dans le cadre de l'Unité d'Enseignement **Projet de Programmation Numérique (PPN)** du Master 1 CHPS (Calcul Haute Performance & Simulation) de l'**Université Paris-Saclay (UVSQ)**.
 
-## 🛠️ Prérequis
+L'objectif principal est de comprendre les mécanismes internes des frameworks de Deep Learning en implémentant un moteur d'autodifférentiation (mode inverse) et des opérations matricielles optimisées, sans dépendre de bibliothèques tierces telles que PyTorch ou TensorFlow.
 
-- CMake 3.16+
-- GCC/Clang avec support C++17
-- OpenBLAS (optionnel, pour les opérations matricielles optimisées)
+## Fonctionnalités
 
+* **Moteur d'Autodifférentiation** : Implémentation d'un graphe de calcul dynamique (DAG) supportant la différenciation automatique en mode inverse.
+* **Moteur d'Autodifférentiation** : Implémentation d'un graphe de calcul dynamique (DAG) supportant la différenciation automatique en mode inverse.
+* **Opérations Tensorielles Optimisées** : Multiplication matricielle optimisée utilisant le "cache blocking", le multithreading OpenMP et l'intégration optionnelle de BLAS.
+* **Réseau de Neurones Configurable** : Prise en charge de configurations arbitraires de couches, de fonctions d'activation (ReLU, Sigmoid, Tanh) et de stratégies d'initialisation (He, Xavier).
+* **Pipeline d'Entraînement** : Boucle d'apprentissage complète avec Descente de Gradient Stochastique (SGD), perte CrossEntropy et traitement par mini-batch.
+
+## Prérequis
+
+Le projet requiert un compilateur compatible C++17 et CMake. **OpenBLAS est requis** pour les opérations matricielles.
+
+* CMake 3.10 ou supérieur
+* GCC ou Clang avec support C++17
+* **OpenBLAS** (Requis)
+* `wget` et `gzip` (pour le téléchargement du dataset)
+
+### Installation des Dépendances
+
+* Fedora / RHEL
+  
 ```bash
-# Fedora/RHEL
-sudo dnf install cmake gcc-c++ openblas-devel
-
-# Ubuntu/Debian
-sudo apt install cmake g++ libopenblas-dev
+sudo dnf install cmake gcc-c++ openblas-devel wget gzip
 ```
 
-## 🚀 Démarrage Rapide
-
-### Compilation
-
+* Ubuntu / Debian
+  
 ```bash
-rm -rf build
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+sudo apt install cmake g++ libopenblas-dev wget gzip
 ```
 
-### Télécharger le Dataset MNIST
+## Compilation et Utilisation
+
+### 1. Compilation
+
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -j$(nproc)
+```
+
+### 2. Téléchargement des Données
+
+Un script est fourni pour télécharger le dataset MNIST :
 
 ```bash
 ./scripts/get_mnist.sh
 ```
 
-### Lancer l'Entraînement
+### 3. Exécution
+
+Pour lancer l'entraînement avec la configuration par défaut :
 
 ```bash
-./build/mnist_mlp --epochs 20 --lr 0.01 --batch_size 64 --hidden_sizes 128
+./build/ppn_train --epochs 20 --learning_rate 0.01 --batch_size 64 --hidden_size 128
 ```
 
-### Options de Ligne de Commande
+### Options de la Ligne de Commande
+
+L'application supporte les arguments suivants :
 
 | Option | Défaut | Description |
-| ------ | ------ | ----------- |
-| `--epochs` | 10 | Nombre d'époques d'entraînement |
-| `--lr` | 0.01 | Taux d'apprentissage |
-| `--batch_size` | 64 | Taille du mini-batch |
-| `--hidden_sizes` | 128 | Tailles des couches cachées (séparées par virgule) |
+| -------- | -------- | ------------- |
+| `--epochs` | 1 | Nombre d'époques d'entraînement |
+| `--learning_rate` | 0.01 | Taux d'apprentissage |
+| `--batch_size` | 64 | Taille des mini-lots (batch size) |
+| `--hidden_size` | 128 | Taille d'une couche cachée unique |
+| `--hidden_sizes` | "" | Tailles pour plusieurs couches cachées (séparées par virgules, ex: "128,64"). Ecrase `--hidden_size` |
+| `--data_dir` | "mnist" | Répertoire contenant les fichiers MNIST |
 | `--activation` | relu | Fonction d'activation (relu/sigmoid/tanh) |
-| `--init` | he | Initialisation des poids (he/xavier/manual) |
-| `--seed` | 42 | Graine aléatoire pour la reproductibilité |
+| `--init` | he | Stratégie d'initialisation des poids (he/xavier/manual) |
+| `--seed` | 0 | Graine aléatoire (0 = aléatoire) |
 
-## 📊 Architecture
+## Scripts Utilitaires
+
+Le répertoire `scripts/` contient divers outils pour les benchmarks et les expériences :
+
+* **Benchmarks** :
+  * `benchmark_matmul.sh` : Compare la multiplication matricielle naïve vs optimisée.
+  * `benchmark_e2e.sh` : Test de performance d'entraînement complet.
+* **Expériences** :
+  * `exp_learning_rate.sh`, `exp_batch_size.sh`, `exp_hidden_size.sh` : Tests d'hyperparamètres.
+  * `exp_init_comparison.sh` : Comparaison des stratégies d'initialisation.
+* **Visualisation** :
+  * Des scripts Python (ex: `plot_metrics.py`) sont utilisés pour générer les courbes de performance.
+
+## Architecture
+
+L'architecture du réseau repose sur un graphe dynamique d'opérations.
 
 ```text
-Entrée (784) → Linéaire → ReLU → Linéaire → Softmax → Sortie (10)
+Entrée (784) -> Linéaire -> ReLU -> Linéaire -> Softmax -> Sortie (10)
 ```
 
-![Architecture](Docs/Images/phase3.png)
+[Voir le diagramme d'architecture détaillé (UML)](Docs/Images/phase4-6.png)
 
-## 📖 Documentation
+## Performance
 
-- [Spécification des besoins (FR)](Docs/demande_fr.md) / [需求说明 (ZH)](Docs/demande_zh.md)
-- [Conception détaillée](Docs/conception_detaillee_fr.md)
-- [Théorie : Autodiff & Backpropagation](Docs/PPN_NN.md)
+Les tests de performance ont été réalisés sur un processeur **AMD Ryzen**. La version optimisée avec BLAS montre une accélération significative par rapport à l'implémentation naïve.
 
-## 📈 Résultats
+| Implémentation | Temps d'entraînement (par époque) | Speedup |
+| ---------------- | ----------------------------------- | --------- |
+| C++ Naïf | ~60s | 1x |
+| **Optimisé (BLAS)** | **~0.3s** | **~200x** |
 
-| Métrique | Valeur |
-| -------- | ------ |
-| Précision Validation | ~98.2% |
-| Meilleure Configuration | LR=0.01, Batch=64, Hidden=128, ReLU |
-| Speedup (BLAS vs Naïf) | ~200× |
+## Documentation
 
-## 👥 Auteurs
+* [**Rapport Technique Complet (PDF)**](ProjetRapportlatex/rapport.pdf)
+* [Spécification des besoins](Docs/demande_fr.md)
+* [Conception détaillée](Docs/conception_detaillee_fr.md)
+* [Sujet Théorique : Autodiff & Backpropagation](Docs/PPN_NN.md)
 
-- Jianye Shi
-- Hao Qian
-- Xiang Bian
-- Abdennour Boulmis
+## Auteurs
 
-**Encadrant :** Aurélien Delval
+* **Abdennour Boulmis**
 
-## 📄 Licence
+**Encadrant** : Aurélien Delval
 
-Ce projet a été développé dans le cadre du cursus M1 CHPS à l'UVSQ / Université Paris-Saclay.
+## Licence
+
+Aucun fichier de licence n'est fourni. Ce projet est destiné à un usage académique et éducatif uniquement.
