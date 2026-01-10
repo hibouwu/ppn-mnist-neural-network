@@ -396,7 +396,7 @@ Le réseau est construit par composition modulaire avec support multi-couches :
 // Construction flexible (Support multi-couches)
 int prev = input_dim;
 for (int h : hidden_dims) {
-    // Couche cachée + Activation (ReLU/Sigmoid...)
+    // Couche cachee + Activation (ReLU/Sigmoid...)
     net.addLayer(makeLinear(prev, h), makeActivation(act));
     prev = h;
 }
@@ -405,7 +405,7 @@ net.addLayer(makeLinear(prev, output_dim), nullptr);
 \end{lstlisting}
 
 {\small
-\textbf{Exemple} : \texttt{--hidden\_sizes 256,128,64} crée 784→256→128→64→10
+\textbf{Exemple} : \texttt{--hidden\_sizes 256,128,64} cree 784->256->128->64->10
 }
 \end{frame}
 
