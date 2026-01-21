@@ -484,7 +484,7 @@ void SGDOptimizer::step() {
 \textbf{Protocole rigoureux}
 \begin{itemize}
     \item \textbf{Fréquence verrouillée} : 4.0 GHz
-    \item \textbf{Affinité CPU} : \texttt{taskset}
+    \item \textbf{Affinité CPU (taskset)} : limitée aux 8 cœurs physiques
     \item \textbf{Warm-up} : 5 itérations
     \item \textbf{Graines fixées} : moyenne sur 3 runs (42, 43, 44)
 \end{itemize}
@@ -503,7 +503,7 @@ Mesures fiables et reproductibles pour comparer les optimisations
 \vspace{-0.2cm}
 {\small
 \begin{center}
-\textbf{Analyse :} À 64x64, le surcoût de gestion des threads dépasse le gain de calcul au-delà de 8 threads.\\
+\textbf{Analyse :} Le surcoût de gestion des threads dépasse le gain de calcul au-delà de 8 threads.\\
 \textbf{Conclusion :} La parallélisation n'est efficace que si la charge de calcul est suffisante pour masquer l'overhead.
 \end{center}
 }
@@ -517,7 +517,7 @@ Mesures fiables et reproductibles pour comparer les optimisations
 {\small
 \begin{center}
 \textbf{Analyse :} L'accélération est quasi-linéaire jusqu'à 8 threads (cœurs physiques), puis sature.\\
-\textbf{Conclusion :} L'HyperThreading n'apporte pas de gain pour ce type de charge CPU-bound (FPU saturée).
+\textbf{Conclusion :} L'HyperThreading n'apporte pas de gain pour ce type de charge CPU-bound.
 \end{center}
 }
 \end{frame}
@@ -612,6 +612,10 @@ de la hiérarchie mémoire.
 \begin{center}
 \small \textit{Bon compromis capacité / généralisation validé par Grid Search}
 \end{center}
+\vspace{0.2cm}
+\begin{center}
+\small \textit{Transition : on analyse maintenant l'impact des hyperparamètres (HPO).}
+\end{center}
 \end{frame}
 
 \begin{frame}{Impact du Learning Rate}
@@ -644,14 +648,15 @@ de la hiérarchie mémoire.
 \small
 \textbf{Analyse}
 \begin{itemize}
-    \item Petits (16-32) : Lents
-    \item Grands (128+) : Apparition d'un écart train-test, signe de surapprentissage
+    \item \`Epoques constantes : impact du batch size isolé.
+    \item Batchs 16, 32, 64 : pertes et précisions très proches.
+    \item Seuls 128+ se dégradent.
 \end{itemize}
 
 \vspace{0.3cm}
 \textbf{Conclusion}
 \begin{itemize}
-    \item Batch=64 maximise le débit sans sacrifier la convergence (à nombre d'époques fixé).
+    \item Batch=64 conserve la convergence et la précision, avec un coût réduit.
 \end{itemize}
 \end{columns}
 \end{frame}
