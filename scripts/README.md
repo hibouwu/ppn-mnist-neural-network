@@ -42,12 +42,12 @@ Conclusions :
    > Même sans bruit de mesure, on observe :
    > - **8 threads (Active Spin)** : quand threads <= cœurs physiques, OpenMP busy-wait et devient très sensible au bruit système.
    > - **16 threads (Passive Wait)** : quand threads > cœurs physiques, OpenMP passe en attente passive (yield) et la stabilité moyenne s'améliore.
- 
+
 2. **Méthodologie statistique** :
    - **Moyenne interne** : chaque point exécute 50-100 itérations dans C++ et prend moyenne et écart type haute précision.
    - **Warm-up** : 5 runs à vide avant mesure pour chauffer i-cache et d-cache.
    - **Moyenne tronquée** : le script de tracé agrège plusieurs runs et coupe les 5% extrêmes pour robustifier.
- 
+
 3. **Affinité cœur et sursouscription** :
    - **Contexte** : les expériences utilisent `taskset -c 0-7`, limitant strictement à 8 cœurs physiques.
    - **Constat clé** : le meilleur nombre de threads est **fixé à 8**.
@@ -179,65 +179,60 @@ cd ..
 
 ### 2. Lancer le profiling (implémentations séparées)
 
-On bascule d'implémentation via la variable `MATMUL_IMPL`, avec `taskset` pour simuler l'environnement limité.
+On peut automatiser la comparaison des 5 implémentations (blas, ijk, ikj, blocked, omp) grâce au script `scripts/benchmark.sh`.
 
 ```bash
-# A. Identifier le goulot : implémentation naïve (ijk)
+# 1. Configurer l'environnement (Fréquence stable + Threads limités)
 # ------------------------------------------------------------------
-# Très lent (~13s) mais montre clairement le coût de matmul
-echo "Profiling Naive Implementation..."
-MATMUL_IMPL=ijk sudo taskset -c 0-7 ./build/ppn_train
-gprof build/ppn_train gmon.out > analysis_naive.txt
+# Verrouiller à 4GHz (adapté à votre CPU)
+sudo cpupower frequency-set -g performance
+sudo cpupower frequency-set -u 4000MHz -d 4000MHz
 
-# B. Vérifier le résultat final : implémentation BLAS
+# Limiter à 8 threads (ou 4) pour éviter l'overhead
+export OMP_NUM_THREADS=8
+
+# 2. Lancer le benchmark (avec taskset)
 # ------------------------------------------------------------------
-echo "Profiling BLAS Implementation..."
-MATMUL_IMPL=blas sudo taskset -c 0-7 ./build/ppn_train
-gprof build/ppn_train gmon.out > analysis_blas.txt
+# Le script va compiler les résultats dans un tableau comparatif
+taskset -c 0-7 ./scripts/benchmark.sh
+
+
+# Impl       | Wall-Time       | CPU-Time        | Top-Gprof-Function            
+# --------------------------------------------------------------------------------------
+# blas       | 0:18.37         | 113.99          | std::vector<double,           
+# ijk        | 1:19.00         | 78.25           | (anonymous                    
+# ikj        | 0:49.06         | 48.45           | (anonymous                    
+# blocked    | 0:56.13         | 55.50           | (anonymous                    
+# omp        | 0:21.86         | 152.45          |                               
+
+# detailed logs: build/train_*.log
+# profile reports: build/gprof_*.txt
+
+
 
 # 3. Restaurer l'environnement
 # ------------------------------------------------------------------
 sudo cpupower frequency-set -g powersave
-sudo cpupower frequency-set -d 421MHz -u 5386MHz
+sudo cpupower frequency-set -d 421MHz -u 5386MHz  # Adaptez aux limites de votre CPU
 ```
 
-### 3. Analyse comparative des résultats
+### 3. Analyse détaillée des temps (Décomposition)
 
-Sur 1 epoch d'entraînement, les rapports donnent :
+L'écart entre le temps Wall-clock (`/usr/bin/time`) et le temps CPU (`gprof`) permet d'isoler le coût de la multiplication matricielle par rapport au reste du programme (I/O, allocations, autres calculs).
 
-#### A. Avant optimisation (Naïf) — goulot identifié
-*   **Bouchon** : `Matrix::matmul` prend **12.05s**, soit **94.8%** du temps total.
-*   **Appels fréquents** : 6 256 appels en 1 epoch.
-*   **Conclusion** : la multiplication matricielle est le tueur de perf, il faut l'optimiser.
+| Implémentation | Wall-Clock ($T_{total}$) | Matmul (Gprof) | "Reste" ($T_{total} - T_{matmul}$) | Part Matmul |
+| :--- | :--- | :--- | :--- | :--- |
+| **Naïf (ijk)** | **79.00s** | 61.69s | **17.31s** | 78\% |
+| **Bloqué** | **56.13s** | 38.15s | **17.98s** | 68\% |
+| **Réordonné (ikj)** | **49.06s** | 31.72s | **17.34s** | 65\% |
+| **OpenMP** | **21.86s** | $\sim$ 4.4s (est.) | $\sim$ 17.5s | **~20\%** |
+| **BLAS** | **18.37s** | $\sim$ 1s (est.) | $\sim$ 17.4s | **~5\%** |
 
-#### B. Après optimisation (BLAS) — goulot levé
-*   **Gain massif** : `Matrix::matmul` réduit à **~0.5s**, chute drastique de la part CPU.
-*   **Bascule des coûts** : le temps est désormais surtout dans l'I/O et l'allocation :
-    -   **Chargement des données (`MNISTDataset::load`)** : ~43% (coût one-shot)
-    -   **Allocations (`Matrix::Matrix`)** : ~29% (création/destruction fréquentes)
-    -   **Pur calcul** : < 1% (grâce à BLAS)
+**Observations clés :**
 
-### 4. Accélération End-to-End (macro-benchmark)
-
-Quelle accélération E2E quand l'opérateur est 1000x plus rapide ?
-
-| Implémentation | Temps total | Speedup | Note |
-| :--- | :--- | :--- | :--- |
-| **Naïf (`ijk`)** | **13.27s** | 1.0x | Référence, limité par le calcul |
-| **Réordonné (`ikj`)**| 4.00s | 3.3x | Localité cache améliorée |
-| **OpenMP** | 2.03s | 6.5x | Parallélisme |
-| **BLAS** | **1.74s** | **7.6x** | **Résultat final** |
-
-**Conclusion** : malgré un opérateur 1000x plus rapide, **Amdahl** limite le gain global à **~7.6x** à cause de l'I/O et de l'allocation. C'est tout de même un saut majeur (de “très lent” à “presque instantané”).
-
-```bash
-# Revenir au mode économie ou schedutil (souvent powersave)
-sudo cpupower frequency-set -g powersave
-# Restaurer la plage de fréquence (selon votre CPU : 421MHz - 5386MHz)
-sudo cpupower frequency-set -d 421MHz -u 5386MHz
-
-echo "Environnement restauré."
-```
+1. **Constante du "Reste"** : Le temps hors-matmul est remarquablement stable ($\sim$ 17.5s) sur les versions séquentielles. Cela inclut le chargement des données (I/O) et la gestion mémoire.
+2. **Impact BLAS** : En supposant ce coût fixe, l'opération Matmul ne prend plus que **~1 seconde** avec OpenBLAS, contre **>60 secondes** avec la version naïve.
+3. **Nouveau Goulot** : Avec BLAS, 95\% du temps est désormais passé dans les tâches annexes (ex: I/O, Allocations). L'optimisation du calcul est terminée ; la suite nécessiterait d'optimiser les E/S (Loi d'Amdahl).
 
 ## Autres scripts : générer un diagramme PlantUML
 
@@ -290,4 +285,3 @@ cd ..
 python3 scripts/analyze_results_lr.py
 python3 scripts/plot_lr_curves.py
 ```
-

@@ -549,7 +549,7 @@ de la hiérarchie mémoire.
 \vspace{0.1cm}
 \begin{alertblock}{\small Speedup global}
 \centering
-\textbf{7.6$\times$} \\
+\textbf{4.3$\times$} \\
 \small (limité par la loi d'Amdahl)
 \end{alertblock}
 
@@ -557,8 +557,8 @@ de la hiérarchie mémoire.
 {\small
 \textbf{Analyse}
 \begin{itemize}
-    \item Naïf : \textbf{96\%} du temps dans matmul (Compute-bound)
-    \item BLAS : matmul négligeable (\textbf{$< 1\%$})
+    \item Naïf : \textbf{78\%} du temps dans matmul (Compute-bound)
+    \item BLAS : matmul quasi-instantanée (\textbf{$\sim$ 5\%})
 \end{itemize}
 
 \vspace{0.2cm}

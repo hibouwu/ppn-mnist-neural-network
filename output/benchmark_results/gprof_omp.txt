@@ -1,0 +1,29 @@
+Flat profile:
+
+Each sample counts as 0.01 seconds.
+  %   cumulative   self              self     total           
+ time   seconds   seconds    calls  ms/call  ms/call  name    
+ 94.37     34.19    34.19                             Matrix::print() const
+  1.02     34.56     0.37    21590     0.02     0.02  void std::__fill_a1<double*, double>(double*, double*, double const&)
+  0.91     34.89     0.33        2   165.00   178.22  MNISTDataset::loadImages(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int, int)
+  0.59     35.10     0.21 1112253251     0.00     0.00  std::vector<double, std::allocator<double> >::size() const
+  0.46     35.27     0.17 573132032     0.00     0.00  std::vector<double, std::allocator<double> >::operator[](unsigned long)
+  0.41     35.42     0.15 224810260     0.00     0.00  Matrix::operator()(unsigned long, unsigned long)
+  0.36     35.55     0.13 245532068     0.00     0.00  Matrix::operator()(unsigned long, unsigned long) const
+  0.33     35.67     0.12                             _init
+  0.25     35.76     0.09     1252     0.07     0.21  DataLoader::nextBatch()
+  0.23     35.84     0.09 521166167     0.00     0.00  std::vector<double, std::allocator<double> >::operator[](unsigned long) const
+  0.19     35.91     0.07 98144930     0.00     0.00  void std::_Construct<double, double const&>(double*, double const&)
+  0.19     35.98     0.07     9380     0.01     0.02  Node::addGrad(Matrix const&)
+  0.19     36.05     0.07      938     0.07     0.16  SGDOptimizer::step()
+  0.14     36.10     0.05 98257903     0.00     0.00  operator new(unsigned long, void*)
+  0.14     36.16     0.05    12218     0.00     0.01  double* std::__do_uninit_fill_n<double*, unsigned long, double>(double*, unsigned long, double const&)
+  0.11     36.20     0.04     3752     0.01     0.11  Matrix::transpose() const
+  0.04     36.21     0.01    77874     0.00     0.00  std::__shared_ptr_access<Node, (__gnu_cxx::_Lock_policy)2, false, false>::operator->() const
+  0.03     36.22     0.01 10960000     0.00     0.00  double const& std::max<double>(double const&, double const&)
+  0.03     36.23     0.01      938     0.01     0.06  MathOps::relu(std::shared_ptr<Node> const&)::{lambda(Matrix const&)#1}::operator()(Matrix const&) const
+  0.00     36.23     0.00   508319     0.00     0.00  std::mersenne_twister_engine<unsigned long, 32ul, 624ul, 397ul, 31ul, 2567483615ul, 11ul, 4294967295ul, 7ul, 2636928640ul, 15ul, 4022730752ul, 18ul, 1812433253ul>::operator()()
+  0.00     36.23     0.00   462532     0.00     0.00  std::mersenne_twister_engine<unsigned long, 32ul, 624ul, 397ul, 31ul, 2567483615ul, 11ul, 4294967295ul, 7ul, 2636928640ul, 15ul, 4022730752ul, 18ul, 1812433253ul>::min()
+  0.00     36.23     0.00   462532     0.00     0.00  std::log(long double)
+  0.00     36.23     0.00   248482     0.00     0.00  unsigned long const& std::max<unsigned long>(unsigned long const&, unsigned long const&)
+  0.00     36.23     0.00   231266     0.00     0.00  std::__detail::_Adaptor<std::mersenne_twister_engine<unsigned long, 32ul, 624ul, 397ul, 31ul, 2567483615ul, 11ul, 4294967295ul, 7ul, 2636928640ul, 15ul, 4022730752ul, 18ul, 1812433253ul>, double>::operator()()

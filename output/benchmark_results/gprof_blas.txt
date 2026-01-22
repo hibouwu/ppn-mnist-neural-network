@@ -1,0 +1,30 @@
+Flat profile:
+
+Each sample counts as 0.01 seconds.
+  %   cumulative   self              self     total           
+ time   seconds   seconds    calls   s/call   s/call  name    
+ 16.41      0.64     0.64 1112195163     0.00     0.00  std::vector<double, std::allocator<double> >::size() const
+ 10.00      1.03     0.39    21590     0.00     0.00  void std::__fill_a1<double*, double>(double*, double*, double const&)
+  9.74      1.41     0.38     3752     0.00     0.00  Matrix::transpose() const
+  8.72      1.75     0.34        2     0.17     0.20  MNISTDataset::loadImages(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int, int)
+  7.18      2.03     0.28 573132032     0.00     0.00  std::vector<double, std::allocator<double> >::operator[](unsigned long)
+  6.15      2.27     0.24 245532068     0.00     0.00  Matrix::operator()(unsigned long, unsigned long) const
+  6.15      2.51     0.24 224810260     0.00     0.00  Matrix::operator()(unsigned long, unsigned long)
+  6.15      2.75     0.24                             _init
+  5.38      2.96     0.21 521108079     0.00     0.00  std::vector<double, std::allocator<double> >::operator[](unsigned long) const
+  4.87      3.15     0.19     9380     0.00     0.00  Node::addGrad(Matrix const&)
+  4.10      3.31     0.16    12218     0.00     0.00  double* std::__do_uninit_fill_n<double*, unsigned long, double>(double*, unsigned long, double const&)
+  3.59      3.45     0.14     1252     0.00     0.00  DataLoader::nextBatch()
+  3.46      3.58     0.14 98144930     0.00     0.00  void std::_Construct<double, double const&>(double*, double const&)
+  2.05      3.67     0.08      938     0.00     0.00  SGDOptimizer::step()
+  1.28      3.71     0.05     2504     0.00     0.00  MathOps::add(std::shared_ptr<Node> const&, std::shared_ptr<Node> const&)
+  1.03      3.75     0.04    77874     0.00     0.00  std::__shared_ptr_access<Node, (__gnu_cxx::_Lock_policy)2, false, false>::operator->() const
+  1.03      3.79     0.04     1252     0.00     0.00  MathOps::relu(std::shared_ptr<Node> const&)
+  0.77      3.83     0.03 98257903     0.00     0.00  operator new(unsigned long, void*)
+  0.64      3.85     0.03 10960000     0.00     0.00  double const& std::max<double>(double const&, double const&)
+  0.26      3.86     0.01    40000     0.00     0.00  unsigned int std::uniform_int_distribution<unsigned long>::_S_nd<unsigned long, std::mersenne_twister_engine<unsigned long, 32ul, 624ul, 397ul, 31ul, 2567483615ul, 11ul, 4294967295ul, 7ul, 2636928640ul, 15ul, 4022730752ul, 18ul, 1812433253ul>, unsigned int>(std::mersenne_twister_engine<unsigned long, 32ul, 624ul, 397ul, 31ul, 2567483615ul, 11ul, 4294967295ul, 7ul, 2636928640ul, 15ul, 4022730752ul, 18ul, 1812433253ul>&, unsigned int)
+  0.26      3.87     0.01     1876     0.00     0.00  MathOps::add(std::shared_ptr<Node> const&, std::shared_ptr<Node> const&)::{lambda(Matrix const&)#1}::operator()(Matrix const&) const
+  0.26      3.88     0.01     1252     0.00     0.00  CrossEntropyLoss::forward(std::shared_ptr<Node> const&, std::shared_ptr<Node> const&)
+  0.26      3.89     0.01        6     0.00     0.00  Matrix::randomInit(double, double, bool, unsigned int)
+  0.13      3.90     0.01    17210     0.00     0.00  void std::vector<std::shared_ptr<Node>, std::allocator<std::shared_ptr<Node> > >::_M_realloc_append<std::shared_ptr<Node> const&>(std::shared_ptr<Node> const&)
+  0.13      3.90     0.01    12218     0.00     0.00  std::_UninitDestroyGuard<double*, void>::release()
