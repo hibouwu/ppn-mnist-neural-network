@@ -102,7 +102,7 @@ static void dgemm_ikj(
 
 // Version bloquée (cache blocking)
 #ifndef BLOCK_SIZE
-#define BLOCK_SIZE 128
+#define BLOCK_SIZE 64
 #endif
 
 static void dgemm_blocked(const double* A, const double* B, double* C,
@@ -122,14 +122,16 @@ static void dgemm_blocked(const double* A, const double* B, double* C,
             const size_t k_max = minz(kk + BS, K);
             for (size_t jj = 0; jj < N; jj += BS) {
                 const size_t j_max = minz(jj + BS, N);
+                const size_t len = j_max - jj;
 
                 for (size_t i = ii; i < i_max; ++i) {
                     for (size_t k = kk; k < k_max; ++k) {
                         const double aik = A[i*K + k];
-                        const double* Bk = B + k*N + jj; // B(k, jj)
-                        double* Ci = C + i*N + jj;       // C(i, jj)
-                        for (size_t j = jj; j < j_max; ++j) {
-                            Ci[j - jj] += aik * Bk[j - jj];
+                        const double* Bk = B + k*N + jj; 
+                        double* Ci = C + i*N + jj;       
+
+                        for (size_t x = 0; x < len; ++x) {
+                            Ci[x] += aik * Bk[x];
                         }
                     }
                 }

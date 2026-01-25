@@ -464,20 +464,17 @@ void SGDOptimizer::step() {
 \begin{frame}{Configuration expérimentale}
 \begin{columns}[T]
 \column{0.5\textwidth}
+
+\begin{alertblock}{Objectif}
+Mesures fiables et reproductibles
+\end{alertblock}
+
 \textbf{Matériel}
 \begin{itemize}
     \item AMD Ryzen 9 8940HX
     \item 32 cœurs / 64 threads
     \item 30 GiB RAM
     \item Cache L3 : 64 MiB
-\end{itemize}
-
-\vspace{0.3cm}
-\textbf{Logiciel}
-\begin{itemize}
-    \item Fedora Linux 42
-    \item GCC 15.2.1
-    \item Flags : \texttt{-O3 -march=native}
 \end{itemize}
 
 \column{0.5\textwidth}
@@ -490,13 +487,19 @@ void SGDOptimizer::step() {
 \end{itemize}
 
 \vspace{0.3cm}
-\begin{alertblock}{Objectif}
-Mesures fiables et reproductibles pour comparer les optimisations
-\end{alertblock}
+\textbf{Logiciel}
+\begin{itemize}
+    \item Fedora Linux 42
+    \item GCC 15.2.1
+    \item Flags : \texttt{-O3 -march=native}
+\end{itemize}
+
+\vspace{0.3cm}
 \end{columns}
+
 \end{frame}
 
-\begin{frame}{Passage à l'échelle : Temps d'exécution}
+\begin{frame}{Temps d'exécution de la multiplication matricielle (GEMM)}
 \begin{center}
 \includegraphics[width=0.85\textwidth,height=0.75\textheight,keepaspectratio]{Images/scaling_plot.png}
 \end{center}
@@ -522,22 +525,21 @@ Mesures fiables et reproductibles pour comparer les optimisations
 }
 \end{frame}
 
-\begin{frame}{Hiérarchie : Impact des optimisations sur les performances}
+\begin{frame}{Hiérarchie : Impact des optimisations}
 \begin{center}
 \includegraphics[width=0.9\textwidth,height=0.7\textheight,keepaspectratio]{Images/comparison_speedup_grid.png}
 \end{center}
 \vspace{-0.2cm}
 {\small
 \begin{center}
-\textbf{Observation :} Les gains de performance augmentent fortement avec la taille du problème.\\
-\textbf{Conclusion :} Les performances à grande échelle reposent sur une exploitation efficace
-de la hiérarchie mémoire.
+\textbf{ijk :}Naïve, \textbf{ikj :} réordonnancement des boucles, \textbf{blocage}, \textbf{OpenMP :} 4 et 8 threads, \textbf{BLAS :} 8 threads\\
+\textbf{Conclusion :} Plus la taille augmente, plus l'impact des optimisations est amplifié.
 
 \end{center}
 }
 \end{frame}
 
-\begin{frame}{Profiling et Loi d'Amdahl}
+\begin{frame}{Impact sur le temps total d'entraînement}
 \vspace{-0.2cm}
 \begin{columns}[c]
 
@@ -565,7 +567,6 @@ de la hiérarchie mémoire.
 \textbf{Conclusion}
 \begin{itemize}
     \item Goulot d'étranglement $\to$ \textbf{E/S} et \textbf{allocations mémoire}.
-    \item Gain total limité par loi d'Amdahl
 \end{itemize}
 }
 \end{columns}
