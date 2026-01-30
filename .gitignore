@@ -60,3 +60,8 @@ ProjetRapportlatex/*.lof
 ProjetRapportlatex/*.vrb
 ProjetRapportlatex/*.snm
 ProjetRapportlatex/*.nav
+
+# Experience 
+*.data
+*.old
+*.csv
