@@ -54,6 +54,9 @@ struct Config {
     unsigned int seed = 0; // 0 = random
     std::string activation = "relu"; // relu, sigmoid, tanh
     std::string init = "he"; // he, xavier, manual
+
+    std::string out_dir = "output";//optuna
+
 };
 
 int main(int argc, char** argv) {
@@ -80,7 +83,10 @@ int main(int argc, char** argv) {
             cfg.activation = argv[++i];
         } else if (arg == "--init" && i + 1 < argc) {
             cfg.init = argv[++i];
-        }
+        } else if (arg == "--out_dir" && i + 1 < argc) {
+            cfg.out_dir = argv[++i];  // optuna
+}
+
     }
 
     // Decide architecture
@@ -132,10 +138,11 @@ int main(int argc, char** argv) {
     std::cout << "Training started..." << std::endl;
 
     // Create output directory
-    fs::create_directory("output");
+    fs::create_directories(cfg.out_dir);
 
     // Open CSV file for logging
-    std::ofstream metricsFile("output/metrics.csv");
+    std::ofstream metricsFile(cfg.out_dir + "/metrics.csv");
+
     if (metricsFile.is_open()) {
         metricsFile << "epoch,train_loss,train_acc,test_loss,test_acc\n";
     }
@@ -162,7 +169,7 @@ int main(int argc, char** argv) {
     }
 
     metricsFile.close();
-    std::cout << "Training finished. Metrics saved to metrics.csv" << std::endl;
+    std::cout << "Training finished. Metrics saved to " << (cfg.out_dir + "/metrics.csv") << std::endl;
 
     // 5. Final Evaluation
     std::cout << "\nEvaluating on Test Set..." << std::endl;
