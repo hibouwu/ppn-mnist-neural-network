@@ -2,12 +2,12 @@
 
 ## Expériences GEMM (Multiplication Matricielle)
 
-Pour les expériences sur la multiplication matricielle (thread scaling, optimisations, profiling), voir [scripts/ExperiencGEMM/README.md](ExperiencGEMM/README.md).
+Pour les expériences sur la multiplication matricielle (thread scaling, optimisations, profiling), voir [scripts/ExperienceGEMM/README.md](ExperienceGEMM/README.md).
 
 ## Autres scripts : générer un diagramme PlantUML
 
 ```bash
-python3 encode_plantuml.py output/thread_scaling.csv
+python3 scripts/Utils/encode_plantuml.py output/thread_scaling.csv
 ```
 
 ## Autre script
@@ -19,7 +19,7 @@ sudo cpupower frequency-set -g performance
 sudo cpupower frequency-set -u 4000MHz -d 4000MHz
 
 # 2. Recompiler (Release + profiling)
-sudo taskset -c 0-7 bash scripts/ExperiencGEMM/find_optimal_threads.sh
+sudo taskset -c 0-7 bash scripts/ExperienceGEMM/find_optimal_threads.sh
 
 # 4. Générer le rapport gprof
 echo "Generating gprof report..."
@@ -51,7 +51,7 @@ cd ..
 ### 2. Exemples d'utilisation
 
 ```bash
-./scripts/exp_learning_rate.sh
-python3 scripts/analyze_results_lr.py
-python3 scripts/plot_lr_curves.py
+./scripts/ExperienceHPO/exp_learning_rate.sh
+python3 scripts/ExperienceHPO/analyze_results_lr.py
+python3 scripts/ExperienceHPO/plot_lr_curves.py
 ```

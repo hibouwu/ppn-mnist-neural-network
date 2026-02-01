@@ -53,41 +53,68 @@ int main(int argc, char** argv) {
     }
 
     std::vector<double> timings;
-    timings.reserve(reps);
+    timings.reserve(2000); // Reserve rough max
 
-    // Perform multiplication Reps times
-    for (int i = 0; i < reps; ++i) {
+    // Fixed Repetitions Configuration
+    // User requested: Always run exactly max_reps times (no adaptive stopping)
+    int min_reps = 100;
+    int max_reps = 2000; 
+    
+    // If user provides reps > 0 via command line, use it as FIXED value
+    if (reps > 0) {
+        max_reps = reps;
+        min_reps = reps;  // Force exact repetitions
+    }
+
+    int current_reps = 0;
+    double current_mean = 0.0;
+    double current_std = 0.0;
+    
+    // Run EXACTLY max_reps iterations (no early stopping)
+    while (current_reps < max_reps) {
         auto t0 = std::chrono::high_resolution_clock::now();
         C = A.matmul(B);
         auto t1 = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> run_diff = t1 - t0;
         timings.push_back(run_diff.count());
+        current_reps++;
+        
+        // Calculate running stats (for monitoring, but no early exit)
+        double sum = 0.0;
+        for (double t : timings) sum += t;
+        current_mean = sum / current_reps;
+        
+        double sq_sum = 0.0;
+        for (double t : timings) sq_sum += (t - current_mean) * (t - current_mean);
+        current_std = (current_reps > 1) ? std::sqrt(sq_sum / (current_reps - 1)) : 0.0;
+        
+        // NO convergence check - always run to max_reps
     }
 
-    // Drop the lowest/highest 10% to reduce outlier influence
+    // Final Post-Processing (Trimming Outliers as before for robust result)
     std::vector<double> filtered = timings;
     std::sort(filtered.begin(), filtered.end());
     size_t trim = static_cast<size_t>(filtered.size() * 0.10);
-    if (trim * 2 >= filtered.size()) {
-        trim = 0; // Not enough samples to trim
-    }
+    if (trim * 2 >= filtered.size()) trim = 0;
+
     auto beginIt = filtered.begin() + trim;
     auto endIt   = filtered.end() - trim;
+    
+    // Final Mean
+    double f_sum = 0.0;
+    size_t f_count = 0;
+    for (auto it = beginIt; it != endIt; ++it) { f_sum += *it; f_count++; }
+    double final_mean = (f_count > 0) ? f_sum / f_count : 0.0;
 
-    // Compute Mean on trimmed sample
-    double sum = 0.0;
-    size_t used = static_cast<size_t>(std::distance(beginIt, endIt));
-    for (auto it = beginIt; it != endIt; ++it) sum += *it;
-    double mean = sum / static_cast<double>(used);
+    // Final StdDev
+    double f_sq_sum = 0.0;
+    for (auto it = beginIt; it != endIt; ++it) f_sq_sum += (*it - final_mean) * (*it - final_mean);
+    double final_std = (f_count > 1) ? std::sqrt(f_sq_sum / (f_count - 1)) : 0.0;
 
-    // Compute StdDev on trimmed sample
-    double sq_sum = 0.0;
-    for (auto it = beginIt; it != endIt; ++it) sq_sum += (*it - mean) * (*it - mean);
-    double stddev = (used > 1) ? std::sqrt(sq_sum / static_cast<double>(used - 1)) : 0.0;
-
-    // Output output to be parsed: "Mean: <MEAN> s, StdDev: <STDDEV> s"
-    std::cout << "Done. Mean: " << std::fixed << std::setprecision(12) << mean 
-              << " s, StdDev: " << stddev << " s" << std::endl;
+    // Output output to be parsed: "Mean: <MEAN> s, StdDev: <STDDEV> s, Reps: <REPS>"
+    // Note: Added Reps to output so script can parse it
+    std::cout << "Done. Mean: " << std::fixed << std::setprecision(12) << final_mean 
+              << " s, StdDev: " << final_std << " s, Reps: " << current_reps << std::endl;
     
     // Prevent optimization
     std::cout << "Result check: " << C.data[0] << std::endl;

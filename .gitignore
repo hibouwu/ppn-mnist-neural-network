@@ -65,3 +65,8 @@ ProjetRapportlatex/*.nav
 *.data
 *.old
 *.csv
+*.db
+*.log
+
+# Heavy experiment data
+output/ExperienceHPO/hpo_runs/

@@ -53,7 +53,7 @@ cmake --build . -j$(nproc)
 我们提供了一个脚本来下载 MNIST 数据集：
 
 ```bash
-./scripts/get_mnist.sh
+./scripts/MnistDDataDownload/get_mnist.sh
 ```
 
 ### 3. 运行程序
@@ -91,7 +91,7 @@ cmake --build . -j$(nproc)
   * `exp_learning_rate.sh`, `exp_batch_size.sh`, `exp_hidden_size.sh`: 运行超参数扫描。
   * `exp_init_comparison.sh`: 比较不同的权重初始化策略。
 * **可视化 (Visualization)**：
-  * Python 脚本 (如 `plot_metrics.py`) 被 Shell 脚本调用以生成性能对比图。
+  * Python 脚本 (如 `scripts/Utils/plot_metrics.py`) 被 Shell 脚本调用以生成性能对比图。
 
 ## 架构
 

@@ -53,7 +53,7 @@ cmake --build . -j$(nproc)
 Un script est fourni pour télécharger le dataset MNIST :
 
 ```bash
-./scripts/get_mnist.sh
+./scripts/MnistDDataDownload/get_mnist.sh
 ```
 
 ### 3. Exécution
@@ -91,7 +91,7 @@ Le répertoire `scripts/` contient divers outils pour les benchmarks et les exp�
   * `exp_learning_rate.sh`, `exp_batch_size.sh`, `exp_hidden_size.sh` : Tests d'hyperparamètres.
   * `exp_init_comparison.sh` : Comparaison des stratégies d'initialisation.
 * **Visualisation** :
-  * Des scripts Python (ex: `plot_metrics.py`) sont utilisés pour générer les courbes de performance.
+  * Des scripts Python (ex: `scripts/Utils/plot_metrics.py`) sont utilisés pour générer les courbes de performance.
 
 ## Architecture
 
