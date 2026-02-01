@@ -100,11 +100,10 @@ def main():
             ])
 
     def objective(trial: optuna.Trial) -> float:
-        # ---- Search space (可按你们组讨论再扩展) ----
         lr = trial.suggest_float("learning_rate", 1e-4, 5e-1, log=True)
         batch = trial.suggest_categorical("batch_size", [32, 64, 128, 256])
 
-        # hidden sizes: 用字符串传给 --hidden_sizes
+        # hidden sizes
         hidden_sizes = trial.suggest_categorical(
             "hidden_sizes",
             ["128", "256", "256,128", "512,256", "256,128,64"]
@@ -127,7 +126,7 @@ def main():
             "--init", init,
             "--seed", str(args.seed),
             "--data_dir", args.data_dir,
-            "--out_dir", str(out_dir)   # 依赖你在 main.cpp 加的参数
+            "--out_dir", str(out_dir)   
         ]
 
         cmd = [args.binary] + cmd_args
