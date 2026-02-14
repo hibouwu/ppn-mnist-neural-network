@@ -6,7 +6,7 @@
 
 class Matrix {
 public:
-    // ✅ Ordre : data, rows, cols (dans le même ordre que dans les constructeurs)
+    // Ordre : data, rows, cols (dans le même ordre que dans les constructeurs)
     std::vector<double> data;  // 1er
     size_t rows;               // 2ème
     size_t cols;               // 3ème
@@ -30,14 +30,17 @@ public:
     Matrix add(const Matrix& other) const;
     Matrix mul(const Matrix& other) const;        // multiplication élément par élément
     Matrix matmul(const Matrix& other) const;     // produit matriciel
+    void matmul_into(const Matrix& other, Matrix& out) const;
+
     Matrix transpose() const;
+
 
     // Initialisation aléatoire
     // use_normal=false -> Uniform(param1, param2)
     // use_normal=true  -> Normal(mean=param1, stddev=param2)
     // seed=0 -> random_device, seed!=0 -> fixed
     void randomInit(double param1 = -1.0, double param2 = 1.0, bool use_normal = false, unsigned int seed = 0);
-
+  
     // Affichage
     void print() const;
 };

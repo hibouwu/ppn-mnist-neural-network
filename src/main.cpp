@@ -17,6 +17,8 @@ namespace fs = std::filesystem;
 #include "trainer.hpp"
 #include "activation.hpp"
 
+#include "profiling.hpp"
+
 // ------------------ helpers ------------------
 static std::vector<int> parseHiddenSizes(const std::string& s) {
     std::vector<int> hs;
@@ -148,6 +150,10 @@ int main(int argc, char** argv) {
     }
 
     for (int epoch = 1; epoch <= cfg.epochs; ++epoch) {
+        #ifdef PROFILE_MATMUL
+        matmulProfileEpochReset();
+        #endif
+
         Metrics trainMetrics = trainer.trainEpoch();
 
         // Evaluate on test set with a separate trainer bound to testLoader
@@ -160,6 +166,30 @@ int main(int argc, char** argv) {
                   << " | [Test] loss = " << std::fixed << std::setprecision(4) << testMetrics.avg_loss
                   << ", acc = " << std::fixed << std::setprecision(2) << (testMetrics.accuracy * 100.0) << "%"
                   << std::endl;
+        
+                  #ifdef PROFILE_MATMUL
+        MatmulEpochStats p = matmulProfileEpochSnapshot();
+        double avg_us = (p.total_calls > 0)
+            ? static_cast<double>(p.total_us) / static_cast<double>(p.total_calls)
+            : 0.0;
+
+        std::cout << "[PROFILE][Epoch " << epoch << "] "
+                  << "matmul_calls=" << p.total_calls
+                  << ", total_us=" << p.total_us
+                  << ", avg_us=" << std::fixed << std::setprecision(2) << avg_us
+                  << std::endl;
+
+        for (const auto& s : p.per_impl) {
+            if (s.calls == 0) continue;
+            double impl_avg = static_cast<double>(s.total_us) / static_cast<double>(s.calls);
+            std::cout << "  - " << s.name
+                      << ": calls=" << s.calls
+                      << ", total_us=" << s.total_us
+                      << ", avg_us=" << std::fixed << std::setprecision(2) << impl_avg
+                      << std::endl;
+        }
+        #endif
+          
 
         if (metricsFile.is_open()) {
             metricsFile << epoch << ","

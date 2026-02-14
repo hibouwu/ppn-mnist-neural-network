@@ -12,6 +12,7 @@
 
 #ifdef PROFILE_MATMUL
 #include <chrono>
+#include "profiling.hpp"
 #endif
 
 namespace {
@@ -225,7 +226,7 @@ Matrix Matrix::mul(const Matrix& other) const {
     return result;
 }
 
-Matrix Matrix::matmul(const Matrix& other) const {
+void Matrix::matmul_into(const Matrix& other, Matrix& out) const {
     if (cols != other.rows) {
         throw std::invalid_argument(
             "Multiplication matricielle impossible : dimensions incompatibles");
@@ -239,11 +240,17 @@ Matrix Matrix::matmul(const Matrix& other) const {
             "Dimensions trop grandes pour l'interface BLAS (int)");
     }
 
+    if (out.rows != rows || out.cols != other.cols) {
+        throw std::invalid_argument(
+            "matmul_into: dimensions de sortie incompatibles");
+    }
+
+
 #ifdef PROFILE_MATMUL
     const auto t0 = std::chrono::high_resolution_clock::now();
 #endif
 
-    Matrix result(rows, other.cols);
+   
     const MatmulImpl impl = current_impl();
 
     switch (impl) {
@@ -262,29 +269,29 @@ Matrix Matrix::matmul(const Matrix& other) const {
                 other.data.data(),
                 static_cast<int>(other.cols),
                 0.0,
-                result.data.data(),
+                out.data.data(),
                 static_cast<int>(other.cols)
             );
             break;
 
         case MatmulImpl::Ijk:
             dgemm_ijk(data.data(), other.data.data(),
-                      result.data.data(), rows, other.cols, cols);
+                      out.data.data(), rows, other.cols, cols);
             break;
 
         case MatmulImpl::Ikj:
             dgemm_ikj(data.data(), other.data.data(),
-                      result.data.data(), rows, other.cols, cols);
+                      out.data.data(), rows, other.cols, cols);
             break;
 
         case MatmulImpl::Blocked:
             dgemm_blocked(data.data(), other.data.data(),
-                          result.data.data(), rows, other.cols, cols);
+                          out.data.data(), rows, other.cols, cols);
             break;
 
         case MatmulImpl::Omp:
             dgemm_omp(data.data(), other.data.data(),
-                      result.data.data(), rows, other.cols, cols);
+                      out.data.data(), rows, other.cols, cols);
             break;
     }
 
@@ -293,20 +300,27 @@ Matrix Matrix::matmul(const Matrix& other) const {
     const auto us =
         std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
 
-    const char* name =
-        (impl == MatmulImpl::Blas)    ? "blas" :
-        (impl == MatmulImpl::Ijk)     ? "ijk"  :
-        (impl == MatmulImpl::Ikj)     ? "ikj"  : "blocked";
+    const char* name = "blas";
+    switch (impl) {
+        case MatmulImpl::Blas:    name = "blas";    break;
+        case MatmulImpl::Ijk:     name = "ijk";     break;
+        case MatmulImpl::Ikj:     name = "ikj";     break;
+        case MatmulImpl::Blocked: name = "blocked"; break;
+        case MatmulImpl::Omp:     name = "omp";     break;
+    }
+    
+    // Chemin critique : aucune I/O par appel. Statistiques agrégées uniquement.
+    matmulProfileRecord(name, us);
 
-    std::cerr << "[PROFILE] matmul(" << name << ") "
-              << rows << "x" << cols << " * "
-              << other.rows << "x" << other.cols
-              << " -> " << rows << "x" << other.cols
-              << " : " << us << " us\n";
 #endif
+}
 
+Matrix Matrix::matmul(const Matrix& other) const {
+    Matrix result(rows, other.cols);
+    matmul_into(other, result);
     return result;
 }
+
 
 Matrix Matrix::transpose() const {
     Matrix result(cols, rows);

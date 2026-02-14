@@ -31,26 +31,41 @@ bool DataLoader::hasNext() const {
     return currentIndex_ < inputs_.rows;
 }
 
+size_t DataLoader::nextBatchInto(Matrix& x, Matrix& y) {
+    if (!hasNext()) return 0;
+
+    size_t end = std::min(currentIndex_ + batchSize_, inputs_.rows);
+    size_t actualSize = end - currentIndex_;
+
+    if (x.rows != actualSize || x.cols != inputs_.cols) {
+        x = Matrix(actualSize, inputs_.cols);
+    }
+    if (y.rows != actualSize || y.cols != targets_.cols) {
+        y = Matrix(actualSize, targets_.cols);
+    }
+
+    for (size_t i = 0; i < actualSize; ++i) {
+        size_t idx = indices_[currentIndex_ + i];
+        for (size_t c = 0; c < inputs_.cols; ++c) x(i, c) = inputs_(idx, c);
+        for (size_t c = 0; c < targets_.cols; ++c) y(i, c) = targets_(idx, c);
+    }
+
+    currentIndex_ += actualSize;
+    return actualSize;
+}
+
+
+
 std::pair<Matrix, Matrix> DataLoader::nextBatch() {
+    if (!hasNext()) {
+        return {Matrix(0, inputs_.cols), Matrix(0, targets_.cols)};
+    }
+
     size_t end = std::min(currentIndex_ + batchSize_, inputs_.rows);
     size_t actualSize = end - currentIndex_;
 
     Matrix x(actualSize, inputs_.cols);
     Matrix y(actualSize, targets_.cols);
-
-    for (size_t i = 0; i < actualSize; ++i) {
-        size_t idx = indices_[currentIndex_ + i];
-        
-        // Copy row idx from inputs to row i of x
-        // Assumes flat data layout in Matrix
-        for (size_t c = 0; c < inputs_.cols; ++c) {
-            x(i, c) = inputs_(idx, c);
-        }
-        for (size_t c = 0; c < targets_.cols; ++c) {
-            y(i, c) = targets_(idx, c);
-        }
-    }
-
-    currentIndex_ += actualSize;
+    nextBatchInto(x, y);
     return {x, y};
 }

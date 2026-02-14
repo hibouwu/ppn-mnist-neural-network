@@ -15,15 +15,11 @@ Trainer::Trainer(MLPNetwork& model,
 
 Metrics Trainer::trainEpoch() {
     Metrics m = runEpoch(/*training=*/true);
-    std::cout << "[Train] loss = " << m.avg_loss
-              << ", acc = " << m.accuracy << std::endl;
     return m;
 }
 
 Metrics Trainer::evaluate() {
     Metrics m = runEpoch(/*training=*/false);
-    std::cout << "[Eval ] loss = " << m.avg_loss
-              << ", acc = " << m.accuracy << std::endl;
     return m;
 }
 
@@ -35,14 +31,21 @@ Metrics Trainer::runEpoch(bool training) {
 
     // Assumed DataLoader API: reset() and hasNext().
     dataLoader_.reset();
+    
+
+    Matrix batch_x(dataLoader_.batchSize(), dataLoader_.inputCols());
+    Matrix batch_y(dataLoader_.batchSize(), dataLoader_.targetCols());
 
     while (dataLoader_.hasNext()) {
-        // Each batch is (inputs, targets).
-        auto batch = dataLoader_.nextBatch();
-        const Matrix& inputs  = batch.first;
-        const Matrix& targets = batch.second;
 
-        std::size_t batch_size = inputs.rows;
+        size_t actual = dataLoader_.nextBatchInto(batch_x, batch_y);
+        if (actual == 0) break;
+        
+        // Each batch is (inputs, targets).
+        const Matrix& inputs  = batch_x;
+        const Matrix& targets = batch_y;
+
+        std::size_t batch_size = actual;
         total_samples += batch_size;
 
         // Wrap raw matrices into computation graph nodes.

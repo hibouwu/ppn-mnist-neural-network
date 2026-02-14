@@ -13,7 +13,12 @@ public:
     void reset();
     bool hasNext() const;
     std::pair<Matrix, Matrix> nextBatch();
+    size_t nextBatchInto(Matrix& x, Matrix& y);
     void shuffle(); 
+
+    size_t batchSize() const { return batchSize_; }
+    size_t inputCols() const { return inputs_.cols; }
+    size_t targetCols() const { return targets_.cols; }
 
 private:
     const Matrix& inputs_;
