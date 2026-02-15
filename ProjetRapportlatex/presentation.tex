@@ -905,7 +905,8 @@ for (int i = 0; i < m; ++i)
     \item Charge MNIST (60k/10k)
     \item Génère mini-batchs $(X, Y)$
     \item Shuffle (seed contrôlé)
-    \item \texttt{reset()}, \texttt{nextBatch()}
+    \item \texttt{reset()}, \texttt{nextBatchInto(...)}
+    \item Réutilise les buffers batch pour réduire allocations et copies
 \end{itemize}
 }
 

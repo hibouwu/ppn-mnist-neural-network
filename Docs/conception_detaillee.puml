@@ -130,7 +130,7 @@ class DataLoader {
   -indices_: vector~size_t~
   +reset(): void
   +hasNext(): bool
-  +nextBatch(): pair~Matrix, Matrix~
+  +nextBatchInto(x: Matrix&, y: Matrix&): size_t
   +shuffle(): void
 }
 DataLoader --> Matrix : references (no ownership)

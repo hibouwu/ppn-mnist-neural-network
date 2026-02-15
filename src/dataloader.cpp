@@ -53,19 +53,3 @@ size_t DataLoader::nextBatchInto(Matrix& x, Matrix& y) {
     currentIndex_ += actualSize;
     return actualSize;
 }
-
-
-
-std::pair<Matrix, Matrix> DataLoader::nextBatch() {
-    if (!hasNext()) {
-        return {Matrix(0, inputs_.cols), Matrix(0, targets_.cols)};
-    }
-
-    size_t end = std::min(currentIndex_ + batchSize_, inputs_.rows);
-    size_t actualSize = end - currentIndex_;
-
-    Matrix x(actualSize, inputs_.cols);
-    Matrix y(actualSize, targets_.cols);
-    nextBatchInto(x, y);
-    return {x, y};
-}

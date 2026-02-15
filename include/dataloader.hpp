@@ -1,7 +1,6 @@
 #ifndef DATALOADER_HPP
 #define DATALOADER_HPP
 
-#include <utility>
 #include <vector>
 #include <cstddef>
 #include "tensor.hpp"
@@ -12,7 +11,6 @@ public:
 
     void reset();
     bool hasNext() const;
-    std::pair<Matrix, Matrix> nextBatch();
     size_t nextBatchInto(Matrix& x, Matrix& y);
     void shuffle(); 
 

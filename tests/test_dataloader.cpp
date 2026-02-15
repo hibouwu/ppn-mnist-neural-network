@@ -44,15 +44,18 @@ int main() {
         loader.reset();
         int batches = 0;
         size_t total_samples = 0;
+        Matrix batch_x(batch_size, 784);
+        Matrix batch_y(batch_size, 10);
         
         while(loader.hasNext()) {
-            auto batch = loader.nextBatch();
-            assert(batch.first.rows <= batch_size);
-            assert(batch.first.cols == 784);
-            assert(batch.second.rows == batch.first.rows);
-            assert(batch.second.cols == 10);
+            size_t actual = loader.nextBatchInto(batch_x, batch_y);
+            assert(actual <= batch_size);
+            assert(batch_x.rows == actual);
+            assert(batch_x.cols == 784);
+            assert(batch_y.rows == actual);
+            assert(batch_y.cols == 10);
             
-            total_samples += batch.first.rows;
+            total_samples += actual;
             batches++;
         }
         
