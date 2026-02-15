@@ -30,7 +30,7 @@ public:
     Matrix add(const Matrix& other) const;
     Matrix mul(const Matrix& other) const;        // multiplication élément par élément
     Matrix matmul(const Matrix& other) const;     // produit matriciel
-    void matmul_into(const Matrix& other, Matrix& out) const;
+    void matmul_into(const Matrix& other, Matrix& out, bool transA = false, bool transB = false) const;
 
     Matrix transpose() const;
 

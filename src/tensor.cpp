@@ -226,8 +226,13 @@ Matrix Matrix::mul(const Matrix& other) const {
     return result;
 }
 
-void Matrix::matmul_into(const Matrix& other, Matrix& out) const {
-    if (cols != other.rows) {
+void Matrix::matmul_into(const Matrix& other, Matrix& out, bool transA, bool transB) const {
+    const size_t M = transA ? cols : rows;
+    const size_t K = transA ? rows : cols;
+    const size_t Kb = transB ? other.cols : other.rows;
+    const size_t N = transB ? other.rows : other.cols;
+
+    if (K != Kb) {
         throw std::invalid_argument(
             "Multiplication matricielle impossible : dimensions incompatibles");
     }
@@ -235,12 +240,13 @@ void Matrix::matmul_into(const Matrix& other, Matrix& out) const {
     // BLAS utilise des int pour les dimensions
     const size_t max_int = static_cast<size_t>(std::numeric_limits<int>::max());
     if (rows > max_int || cols > max_int ||
-        other.rows > max_int || other.cols > max_int) {
+        other.rows > max_int || other.cols > max_int ||
+        M > max_int || N > max_int || K > max_int) {
         throw std::overflow_error(
             "Dimensions trop grandes pour l'interface BLAS (int)");
     }
 
-    if (out.rows != rows || out.cols != other.cols) {
+    if (out.rows != M || out.cols != N) {
         throw std::invalid_argument(
             "matmul_into: dimensions de sortie incompatibles");
     }
@@ -253,46 +259,60 @@ void Matrix::matmul_into(const Matrix& other, Matrix& out) const {
    
     const MatmulImpl impl = current_impl();
 
-    switch (impl) {
-        case MatmulImpl::Blas:
-            // Appel BLAS (row-major)
-            cblas_dgemm(
-                CblasRowMajor,
-                CblasNoTrans,
-                CblasNoTrans,
-                static_cast<int>(rows),
-                static_cast<int>(other.cols),
-                static_cast<int>(cols),
-                1.0,
-                data.data(),
-                static_cast<int>(cols),
-                other.data.data(),
-                static_cast<int>(other.cols),
-                0.0,
-                out.data.data(),
-                static_cast<int>(other.cols)
-            );
-            break;
-
-        case MatmulImpl::Ijk:
-            dgemm_ijk(data.data(), other.data.data(),
-                      out.data.data(), rows, other.cols, cols);
-            break;
-
-        case MatmulImpl::Ikj:
-            dgemm_ikj(data.data(), other.data.data(),
-                      out.data.data(), rows, other.cols, cols);
-            break;
-
-        case MatmulImpl::Blocked:
-            dgemm_blocked(data.data(), other.data.data(),
-                          out.data.data(), rows, other.cols, cols);
-            break;
-
-        case MatmulImpl::Omp:
-            dgemm_omp(data.data(), other.data.data(),
-                      out.data.data(), rows, other.cols, cols);
-            break;
+    if (impl == MatmulImpl::Blas) {
+        // Appel BLAS (row-major) avec flags de transposition.
+        cblas_dgemm(
+            CblasRowMajor,
+            transA ? CblasTrans : CblasNoTrans,
+            transB ? CblasTrans : CblasNoTrans,
+            static_cast<int>(M),
+            static_cast<int>(N),
+            static_cast<int>(K),
+            1.0,
+            data.data(),
+            static_cast<int>(cols),
+            other.data.data(),
+            static_cast<int>(other.cols),
+            0.0,
+            out.data.data(),
+            static_cast<int>(N)
+        );
+    } else if (!transA && !transB) {
+        // Chemins optimisés existants pour A*B sans transposition logique.
+        switch (impl) {
+            case MatmulImpl::Ijk:
+                dgemm_ijk(data.data(), other.data.data(), out.data.data(), M, N, K);
+                break;
+            case MatmulImpl::Ikj:
+                dgemm_ikj(data.data(), other.data.data(), out.data.data(), M, N, K);
+                break;
+            case MatmulImpl::Blocked:
+                dgemm_blocked(data.data(), other.data.data(), out.data.data(), M, N, K);
+                break;
+            case MatmulImpl::Omp:
+                dgemm_omp(data.data(), other.data.data(), out.data.data(), M, N, K);
+                break;
+            case MatmulImpl::Blas:
+                break;
+        }
+    } else {
+        // Chemin générique pour supporter transA/transB sans copies intermédiaires.
+        for (size_t i = 0; i < M; ++i) {
+            double* out_row = out.data.data() + i * N;
+            for (size_t j = 0; j < N; ++j) {
+                double acc = 0.0;
+                for (size_t k = 0; k < K; ++k) {
+                    const double a = transA
+                        ? data[k * cols + i]
+                        : data[i * cols + k];
+                    const double b = transB
+                        ? other.data[j * other.cols + k]
+                        : other.data[k * other.cols + j];
+                    acc += a * b;
+                }
+                out_row[j] = acc;
+            }
+        }
     }
 
 #ifdef PROFILE_MATMUL
@@ -324,9 +344,21 @@ Matrix Matrix::matmul(const Matrix& other) const {
 
 Matrix Matrix::transpose() const {
     Matrix result(cols, rows);
-    for (size_t i = 0; i < rows; ++i) {
-        for (size_t j = 0; j < cols; ++j) {
-            result(j, i) = (*this)(i, j);
+    const double* src = data.data();
+    double* dst = result.data.data();
+
+    // Blocked transpose improves cache locality and avoids bounds-checked operator().
+    constexpr size_t BS = 32;
+    for (size_t ii = 0; ii < rows; ii += BS) {
+        const size_t i_max = minz(ii + BS, rows);
+        for (size_t jj = 0; jj < cols; jj += BS) {
+            const size_t j_max = minz(jj + BS, cols);
+            for (size_t i = ii; i < i_max; ++i) {
+                const double* src_row = src + i * cols;
+                for (size_t j = jj; j < j_max; ++j) {
+                    dst[j * rows + i] = src_row[j];
+                }
+            }
         }
     }
     return result;
@@ -367,4 +399,3 @@ void Matrix::print() const {
     }
     std::cout << "\n";
 }
-

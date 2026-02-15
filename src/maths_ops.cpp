@@ -118,12 +118,14 @@ Node::Ptr matmul(const Node::Ptr& a, const Node::Ptr& b) {
     auto node = std::make_shared<OperationNode>(OpKind::MATMUL, out, std::vector<Node::Ptr>{a, b});
 
     node->setBackwardFn([a_ptr=a, b_ptr=b](const Matrix& grad){
-        // dA = grad @ B^T
-        Matrix dA = grad.matmul(b_ptr->value().transpose());
+        // dA = grad @ B^T (sans allouer B^T)
+        Matrix dA(grad.rows, b_ptr->value().rows);
+        grad.matmul_into(b_ptr->value(), dA, false, true);
         a_ptr->addGrad(dA);
 
-        // dB = A^T @ grad
-        Matrix dB = a_ptr->value().transpose().matmul(grad);
+        // dB = A^T @ grad (sans allouer A^T)
+        Matrix dB(a_ptr->value().cols, grad.cols);
+        a_ptr->value().matmul_into(grad, dB, true, false);
         b_ptr->addGrad(dB);
     });
 
