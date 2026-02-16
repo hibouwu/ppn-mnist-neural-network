@@ -30,10 +30,32 @@ int main() {
     std::cout << "A @ E:\n";
     F.print();
 
-    // Test 5 : Transposition
-    Matrix G = A.transpose();
-    std::cout << "A^T:\n";
-    G.print();
+    // Test 5 : GEMM avec transpose flag (A^T @ A)
+    Matrix AT_A(3, 3);
+    A.matmul_into(A, AT_A, true, false);
+    std::cout << "A^T @ A:\n";
+    AT_A.print();
+
+    const double expected[3][3] = {
+        {17.0, 22.0, 27.0},
+        {22.0, 29.0, 36.0},
+        {27.0, 36.0, 45.0}
+    };
+
+    if (AT_A.rows != 3 || AT_A.cols != 3) {
+        std::cerr << "Test FAILED: A^T @ A has wrong shape\n";
+        return 1;
+    }
+
+    for (size_t i = 0; i < 3; ++i) {
+        for (size_t j = 0; j < 3; ++j) {
+            if (AT_A(i, j) != expected[i][j]) {
+                std::cerr << "Test FAILED: A^T @ A mismatch at (" << i << ", " << j
+                          << "), got " << AT_A(i, j) << ", expected " << expected[i][j] << "\n";
+                return 1;
+            }
+        }
+    }
 
     // Test 6 : Random init
     Matrix H(2, 2);

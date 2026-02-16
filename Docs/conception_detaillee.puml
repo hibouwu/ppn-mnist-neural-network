@@ -9,7 +9,6 @@ class Matrix {
   +matmul(other: Matrix): Matrix
   +add(other: Matrix): Matrix
   +mul(other: Matrix): Matrix
-  +transpose(): Matrix
   +randomInit(param1: double, param2: double, use_normal: bool, seed: uint): void
   +print(): void
   +operator()(r: size_t, c: size_t): double

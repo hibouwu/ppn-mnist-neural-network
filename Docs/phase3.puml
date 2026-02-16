@@ -7,7 +7,6 @@ class Matrix {
   +matmul(other: Matrix): Matrix
   +add(other: Matrix): Matrix
   +mul(other: Matrix): Matrix
-  +transpose(): Matrix
   +randomInit(min: double, max: double): void
   +print(): void
 }

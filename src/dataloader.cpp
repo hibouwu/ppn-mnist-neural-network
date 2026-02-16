@@ -2,9 +2,21 @@
 #include <algorithm>
 #include <random>
 #include <numeric>
+#include <stdexcept>
 
 DataLoader::DataLoader(const Matrix& inputs, const Matrix& targets, size_t batchSize, unsigned int seed)
-    : inputs_(inputs), targets_(targets), batchSize_(batchSize), currentIndex_(0), seed_(seed) {
+    : inputs_(inputs),
+      targets_(targets),
+      batchSize_(batchSize),
+      currentIndex_(0),
+      rng_(seed == 0 ? std::mt19937(std::random_device{}()) : std::mt19937(seed)) {
+
+    if (inputs_.rows != targets_.rows) {
+        throw std::invalid_argument("DataLoader: inputs/targets rows mismatch.");
+    }
+    if (batchSize_ == 0) {
+        throw std::invalid_argument("DataLoader: batch size must be > 0.");
+    }
     
     // Initialize indices
     indices_.resize(inputs_.rows);
@@ -17,14 +29,7 @@ void DataLoader::reset() {
 }
 
 void DataLoader::shuffle() {
-    std::mt19937 g;
-    if (seed_ == 0) {
-        std::random_device rd;
-        g.seed(rd());
-    } else {
-        g.seed(seed_);
-    }
-    std::shuffle(indices_.begin(), indices_.end(), g);
+    std::shuffle(indices_.begin(), indices_.end(), rng_);
 }
 
 bool DataLoader::hasNext() const {
@@ -46,8 +51,13 @@ size_t DataLoader::nextBatchInto(Matrix& x, Matrix& y) {
 
     for (size_t i = 0; i < actualSize; ++i) {
         size_t idx = indices_[currentIndex_ + i];
-        for (size_t c = 0; c < inputs_.cols; ++c) x(i, c) = inputs_(idx, c);
-        for (size_t c = 0; c < targets_.cols; ++c) y(i, c) = targets_(idx, c);
+        const double* src_x = inputs_.data.data() + idx * inputs_.cols;
+        double* dst_x = x.data.data() + i * inputs_.cols;
+        std::copy_n(src_x, inputs_.cols, dst_x);
+
+        const double* src_y = targets_.data.data() + idx * targets_.cols;
+        double* dst_y = y.data.data() + i * targets_.cols;
+        std::copy_n(src_y, targets_.cols, dst_y);
     }
 
     currentIndex_ += actualSize;

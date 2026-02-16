@@ -32,8 +32,6 @@ public:
     Matrix matmul(const Matrix& other) const;     // produit matriciel
     void matmul_into(const Matrix& other, Matrix& out, bool transA = false, bool transB = false) const;
 
-    Matrix transpose() const;
-
 
     // Initialisation aléatoire
     // use_normal=false -> Uniform(param1, param2)

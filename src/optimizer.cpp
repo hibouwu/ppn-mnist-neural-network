@@ -12,7 +12,7 @@ void Optimizer::zeroGrad() {
 SGDOptimizer::SGDOptimizer(std::vector<Node::Ptr> params, double lr)
     : Optimizer(std::move(params), lr) {}
 
-void SGDOptimizer::step() {
+void SGDOptimizer::step(double gradScale) {
     for (auto& p : parameters_) {
         // W = W - lr * grad; const_cast used because Node lacks a mutable accessor.
         Matrix& val = const_cast<Matrix&>(p->value());
@@ -20,7 +20,7 @@ void SGDOptimizer::step() {
 
         size_t n = val.data.size();
         for(size_t i=0; i<n; ++i) {
-            val.data[i] -= lr_ * grad.data[i];
+            val.data[i] -= lr_ * gradScale * grad.data[i];
         }
     }
 }

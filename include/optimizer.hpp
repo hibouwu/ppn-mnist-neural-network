@@ -8,7 +8,7 @@ public:
     virtual ~Optimizer() = default;
     
     // Updates parameters based on gradients
-    virtual void step() = 0;
+    virtual void step(double gradScale = 1.0) = 0;
     
     // Clears gradients
     virtual void zeroGrad();
@@ -22,5 +22,5 @@ class SGDOptimizer : public Optimizer {
 public:
     SGDOptimizer(std::vector<Node::Ptr> params, double lr);
     
-    void step() override;
+    void step(double gradScale = 1.0) override;
 };

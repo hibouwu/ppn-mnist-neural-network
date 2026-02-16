@@ -29,11 +29,6 @@ Matrix MNISTDataset::loadImages(const std::string& filename, int count, int size
         throw std::runtime_error("Could not open file: " + filename);
     }
     
-    // Use mnist_reader function
-    // n=size=28*28=784 (ignored by readMnistImages implementation usually, but strictly it takes N and n)
-    // Looking at mnist_reader.c: readMnistImages(FILE* imageFile, int32_t N, int32_t n)
-    // N = number of images, n = size of image (bytes?)
-    
     // We want "Skip 0, Read count".
     uint8_t* data = readMnistImages(f, 0, count);
     fclose(f);

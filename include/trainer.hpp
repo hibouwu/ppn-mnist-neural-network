@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstddef>
-#include "network.hpp"    // MLPNetwork
+#include "neural_network.hpp"  // NeuralNetwork
 #include "loss.hpp"       // LossFunction
 #include "optimizer.hpp"  // Optimizer
 #include "dataloader.hpp" // DataLoader
@@ -18,7 +18,7 @@ struct Metrics {
 class Trainer {
 public:
     // Trainer keeps references; it does not own these objects.
-    Trainer(MLPNetwork& model,
+    Trainer(NeuralNetwork& model,
             LossFunction& lossFn,
             Optimizer& optimizer,
             DataLoader& dataLoader);
@@ -30,7 +30,7 @@ public:
     Metrics evaluate();
 
 private:
-    MLPNetwork&   model_;
+    NeuralNetwork&   model_;
     LossFunction& lossFn_;
     Optimizer&    optimizer_;
     DataLoader&   dataLoader_;

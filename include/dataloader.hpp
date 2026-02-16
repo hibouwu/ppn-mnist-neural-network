@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <cstddef>
+#include <random>
 #include "tensor.hpp"
 
 class DataLoader {
@@ -24,7 +25,7 @@ private:
     size_t batchSize_;
     size_t currentIndex_;
     std::vector<size_t> indices_;
-    unsigned int seed_;
+    std::mt19937 rng_;
 };
 
 #endif // DATALOADER_HPP

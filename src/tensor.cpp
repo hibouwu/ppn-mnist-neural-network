@@ -341,29 +341,6 @@ Matrix Matrix::matmul(const Matrix& other) const {
     return result;
 }
 
-
-Matrix Matrix::transpose() const {
-    Matrix result(cols, rows);
-    const double* src = data.data();
-    double* dst = result.data.data();
-
-    // Blocked transpose improves cache locality and avoids bounds-checked operator().
-    constexpr size_t BS = 32;
-    for (size_t ii = 0; ii < rows; ii += BS) {
-        const size_t i_max = minz(ii + BS, rows);
-        for (size_t jj = 0; jj < cols; jj += BS) {
-            const size_t j_max = minz(jj + BS, cols);
-            for (size_t i = ii; i < i_max; ++i) {
-                const double* src_row = src + i * cols;
-                for (size_t j = jj; j < j_max; ++j) {
-                    dst[j * rows + i] = src_row[j];
-                }
-            }
-        }
-    }
-    return result;
-}
-
 void Matrix::randomInit(double param1, double param2, bool use_normal, unsigned int seed) {
     // If seed is 0, use random_device (random seed)
     // If seed != 0, use fixed seed

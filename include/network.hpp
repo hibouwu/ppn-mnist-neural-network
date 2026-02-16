@@ -5,6 +5,7 @@
 #ifndef NETWORK_HPP
 #define NETWORK_HPP
 
+#include "neural_network.hpp"
 #include "node.hpp"
 #include "layer.hpp"
 #include "activation.hpp"
@@ -12,7 +13,7 @@
 #include <memory>
 #include <string>
 
-class MLPNetwork {
+class MLPNetwork : public NeuralNetwork {
 public:
     struct LayerNode {
         std::unique_ptr<LinearLayer> linear;
@@ -34,12 +35,12 @@ public:
      * @param input Input node (batch, in_dim of first layer).
      * @return Output node after the last activation.
      */
-    Node::Ptr forward(const Node::Ptr& input) const;
+    Node::Ptr forward(const Node::Ptr& input) const override;
 
     /**
      * @brief Get all trainable parameters (weights and biases) from all layers.
      */
-    std::vector<Node::Ptr> getParameters() const;
+    std::vector<Node::Ptr> getParameters() const override;
 
     /**
      * @brief Build a MLP with ONE hidden layer:

@@ -4,7 +4,7 @@
 #include <iostream>
 
 // Trainer keeps references to all components.
-Trainer::Trainer(MLPNetwork& model,
+Trainer::Trainer(NeuralNetwork& model,
                  LossFunction& lossFn,
                  Optimizer& optimizer,
                  DataLoader& dataLoader)
@@ -69,7 +69,11 @@ Metrics Trainer::runEpoch(bool training) {
         if (training) {
             optimizer_.zeroGrad();
             loss_node->backward();
-            optimizer_.step();
+            // Make updates invariant to batch size even if loss returns a batch sum.
+            const double grad_scale = (batch_size > 0)
+                ? (1.0 / static_cast<double>(batch_size))
+                : 1.0;
+            optimizer_.step(grad_scale);
         }
     }
 
