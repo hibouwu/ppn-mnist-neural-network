@@ -14,6 +14,8 @@ enum class OpKind {
     MUL,     ///< Element-wise multiplication (Hadamard product)
     MATMUL,  ///< Matrix multiplication
     RELU,    ///< ReLU activation
+    LEAKY_RELU, ///< LeakyReLU activation
+    GELU,    ///< GELU activation
     SIGMOID, ///< Sigmoid activation
     TANH     ///< Tanh activation
 };

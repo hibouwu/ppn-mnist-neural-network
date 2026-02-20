@@ -25,6 +25,10 @@ namespace MathOps {
 
     /** @brief ReLU activation. */
     Node::Ptr relu(const Node::Ptr& x);
+    /** @brief LeakyReLU activation. */
+    Node::Ptr leaky_relu(const Node::Ptr& x, double alpha = 0.01);
+    /** @brief GELU activation (tanh approximation). */
+    Node::Ptr gelu(const Node::Ptr& x);
     /** @brief Sigmoid activation. */
     Node::Ptr sigmoid(const Node::Ptr& x);
     /** @brief Tanh activation. */

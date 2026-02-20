@@ -170,7 +170,7 @@ static std::string joinHiddenSizes(const std::vector<int>& hs) {
 struct Config {
     int epochs = 1;                       // Number of training epochs. 0 means "build/eval only, no train loop".
     int batch_size = 64;                  // Mini-batch size used by both train/test DataLoader.
-    double learning_rate = 0.01;          // SGD learning rate (> 0).
+    double learning_rate = 0.01;          // Base learning rate (> 0).
 
     // Backward compatible:
     int hidden_size = 128;                // Legacy single hidden layer width for MLP.
@@ -178,9 +178,16 @@ struct Config {
 
     std::string data_dir = "mnist";       // MNIST dataset folder path.
     unsigned int seed = 0;                // RNG seed. 0 means "non-deterministic/random seed path".
-    std::string activation = "relu";      // MLP activation: relu / sigmoid / tanh.
+    std::string activation = "relu";      // MLP activation: relu / leaky_relu / gelu / sigmoid / tanh.
     std::string init = "he";              // MLP init strategy: he / xavier / manual.
     std::string model = "mlp";            // Model type: mlp / cnn.
+    std::string optimizer = "sgd";        // Optimizer: sgd / momentum_sgd(/momentum) / adamw.
+    double momentum = 0.9;                // Momentum for momentum_sgd.
+    bool nesterov = false;                // Nesterov flag for momentum_sgd.
+    double weight_decay = 0.0;            // Weight decay (>= 0).
+    double beta1 = 0.9;                   // AdamW beta1 in [0,1).
+    double beta2 = 0.999;                 // AdamW beta2 in [0,1).
+    double eps = 1e-8;                    // AdamW epsilon (> 0).
 
     // CNN-specific (only used when model == "cnn")
     std::string cnn_conv_channels = "";   // Required for custom CNN. E.g. "6,16,32". All CNN fields empty -> use LeNet-5 preset.
@@ -230,6 +237,35 @@ int main(int argc, char** argv) {
                 cfg.seed = parseUnsignedIntStrict(requireValue(arg), arg);
             } else if (arg == "--activation") {
                 cfg.activation = requireValue(arg);
+            } else if (arg == "--optimizer") {
+                cfg.optimizer = requireValue(arg);
+            } else if (arg == "--momentum") {
+                cfg.momentum = parseDoubleStrict(requireValue(arg), arg);
+                if (cfg.momentum < 0.0 || cfg.momentum >= 1.0) {
+                    throw std::invalid_argument(arg + ": expected value in [0, 1).");
+                }
+            } else if (arg == "--nesterov") {
+                cfg.nesterov = (parseIntInRange(requireValue(arg), arg, 0, 1) != 0);
+            } else if (arg == "--weight_decay") {
+                cfg.weight_decay = parseDoubleStrict(requireValue(arg), arg);
+                if (cfg.weight_decay < 0.0) {
+                    throw std::invalid_argument(arg + ": expected >= 0.");
+                }
+            } else if (arg == "--beta1") {
+                cfg.beta1 = parseDoubleStrict(requireValue(arg), arg);
+                if (cfg.beta1 < 0.0 || cfg.beta1 >= 1.0) {
+                    throw std::invalid_argument(arg + ": expected value in [0, 1).");
+                }
+            } else if (arg == "--beta2") {
+                cfg.beta2 = parseDoubleStrict(requireValue(arg), arg);
+                if (cfg.beta2 < 0.0 || cfg.beta2 >= 1.0) {
+                    throw std::invalid_argument(arg + ": expected value in [0, 1).");
+                }
+            } else if (arg == "--eps") {
+                cfg.eps = parseDoubleStrict(requireValue(arg), arg);
+                if (cfg.eps <= 0.0) {
+                    throw std::invalid_argument(arg + ": expected > 0.");
+                }
             } else if (arg == "--init") {
                 cfg.init = requireValue(arg);
             } else if (arg == "--model") {
@@ -283,7 +319,24 @@ int main(int argc, char** argv) {
               << "  Activation: " << cfg.activation << "\n"
               << "  Init: " << cfg.init << "\n"
               << "  Model: " << cfg.model << "\n"
+              << "  Optimizer: " << cfg.optimizer << "\n"
+              << "  Momentum: " << cfg.momentum << "\n"
+              << "  Nesterov: " << (cfg.nesterov ? 1 : 0) << "\n"
+              << "  Weight Decay: " << cfg.weight_decay << "\n"
+              << "  Beta1: " << cfg.beta1 << "\n"
+              << "  Beta2: " << cfg.beta2 << "\n"
+              << "  Eps: " << cfg.eps << "\n"
               << std::endl;
+
+    const bool optimizerIsSGD = (cfg.optimizer == "sgd");
+    const bool optimizerIsMomentum = (cfg.optimizer == "momentum_sgd" || cfg.optimizer == "momentum");
+    const bool optimizerIsAdamW = (cfg.optimizer == "adamw");
+    if (!(optimizerIsSGD || optimizerIsMomentum || optimizerIsAdamW)) {
+        std::cerr << "Error: unsupported --optimizer '" << cfg.optimizer
+                  << "'. Expected 'sgd', 'momentum_sgd' (or 'momentum'), or 'adamw'."
+                  << std::endl;
+        return 1;
+    }
 
     // 1. Build Model (fail-fast: validate config before loading data)
     std::unique_ptr<NeuralNetwork> model;
@@ -375,10 +428,31 @@ int main(int argc, char** argv) {
 
         // 3. Setup Loss & Optimizer
         CrossEntropyLoss lossFn;
-        SGDOptimizer optimizer(model->getParameters(), cfg.learning_rate);
+        std::unique_ptr<Optimizer> optimizer;
+        auto params = model->getParameters();
+        if (optimizerIsSGD) {
+            optimizer = std::make_unique<SGDOptimizer>(std::move(params), cfg.learning_rate);
+        } else if (optimizerIsMomentum) {
+            optimizer = std::make_unique<MomentumSGDOptimizer>(
+                std::move(params),
+                cfg.learning_rate,
+                cfg.momentum,
+                cfg.nesterov,
+                cfg.weight_decay
+            );
+        } else {
+            optimizer = std::make_unique<AdamWOptimizer>(
+                std::move(params),
+                cfg.learning_rate,
+                cfg.beta1,
+                cfg.beta2,
+                cfg.eps,
+                cfg.weight_decay
+            );
+        }
 
         // 4. Train
-        Trainer trainer(*model, lossFn, optimizer, trainLoader);
+        Trainer trainer(*model, lossFn, *optimizer, trainLoader);
 
         std::cout << "Training started..." << std::endl;
 
@@ -403,7 +477,7 @@ int main(int argc, char** argv) {
             Metrics trainMetrics = trainer.trainEpoch();
 
             // Evaluate on test set with a separate trainer bound to testLoader
-            Trainer testTrainer(*model, lossFn, optimizer, testLoader);
+            Trainer testTrainer(*model, lossFn, *optimizer, testLoader);
             Metrics testMetrics = testTrainer.evaluate();
             lastTestMetrics = testMetrics;
             hasLastTestMetrics = true;
@@ -454,7 +528,7 @@ int main(int argc, char** argv) {
         if (cfg.epochs > 0 && hasLastTestMetrics) {
             testMetrics = lastTestMetrics;
         } else {
-            Trainer evaluator(*model, lossFn, optimizer, testLoader);
+            Trainer evaluator(*model, lossFn, *optimizer, testLoader);
             testMetrics = evaluator.evaluate();
         }
 

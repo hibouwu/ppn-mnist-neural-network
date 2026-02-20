@@ -5,10 +5,18 @@ Node::Ptr ReLU::forward(const Node::Ptr& input) const {
     return MathOps::relu(input);
 }
 
+Node::Ptr LeakyReLU::forward(const Node::Ptr& input) const {
+    return MathOps::leaky_relu(input, alpha_);
+}
+
 Node::Ptr Sigmoid::forward(const Node::Ptr& input) const {
     return MathOps::sigmoid(input);
 }
 
 Node::Ptr Tanh::forward(const Node::Ptr& input) const {
     return MathOps::tanh(input);
+}
+
+Node::Ptr GELU::forward(const Node::Ptr& input) const {
+    return MathOps::gelu(input);
 }

@@ -9,11 +9,14 @@ static LinearLayer::InitType parseInit(const std::string& init_name) {
 }
 
 static std::unique_ptr<ActivationFunction> makeActivation(const std::string& name) {
-    if (name == "relu")    return std::make_unique<ReLU>();
-    if (name == "sigmoid") return std::make_unique<Sigmoid>();
-    if (name == "tanh")    return std::make_unique<Tanh>();
-    // default
-    return std::make_unique<ReLU>();
+    if (name == "relu")       return std::make_unique<ReLU>();
+    if (name == "leaky_relu") return std::make_unique<LeakyReLU>();
+    if (name == "gelu")       return std::make_unique<GELU>();
+    if (name == "sigmoid")    return std::make_unique<Sigmoid>();
+    if (name == "tanh")       return std::make_unique<Tanh>();
+    throw std::invalid_argument(
+        "unsupported activation '" + name +
+        "'. Expected one of: relu, leaky_relu, gelu, sigmoid, tanh.");
 }
 
 static std::unique_ptr<LinearLayer> makeLinear(

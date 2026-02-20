@@ -5,6 +5,8 @@
 namespace MathOps {
 
 using NodePtr = std::shared_ptr<Node>;
+constexpr double kSqrt2OverPi = 0.7978845608028654;
+constexpr double kGeluCubicCoeff = 0.044715;
 
 /**
  * @brief Element-wise addition between two nodes, with basic broadcasting support.
@@ -233,6 +235,86 @@ Node::Ptr relu(const Node::Ptr& x) {
         // Gradient flows only where the ReLU output was strictly positive
         for (size_t i = 0; i < out.data.size(); ++i)
             gx.data[i] = (out.data[i] > 0) ? grad.data[i] : 0.0;
+        x->addGrad(gx);
+    });
+
+    return node;
+}
+
+/**
+ * @brief Applies the LeakyReLU activation function element-wise.
+ *
+ * Forward:
+ *   out_i = x_i if x_i > 0 else alpha * x_i
+ *
+ * Backward:
+ *   dL/dx_i = grad_i * (1 if x_i > 0 else alpha)
+ *
+ * @param x Input node.
+ * @param alpha Negative slope coefficient.
+ * @return A new OperationNode representing LeakyReLU(x).
+ */
+Node::Ptr leaky_relu(const Node::Ptr& x, double alpha) {
+    Matrix in = x->value();
+    Matrix out = in;
+    for (size_t i = 0; i < out.data.size(); ++i) {
+        out.data[i] = (out.data[i] > 0.0) ? out.data[i] : (alpha * out.data[i]);
+    }
+
+    auto node = std::make_shared<OperationNode>(OpKind::LEAKY_RELU, out, std::vector<Node::Ptr>{x});
+
+    node->setBackwardFn([x, in, alpha](const Matrix& grad) {
+        Matrix gx(grad.rows, grad.cols);
+        for (size_t i = 0; i < in.data.size(); ++i) {
+            const double slope = (in.data[i] > 0.0) ? 1.0 : alpha;
+            gx.data[i] = grad.data[i] * slope;
+        }
+        x->addGrad(gx);
+    });
+
+    return node;
+}
+
+/**
+ * @brief Applies the GELU activation element-wise using tanh approximation.
+ *
+ * Forward:
+ *   out_i = 0.5 * x_i * (1 + tanh(k * (x_i + c * x_i^3)))
+ *   where k = sqrt(2/pi), c = 0.044715
+ *
+ * Backward:
+ *   dL/dx_i = grad_i * d(gelu_tanh_approx)/dx_i
+ *
+ * @param x Input node.
+ * @return A new OperationNode representing GELU(x).
+ */
+Node::Ptr gelu(const Node::Ptr& x) {
+    Matrix in = x->value();
+    Matrix out = in;
+
+    for (size_t i = 0; i < out.data.size(); ++i) {
+        const double xi = out.data[i];
+        const double xi3 = xi * xi * xi;
+        const double u = kSqrt2OverPi * (xi + kGeluCubicCoeff * xi3);
+        const double t = std::tanh(u);
+        out.data[i] = 0.5 * xi * (1.0 + t);
+    }
+
+    auto node = std::make_shared<OperationNode>(OpKind::GELU, out, std::vector<Node::Ptr>{x});
+
+    node->setBackwardFn([x, in](const Matrix& grad) {
+        Matrix gx(grad.rows, grad.cols);
+        for (size_t i = 0; i < in.data.size(); ++i) {
+            const double xi = in.data[i];
+            const double xi2 = xi * xi;
+            const double xi3 = xi2 * xi;
+            const double u = kSqrt2OverPi * (xi + kGeluCubicCoeff * xi3);
+            const double t = std::tanh(u);
+            const double sech2 = 1.0 - t * t;
+            const double du_dx = kSqrt2OverPi * (1.0 + 3.0 * kGeluCubicCoeff * xi2);
+            const double dy_dx = 0.5 * (1.0 + t) + 0.5 * xi * sech2 * du_dx;
+            gx.data[i] = grad.data[i] * dy_dx;
+        }
         x->addGrad(gx);
     });
 

@@ -29,6 +29,16 @@ public:
     Node::Ptr forward(const Node::Ptr& input) const override;
 };
 
+class LeakyReLU : public ActivationFunction {
+public:
+    explicit LeakyReLU(double alpha = 0.01) : alpha_(alpha) {}
+    /** @brief Apply LeakyReLU activation. */
+    Node::Ptr forward(const Node::Ptr& input) const override;
+
+private:
+    double alpha_;
+};
+
 class Sigmoid : public ActivationFunction {
 public:
     /** @brief Apply Sigmoid activation. */
@@ -38,6 +48,12 @@ public:
 class Tanh : public ActivationFunction {
 public:
     /** @brief Apply Tanh activation. */
+    Node::Ptr forward(const Node::Ptr& input) const override;
+};
+
+class GELU : public ActivationFunction {
+public:
+    /** @brief Apply GELU activation (tanh approximation). */
     Node::Ptr forward(const Node::Ptr& input) const override;
 };
 
