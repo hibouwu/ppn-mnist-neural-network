@@ -70,7 +70,7 @@ Matrix Conv2DLayer::im2col(const Matrix& input,
                            size_t N, size_t C, size_t H, size_t W,
                            size_t H_out, size_t W_out) const {
     size_t col_h = kernel_h_ * kernel_w_ * C;
-    Matrix cols(N * H_out * W_out, col_h, 0.0);
+    Matrix cols(N * H_out * W_out, col_h);
     const double* input_data = input.data.data();
     double* cols_data = cols.data.data();
     const size_t input_stride = input.cols;
@@ -90,8 +90,10 @@ Matrix Conv2DLayer::im2col(const Matrix& input,
                                 // input(n, c*H*W + ih*W + iw)
                                 size_t input_idx = c * H * W + static_cast<size_t>(ih) * W + static_cast<size_t>(iw);
                                 cols_data[row * col_h + col_idx] = input_data[n * input_stride + input_idx];
+                            } else {
+                                // Explicit for zero-padding semantics.
+                                cols_data[row * col_h + col_idx] = 0.0;
                             }
-                            // else: already 0 (zero-padding)
                             ++col_idx;
                         }
                     }
@@ -172,8 +174,7 @@ Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
     auto [H_out, W_out] = outputShape(H, W);
 
     // im2col: (N*H_out*W_out, C*kH*kW)
-    Matrix cols = im2col(x, N, C, H, W, H_out, W_out);
-    auto cols_ptr = std::make_shared<Matrix>(std::move(cols));
+    auto cols_ptr = std::make_shared<Matrix>(im2col(x, N, C, H, W, H_out, W_out));
 
     // kernels_: (out_ch, col_w)
     // out = cols @ kernels^T → (N*H_out*W_out, out_ch)
@@ -181,17 +182,10 @@ Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
     Matrix out(cols_ptr->rows, out_channels_);
     cols_ptr->matmul_into(kv, out, false, true);
 
-    // Add bias: each row adds bias (1, out_ch) — broadcasting
-    const Matrix& bv = bias_->value();
-    double* out_data = out.data.data();
-    const size_t out_stride = out.cols;
-    for (size_t i = 0; i < out.rows; ++i) {
-        for (size_t j = 0; j < out_channels_; ++j) {
-            out_data[i * out_stride + j] += bv(0, j);
-        }
-    }
-
     // Reshape output to (N, out_ch * H_out * W_out)
+    // While reshaping, apply bias to avoid an extra full pass over "out".
+    const Matrix& bv = bias_->value();
+    const size_t out_stride = out.cols;
     Matrix result(N, out_channels_ * H_out * W_out);
     double* result_data = result.data.data();
     const double* out_const_data = out.data.data();
@@ -202,7 +196,8 @@ Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
                 for (size_t ow = 0; ow < W_out; ++ow) {
                     size_t src_row = n * H_out * W_out + oh * W_out + ow;
                     size_t dst_col = oc * H_out * W_out + oh * W_out + ow;
-                    result_data[n * result_stride + dst_col] = out_const_data[src_row * out_stride + oc];
+                    result_data[n * result_stride + dst_col] =
+                        out_const_data[src_row * out_stride + oc] + bv(0, oc);
                 }
             }
         }
@@ -222,7 +217,8 @@ Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
     size_t in_ch = in_channels_;
     auto self = this;
 
-    node->setBackwardFn([=](const Matrix& grad) {
+    node->setBackwardFn([input_ptr, kernels_ptr, bias_ptr, cols_bw_ptr,
+                         N, H_out, W_out, out_ch, in_ch, H, W, self](const Matrix& grad) {
         // grad shape: (N, out_ch * H_out * W_out)
         // Reshape to (N*H_out*W_out, out_ch)
         Matrix dout(N * H_out * W_out, out_ch);

@@ -392,6 +392,9 @@ int main(int argc, char** argv) {
             metricsFile << "epoch,train_loss,train_acc,test_loss,test_acc\n";
         }
 
+        Metrics lastTestMetrics;
+        bool hasLastTestMetrics = false;
+
         for (int epoch = 1; epoch <= cfg.epochs; ++epoch) {
             #ifdef PROFILE_MATMUL
             matmulProfileEpochReset();
@@ -402,6 +405,8 @@ int main(int argc, char** argv) {
             // Evaluate on test set with a separate trainer bound to testLoader
             Trainer testTrainer(*model, lossFn, optimizer, testLoader);
             Metrics testMetrics = testTrainer.evaluate();
+            lastTestMetrics = testMetrics;
+            hasLastTestMetrics = true;
 
             std::cout << "Epoch " << epoch << "/" << cfg.epochs
                       << ": [Train] loss = " << std::fixed << std::setprecision(4) << trainMetrics.avg_loss
@@ -445,8 +450,13 @@ int main(int argc, char** argv) {
 
         // 5. Final Evaluation
         std::cout << "\nEvaluating on Test Set..." << std::endl;
-        Trainer evaluator(*model, lossFn, optimizer, testLoader);
-        Metrics testMetrics = evaluator.evaluate();
+        Metrics testMetrics;
+        if (cfg.epochs > 0 && hasLastTestMetrics) {
+            testMetrics = lastTestMetrics;
+        } else {
+            Trainer evaluator(*model, lossFn, optimizer, testLoader);
+            testMetrics = evaluator.evaluate();
+        }
 
         std::cout << "Final Test Accuracy: "
                   << std::fixed << std::setprecision(2) << (testMetrics.accuracy * 100.0) << "%"

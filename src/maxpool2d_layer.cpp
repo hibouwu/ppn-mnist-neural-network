@@ -5,6 +5,7 @@
 #include "maxpool2d_layer.hpp"
 #include <limits>
 #include <algorithm>
+#include <memory>
 #include <stdexcept>
 
 MaxPool2DLayer::MaxPool2DLayer(size_t pH, size_t pW, size_t stride)
@@ -60,7 +61,7 @@ Node::Ptr MaxPool2DLayer::forward(const Node::Ptr& input,
     const size_t out_stride = out.cols;
     // Store max indices for backward: one index per output element
     // index = position within the (H, W) spatial grid
-    std::vector<size_t> max_indices(N * C * H_out * W_out);
+    auto max_indices = std::make_shared<std::vector<size_t>>(N * C * H_out * W_out);
 
     for (size_t n = 0; n < N; ++n) {
         for (size_t c = 0; c < C; ++c) {
@@ -85,7 +86,7 @@ Node::Ptr MaxPool2DLayer::forward(const Node::Ptr& input,
 
                     size_t out_col = c * H_out * W_out + oh * W_out + ow;
                     out_data[n * out_stride + out_col] = max_val;
-                    max_indices[n * C * H_out * W_out + c * H_out * W_out + oh * W_out + ow] = max_idx;
+                    (*max_indices)[n * C * H_out * W_out + c * H_out * W_out + oh * W_out + ow] = max_idx;
                 }
             }
         }
@@ -96,7 +97,7 @@ Node::Ptr MaxPool2DLayer::forward(const Node::Ptr& input,
 
     auto input_ptr = input;
 
-    node->setBackwardFn([=](const Matrix& grad) {
+    node->setBackwardFn([input_ptr, max_indices, N, C, H, W, H_out, W_out](const Matrix& grad) {
         // grad shape: (N, C*H_out*W_out)
         Matrix dX(N, C * H * W, 0.0);
         double* dX_data = dX.data.data();
@@ -109,7 +110,7 @@ Node::Ptr MaxPool2DLayer::forward(const Node::Ptr& input,
                 for (size_t oh = 0; oh < H_out; ++oh) {
                     for (size_t ow = 0; ow < W_out; ++ow) {
                         size_t out_col = c * H_out * W_out + oh * W_out + ow;
-                        size_t idx = max_indices[n * C * H_out * W_out + out_col];
+                        size_t idx = (*max_indices)[n * C * H_out * W_out + out_col];
 
                         // Scatter gradient to the max position
                         size_t input_col = c * H * W + idx;
