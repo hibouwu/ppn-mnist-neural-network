@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 #include <iomanip>
 #include <memory>
@@ -8,11 +9,13 @@
 #include <sstream>
 #include <limits>
 #include <cmath>
+#include <cstdint>
 
 namespace fs = std::filesystem;
 
 #include "mnist_dataset.hpp"
 #include "dataloader.hpp"
+#include "distributed/distributed.hpp"
 #include "network.hpp"
 #include "cnn_network.hpp"
 #include "loss.hpp"
@@ -164,6 +167,92 @@ static std::string joinHiddenSizes(const std::vector<int>& hs) {
     os << "]";
     return os.str();
 }
+
+struct DatasetShard {
+    Matrix inputs;
+    Matrix targets;
+};
+
+static std::vector<std::size_t> makeRoundRobinIndices(std::size_t total_rows,
+                                                      int rank,
+                                                      int world_size) {
+    std::vector<std::size_t> indices;
+    for (std::size_t idx = static_cast<std::size_t>(rank);
+         idx < total_rows;
+         idx += static_cast<std::size_t>(world_size)) {
+        indices.push_back(idx);
+    }
+    return indices;
+}
+
+static std::vector<std::size_t> makePaddedRoundRobinIndices(std::size_t total_rows,
+                                                            int rank,
+                                                            int world_size) {
+    std::vector<std::size_t> indices;
+    if (total_rows == 0) {
+        return indices;
+    }
+
+    const std::size_t target_count =
+        (total_rows + static_cast<std::size_t>(world_size) - 1) /
+        static_cast<std::size_t>(world_size);
+    indices.reserve(target_count);
+
+    for (std::size_t step = 0; step < target_count; ++step) {
+        const std::size_t linear_idx =
+            static_cast<std::size_t>(rank) + step * static_cast<std::size_t>(world_size);
+        indices.push_back((linear_idx < total_rows) ? linear_idx : (linear_idx % total_rows));
+    }
+
+    return indices;
+}
+
+static DatasetShard makeShard(const Matrix& inputs,
+                              const Matrix& targets,
+                              const std::vector<std::size_t>& indices) {
+    if (inputs.rows != targets.rows) {
+        throw std::invalid_argument("makeShard: inputs/targets rows mismatch.");
+    }
+
+    DatasetShard shard{
+        Matrix(indices.size(), inputs.cols),
+        Matrix(indices.size(), targets.cols)
+    };
+
+    for (std::size_t row = 0; row < indices.size(); ++row) {
+        const std::size_t src_idx = indices[row];
+        if (src_idx >= inputs.rows) {
+            throw std::out_of_range("makeShard: index out of range.");
+        }
+
+        const double* src_x = inputs.data.data() + src_idx * inputs.cols;
+        double* dst_x = shard.inputs.data.data() + row * inputs.cols;
+        std::copy_n(src_x, inputs.cols, dst_x);
+
+        const double* src_y = targets.data.data() + src_idx * targets.cols;
+        double* dst_y = shard.targets.data.data() + row * targets.cols;
+        std::copy_n(src_y, targets.cols, dst_y);
+    }
+
+    return shard;
+}
+
+static Metrics reduceMetrics(const DistributedContext& dist, Metrics metrics) {
+    dist.allReduceSum(&metrics.loss_sum, 1);
+    metrics.sample_count = dist.allReduceSumU64(metrics.sample_count);
+    metrics.correct_count = dist.allReduceSumU64(metrics.correct_count);
+
+    if (metrics.sample_count > 0) {
+        metrics.avg_loss = metrics.loss_sum / static_cast<double>(metrics.sample_count);
+        metrics.accuracy = static_cast<double>(metrics.correct_count) /
+                           static_cast<double>(metrics.sample_count);
+    } else {
+        metrics.avg_loss = 0.0;
+        metrics.accuracy = 0.0;
+    }
+
+    return metrics;
+}
 // --------------------------------------------
 
 // configuration struct
@@ -203,6 +292,8 @@ struct Config {
 };
 
 int main(int argc, char** argv) {
+    DistributedContext dist(argc, argv);
+    const bool isMaster = dist.isMaster();
     Config cfg;
 
     try {
@@ -310,23 +401,36 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::cout << "Starting training with config:" << "\n"
-              << "  Epochs: " << cfg.epochs << "\n"
-              << "  Batch Size: " << cfg.batch_size << "\n"
-              << "  Learning Rate: " << cfg.learning_rate << "\n"
-              << "  Hidden (sizes): " << joinHiddenSizes(hiddenVec) << "\n"
-              << "  Seed: " << cfg.seed << "\n"
-              << "  Activation: " << cfg.activation << "\n"
-              << "  Init: " << cfg.init << "\n"
-              << "  Model: " << cfg.model << "\n"
-              << "  Optimizer: " << cfg.optimizer << "\n"
-              << "  Momentum: " << cfg.momentum << "\n"
-              << "  Nesterov: " << (cfg.nesterov ? 1 : 0) << "\n"
-              << "  Weight Decay: " << cfg.weight_decay << "\n"
-              << "  Beta1: " << cfg.beta1 << "\n"
-              << "  Beta2: " << cfg.beta2 << "\n"
-              << "  Eps: " << cfg.eps << "\n"
-              << std::endl;
+    if (dist.worldSize() > 1 && cfg.seed == 0) {
+        if (isMaster) {
+            std::cerr << "Error: --seed must be non-zero when running with MPI world size > 1."
+                      << std::endl;
+        }
+        return 1;
+    }
+
+    if (isMaster) {
+        std::cout << "Starting training with config:" << "\n"
+                  << "  Epochs: " << cfg.epochs << "\n"
+                  << "  Batch Size: " << cfg.batch_size << "\n"
+                  << "  Learning Rate: " << cfg.learning_rate << "\n"
+                  << "  Hidden (sizes): " << joinHiddenSizes(hiddenVec) << "\n"
+                  << "  Seed: " << cfg.seed << "\n"
+                  << "  Activation: " << cfg.activation << "\n"
+                  << "  Init: " << cfg.init << "\n"
+                  << "  Model: " << cfg.model << "\n"
+                  << "  Optimizer: " << cfg.optimizer << "\n"
+                  << "  Momentum: " << cfg.momentum << "\n"
+                  << "  Nesterov: " << (cfg.nesterov ? 1 : 0) << "\n"
+                  << "  Weight Decay: " << cfg.weight_decay << "\n"
+                  << "  Beta1: " << cfg.beta1 << "\n"
+                  << "  Beta2: " << cfg.beta2 << "\n"
+                  << "  Eps: " << cfg.eps << "\n";
+        if (dist.worldSize() > 1) {
+            std::cout << "  MPI World Size: " << dist.worldSize() << "\n";
+        }
+        std::cout << std::endl;
+    }
 
     const bool optimizerIsSGD = (cfg.optimizer == "sgd");
     const bool optimizerIsMomentum = (cfg.optimizer == "momentum_sgd" || cfg.optimizer == "momentum");
@@ -383,10 +487,15 @@ int main(int argc, char** argv) {
                 std::cerr << "Error parsing CNN arguments: " << e.what() << std::endl;
                 return 1;
             }
-            std::cout << "Building custom CNN (" << cnnCfg.conv_channels.size() << " conv stages)..." << std::endl;
+            if (isMaster) {
+                std::cout << "Building custom CNN (" << cnnCfg.conv_channels.size()
+                          << " conv stages)..." << std::endl;
+            }
         } else {
             cnnCfg = CNNConfig::lenet5();
-            std::cout << "Building LeNet-5 CNN (default)..." << std::endl;
+            if (isMaster) {
+                std::cout << "Building LeNet-5 CNN (default)..." << std::endl;
+            }
         }
         try {
             model = std::make_unique<CNNNetwork>(cnnCfg, cfg.seed);
@@ -395,7 +504,9 @@ int main(int argc, char** argv) {
             return 1;
         }
     } else if (cfg.model == "mlp") {
-        std::cout << "Building MLP Network..." << std::endl;
+        if (isMaster) {
+            std::cout << "Building MLP Network..." << std::endl;
+        }
         try {
             auto mlp = std::make_unique<MLPNetwork>();
             if (hiddenVec.size() == 1) {
@@ -416,15 +527,35 @@ int main(int argc, char** argv) {
 
     try {
         // 2. Prepare Data
-        std::cout << "Loading MNIST dataset..." << std::endl;
+        if (isMaster) {
+            std::cout << "Loading MNIST dataset..." << std::endl;
+        }
         MNISTDataset dataset(cfg.data_dir);
         dataset.load();
 
-        std::cout << "Loaded " << dataset.getTrainImages().rows << " training samples and "
-                  << dataset.getTestImages().rows << " test samples." << std::endl;
+        if (isMaster) {
+            std::cout << "Loaded " << dataset.getTrainImages().rows << " training samples and "
+                      << dataset.getTestImages().rows << " test samples." << std::endl;
+        }
 
-        DataLoader trainLoader(dataset.getTrainImages(), dataset.getTrainLabels(), cfg.batch_size, cfg.seed);
-        DataLoader testLoader(dataset.getTestImages(), dataset.getTestLabels(), cfg.batch_size, cfg.seed);
+        DatasetShard trainShard = makeShard(
+            dataset.getTrainImages(),
+            dataset.getTrainLabels(),
+            makePaddedRoundRobinIndices(dataset.getTrainImages().rows, dist.rank(), dist.worldSize()));
+        DatasetShard testShard = makeShard(
+            dataset.getTestImages(),
+            dataset.getTestLabels(),
+            makeRoundRobinIndices(dataset.getTestImages().rows, dist.rank(), dist.worldSize()));
+
+        if (isMaster && dist.worldSize() > 1) {
+            std::cout << "MPI data parallel enabled: local train shard rows = "
+                      << trainShard.inputs.rows
+                      << ", local test shard rows = " << testShard.inputs.rows
+                      << std::endl;
+        }
+
+        DataLoader trainLoader(trainShard.inputs, trainShard.targets, cfg.batch_size, cfg.seed);
+        DataLoader testLoader(testShard.inputs, testShard.targets, cfg.batch_size, cfg.seed);
 
         // 3. Setup Loss & Optimizer
         CrossEntropyLoss lossFn;
@@ -451,16 +582,37 @@ int main(int argc, char** argv) {
             );
         }
 
-        // 4. Train
-        Trainer trainer(*model, lossFn, *optimizer, trainLoader);
+        Trainer::GradSyncFn gradSyncFn = nullptr;
+        if (dist.worldSize() > 1) {
+            gradSyncFn = [&dist](const std::vector<Node::Ptr>& paramsToSync,
+                                 std::uint64_t localBatch) -> std::uint64_t {
+                for (const auto& param : paramsToSync) {
+                    Matrix& grad = param->grad();
+                    if (!grad.data.empty()) {
+                        dist.allReduceSum(grad.data.data(), grad.data.size());
+                    }
+                }
+                return dist.allReduceSumU64(localBatch);
+            };
+        }
 
-        std::cout << "Training started..." << std::endl;
+        // 4. Train
+        Trainer trainer(*model, lossFn, *optimizer, trainLoader, gradSyncFn);
+
+        if (isMaster) {
+            std::cout << "Training started..." << std::endl;
+        }
 
         // Create output directory
-        fs::create_directories(cfg.out_dir);
+        if (isMaster) {
+            fs::create_directories(cfg.out_dir);
+        }
 
         // Open CSV file for logging
-        std::ofstream metricsFile(cfg.out_dir + "/metrics.csv");
+        std::ofstream metricsFile;
+        if (isMaster) {
+            metricsFile.open(cfg.out_dir + "/metrics.csv");
+        }
 
         if (metricsFile.is_open()) {
             metricsFile << "epoch,train_loss,train_acc,test_loss,test_acc\n";
@@ -474,41 +626,45 @@ int main(int argc, char** argv) {
             matmulProfileEpochReset();
             #endif
 
-            Metrics trainMetrics = trainer.trainEpoch();
+            Metrics trainMetrics = reduceMetrics(dist, trainer.trainEpoch());
 
             // Evaluate on test set with a separate trainer bound to testLoader
             Trainer testTrainer(*model, lossFn, *optimizer, testLoader);
-            Metrics testMetrics = testTrainer.evaluate();
+            Metrics testMetrics = reduceMetrics(dist, testTrainer.evaluate());
             lastTestMetrics = testMetrics;
             hasLastTestMetrics = true;
 
-            std::cout << "Epoch " << epoch << "/" << cfg.epochs
-                      << ": [Train] loss = " << std::fixed << std::setprecision(4) << trainMetrics.avg_loss
-                      << ", acc = " << std::fixed << std::setprecision(2) << (trainMetrics.accuracy * 100.0) << "%"
-                      << " | [Test] loss = " << std::fixed << std::setprecision(4) << testMetrics.avg_loss
-                      << ", acc = " << std::fixed << std::setprecision(2) << (testMetrics.accuracy * 100.0) << "%"
-                      << std::endl;
+            if (isMaster) {
+                std::cout << "Epoch " << epoch << "/" << cfg.epochs
+                          << ": [Train] loss = " << std::fixed << std::setprecision(4) << trainMetrics.avg_loss
+                          << ", acc = " << std::fixed << std::setprecision(2) << (trainMetrics.accuracy * 100.0) << "%"
+                          << " | [Test] loss = " << std::fixed << std::setprecision(4) << testMetrics.avg_loss
+                          << ", acc = " << std::fixed << std::setprecision(2) << (testMetrics.accuracy * 100.0) << "%"
+                          << std::endl;
+            }
 
             #ifdef PROFILE_MATMUL
             MatmulEpochStats p = matmulProfileEpochSnapshot();
-            double avg_us = (p.total_calls > 0)
-                ? static_cast<double>(p.total_us) / static_cast<double>(p.total_calls)
-                : 0.0;
+            if (isMaster) {
+                double avg_us = (p.total_calls > 0)
+                    ? static_cast<double>(p.total_us) / static_cast<double>(p.total_calls)
+                    : 0.0;
 
-            std::cout << "[PROFILE][Epoch " << epoch << "] "
-                      << "matmul_calls=" << p.total_calls
-                      << ", total_us=" << p.total_us
-                      << ", avg_us=" << std::fixed << std::setprecision(2) << avg_us
-                      << std::endl;
-
-            for (const auto& s : p.per_impl) {
-                if (s.calls == 0) continue;
-                double impl_avg = static_cast<double>(s.total_us) / static_cast<double>(s.calls);
-                std::cout << "  - " << s.name
-                          << ": calls=" << s.calls
-                          << ", total_us=" << s.total_us
-                          << ", avg_us=" << std::fixed << std::setprecision(2) << impl_avg
+                std::cout << "[PROFILE][Epoch " << epoch << "] "
+                          << "matmul_calls=" << p.total_calls
+                          << ", total_us=" << p.total_us
+                          << ", avg_us=" << std::fixed << std::setprecision(2) << avg_us
                           << std::endl;
+
+                for (const auto& s : p.per_impl) {
+                    if (s.calls == 0) continue;
+                    double impl_avg = static_cast<double>(s.total_us) / static_cast<double>(s.calls);
+                    std::cout << "  - " << s.name
+                              << ": calls=" << s.calls
+                              << ", total_us=" << s.total_us
+                              << ", avg_us=" << std::fixed << std::setprecision(2) << impl_avg
+                              << std::endl;
+                }
             }
             #endif
 
@@ -519,22 +675,30 @@ int main(int argc, char** argv) {
             }
         }
 
-        metricsFile.close();
-        std::cout << "Training finished. Metrics saved to " << (cfg.out_dir + "/metrics.csv") << std::endl;
+        if (metricsFile.is_open()) {
+            metricsFile.close();
+        }
+        if (isMaster) {
+            std::cout << "Training finished. Metrics saved to " << (cfg.out_dir + "/metrics.csv") << std::endl;
+        }
 
         // 5. Final Evaluation
-        std::cout << "\nEvaluating on Test Set..." << std::endl;
+        if (isMaster) {
+            std::cout << "\nEvaluating on Test Set..." << std::endl;
+        }
         Metrics testMetrics;
         if (cfg.epochs > 0 && hasLastTestMetrics) {
             testMetrics = lastTestMetrics;
         } else {
             Trainer evaluator(*model, lossFn, *optimizer, testLoader);
-            testMetrics = evaluator.evaluate();
+            testMetrics = reduceMetrics(dist, evaluator.evaluate());
         }
 
-        std::cout << "Final Test Accuracy: "
-                  << std::fixed << std::setprecision(2) << (testMetrics.accuracy * 100.0) << "%"
-                  << std::endl;
+        if (isMaster) {
+            std::cout << "Final Test Accuracy: "
+                      << std::fixed << std::setprecision(2) << (testMetrics.accuracy * 100.0) << "%"
+                      << std::endl;
+        }
     } catch (const std::exception& e) {
         std::cerr << "Error during training: " << e.what() << std::endl;
         return 1;

@@ -2,12 +2,19 @@ cmake_minimum_required(VERSION 3.10)
 project(ppn LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pg")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 
 # --- Options (profiling / blocked matmul) ---
+option(ENABLE_GPROF "Enable gprof instrumentation (-pg) for profiling builds" OFF)
 option(ENABLE_PROFILE_MATMUL "Print timing for matmul (PROFILE_MATMUL)" OFF)
+option(ENABLE_MPI "Enable MPI distributed data parallel" OFF)
 set(MATMUL_BLOCK_SIZE "" CACHE STRING "Block size for blocked matmul (e.g. 64,128). Empty = default in code")
+
+if(ENABLE_GPROF)
+    message(STATUS "gprof instrumentation enabled (-pg)")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pg")
+endif()
 
 if(ENABLE_PROFILE_MATMUL)
     add_compile_definitions(PROFILE_MATMUL)
@@ -38,6 +45,10 @@ else()
     message(WARNING "OpenMP not found")
 endif()
 
+if(ENABLE_MPI)
+    find_package(MPI REQUIRED)
+endif()
+
 add_compile_definitions(USE_OPENBLAS)
 include_directories(${OPENBLAS_INCLUDE_DIR})
 
@@ -50,6 +61,8 @@ add_library(mnist_reader_lib STATIC mnist_reader/mnist_reader.c)
 
 # Sources
 file(GLOB SOURCES "src/*.cpp")
+file(GLOB DISTRIBUTED_SOURCES "src/distributed/*.cpp")
+list(APPEND SOURCES ${DISTRIBUTED_SOURCES})
 list(FILTER SOURCES EXCLUDE REGEX "src/main.cpp$")
 
 # Exécutables
@@ -69,6 +82,10 @@ add_executable(test_optimizer tests/test_optimizer.cpp ${SOURCES})
 # Main Application
 add_executable(ppn_train src/main.cpp ${SOURCES})
 target_link_libraries(ppn_train PRIVATE ${OPENBLAS_LIB} mnist_reader_lib)
+if(ENABLE_MPI)
+    target_compile_definitions(ppn_train PRIVATE USE_MPI)
+    target_link_libraries(ppn_train PRIVATE MPI::MPI_CXX)
+endif()
 
 set(TEST_TARGETS
     test_matrix
@@ -145,6 +162,36 @@ set_tests_properties(CLIBatchSizeZeroTest PROPERTIES
 add_test(NAME CLISeedNegativeTest
     COMMAND ppn_train --seed -1 --epochs 0)
 set_tests_properties(CLISeedNegativeTest PROPERTIES
+    WILL_FAIL TRUE)
+
+add_test(NAME CLIInvalidOptimizerTest
+    COMMAND ppn_train --optimizer not_a_optimizer --epochs 0)
+set_tests_properties(CLIInvalidOptimizerTest PROPERTIES
+    WILL_FAIL TRUE)
+
+add_test(NAME CLIBadMomentumRangeTest
+    COMMAND ppn_train --optimizer momentum_sgd --momentum 1.0 --epochs 0)
+set_tests_properties(CLIBadMomentumRangeTest PROPERTIES
+    WILL_FAIL TRUE)
+
+add_test(NAME CLIBadBeta1RangeTest
+    COMMAND ppn_train --optimizer adamw --beta1 1.0 --epochs 0)
+set_tests_properties(CLIBadBeta1RangeTest PROPERTIES
+    WILL_FAIL TRUE)
+
+add_test(NAME CLIBadBeta2RangeTest
+    COMMAND ppn_train --optimizer adamw --beta2 1.0 --epochs 0)
+set_tests_properties(CLIBadBeta2RangeTest PROPERTIES
+    WILL_FAIL TRUE)
+
+add_test(NAME CLINonPositiveEpsTest
+    COMMAND ppn_train --optimizer adamw --eps 0 --epochs 0)
+set_tests_properties(CLINonPositiveEpsTest PROPERTIES
+    WILL_FAIL TRUE)
+
+add_test(NAME CLINegativeWeightDecayTest
+    COMMAND ppn_train --weight_decay -0.1 --epochs 0)
+set_tests_properties(CLINegativeWeightDecayTest PROPERTIES
     WILL_FAIL TRUE)
 
 # Positive CLI smoke test for custom CNN config.

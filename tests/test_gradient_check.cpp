@@ -3,6 +3,7 @@
 #include "activation.hpp"
 #include <iostream>
 #include <cassert>
+#include <cstdlib>
 #include <cmath>
 #include <vector>
 
@@ -111,8 +112,58 @@ void test_matmul_gradient() {
     }
 }
 
+void test_leaky_relu_gradient() {
+    std::cout << "Testing LeakyReLU Gradient..." << std::endl;
+    Matrix val(2, 2);
+    val.data = {-1.2, 0.7, 2.1, -0.3};
+    Node::Ptr x = std::make_shared<Node>(val);
+
+    auto func = [](Node::Ptr input) -> Node::Ptr {
+        return MathOps::sum(MathOps::leaky_relu(input, 0.01));
+    };
+
+    Node::Ptr y = func(x);
+    y->backward();
+    Matrix grad_auto = x->grad();
+
+    Matrix grad_num = compute_numerical_gradient(func, x);
+
+    if (check_gradient(grad_auto, grad_num)) {
+        std::cout << "LeakyReLU Gradient Passed!" << std::endl;
+    } else {
+        std::cout << "LeakyReLU Gradient Failed!" << std::endl;
+        exit(1);
+    }
+}
+
+void test_gelu_gradient() {
+    std::cout << "Testing GELU Gradient..." << std::endl;
+    Matrix val(2, 2);
+    val.data = {-1.0, 0.2, 1.5, -0.4};
+    Node::Ptr x = std::make_shared<Node>(val);
+
+    auto func = [](Node::Ptr input) -> Node::Ptr {
+        return MathOps::sum(MathOps::gelu(input));
+    };
+
+    Node::Ptr y = func(x);
+    y->backward();
+    Matrix grad_auto = x->grad();
+
+    Matrix grad_num = compute_numerical_gradient(func, x);
+
+    if (check_gradient(grad_auto, grad_num)) {
+        std::cout << "GELU Gradient Passed!" << std::endl;
+    } else {
+        std::cout << "GELU Gradient Failed!" << std::endl;
+        exit(1);
+    }
+}
+
 int main() {
     test_relu_gradient();
+    test_leaky_relu_gradient();
+    test_gelu_gradient();
     test_matmul_gradient();
     std::cout << "All gradient checks passed!" << std::endl;
     return 0;

@@ -1,17 +1,19 @@
 #include "trainer.hpp"
 #include "node.hpp"      // Node::constant
 #include <limits>
-#include <iostream>
 
 // Trainer keeps references to all components.
 Trainer::Trainer(NeuralNetwork& model,
                  LossFunction& lossFn,
                  Optimizer& optimizer,
-                 DataLoader& dataLoader)
+                 DataLoader& dataLoader,
+                 GradSyncFn gradSyncFn)
     : model_(model),
       lossFn_(lossFn),
       optimizer_(optimizer),
-      dataLoader_(dataLoader) {}
+      dataLoader_(dataLoader),
+      trainable_params_(model.getParameters()),
+      grad_sync_fn_(std::move(gradSyncFn)) {}
 
 Metrics Trainer::trainEpoch() {
     Metrics m = runEpoch(/*training=*/true);
@@ -26,8 +28,8 @@ Metrics Trainer::evaluate() {
 // Shared implementation for training and evaluation.
 Metrics Trainer::runEpoch(bool training) {
     double total_loss = 0.0;
-    std::size_t total_samples = 0;
-    std::size_t total_correct = 0;
+    std::uint64_t total_samples = 0;
+    std::uint64_t total_correct = 0;
 
     // Assumed DataLoader API: reset() and hasNext().
     dataLoader_.reset();
@@ -45,7 +47,7 @@ Metrics Trainer::runEpoch(bool training) {
         const Matrix& inputs  = batch_x;
         const Matrix& targets = batch_y;
 
-        std::size_t batch_size = actual;
+        std::uint64_t batch_size = static_cast<std::uint64_t>(actual);
         total_samples += batch_size;
 
         // Wrap raw matrices into computation graph nodes.
@@ -69,15 +71,20 @@ Metrics Trainer::runEpoch(bool training) {
         if (training) {
             optimizer_.zeroGrad();
             loss_node->backward();
-            // Make updates invariant to batch size even if loss returns a batch sum.
-            const double grad_scale = (batch_size > 0)
-                ? (1.0 / static_cast<double>(batch_size))
-                : 1.0;
-            optimizer_.step(grad_scale);
+            std::uint64_t global_batch_size = batch_size;
+            if (grad_sync_fn_) {
+                global_batch_size = grad_sync_fn_(trainable_params_, batch_size);
+            }
+            if (global_batch_size > 0) {
+                optimizer_.step(1.0 / static_cast<double>(global_batch_size));
+            }
         }
     }
 
     Metrics m;
+    m.loss_sum = total_loss;
+    m.sample_count = total_samples;
+    m.correct_count = total_correct;
     if (total_samples > 0) {
         m.avg_loss = total_loss / static_cast<double>(total_samples);
         m.accuracy = static_cast<double>(total_correct) /
