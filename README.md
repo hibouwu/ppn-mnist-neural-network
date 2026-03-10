@@ -12,8 +12,8 @@ The primary objective of this project is to understand the internal mechanisms o
 
 * **Custom Autodifferentiation Engine**: A dynamic computation graph (DAG) implementation supporting reverse-mode automatic differentiation.
 * **Optimized Tensor Operations**: Matrix multiplication kernels optimized using cache blocking, OpenMP multithreading, and optional BLAS integration.
-* **Configurable Neural Network**: Support for arbitrary layer configurations, activation functions (ReLU, Sigmoid, Tanh), and weight initialization schemes (He, Xavier).
-* **Training Pipeline**: Complete training loop with Stochastic Gradient Descent (SGD), CrossEntropy loss, and mini-batch processing.
+* **Configurable Neural Network**: Support for arbitrary layer configurations, activation functions (ReLU, LeakyReLU, GELU, Sigmoid, Tanh), and weight initialization schemes (He, Xavier).
+* **Training Pipeline**: Complete training loop with SGD / MomentumSGD / AdamW, CrossEntropy loss, and mini-batch processing.
 
 ## Prerequisites
 
@@ -39,13 +39,43 @@ sudo apt install cmake g++ libopenblas-dev
 
 ## Build and Usage
 
-### 1. Compilation
+### 1. Compilation (Default: no gprof overhead)
 
 ```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j$(nproc)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=OFF
+cmake --build build -j$(nproc)
 ```
+
+### 1.1 Serial vs MPI Builds
+
+The project builds a single training executable, `ppn_train`. MPI support is enabled at CMake configure time via `-DENABLE_MPI=ON`; it does not produce a separate executable name.
+
+For a regular single-process build:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=OFF
+cmake --build build -j$(nproc)
+```
+
+For a distributed build with MPI enabled:
+
+```bash
+cmake -S . -B build-mpi -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=ON
+cmake --build build-mpi -j$(nproc)
+```
+
+Using separate build directories such as `build` and `build-mpi` is recommended so you can keep both configurations side by side. The `ENABLE_MPI` option is decided during CMake configuration, not during `cmake --build`.
+
+### 1.2 Profiling Build (gprof only when needed)
+
+`-pg` instrumentation is disabled by default. Enable it explicitly for profiling:
+
+```bash
+cmake -S . -B build-gprof -DCMAKE_BUILD_TYPE=Release -DENABLE_GPROF=ON
+cmake --build build-gprof -j$(nproc)
+```
+
+This keeps normal training runs free from profiling overhead.
 
 ### 2. Dataset Preparation
 
@@ -63,6 +93,12 @@ To train the model with the default configuration:
 ./build/ppn_train --epochs 20 --learning_rate 0.01 --batch_size 64 --hidden_size 128
 ```
 
+For an MPI-enabled build, launch the same executable through `mpiexec`:
+
+```bash
+mpiexec -n 4 ./build-mpi/ppn_train --epochs 20 --learning_rate 0.01 --batch_size 64 --hidden_size 128
+```
+
 ### Command Line Options
 
 The application supports the following command-line arguments:
@@ -75,7 +111,14 @@ The application supports the following command-line arguments:
 | `--hidden_size` | 128 | Size of a single hidden layer |
 | `--hidden_sizes` | "" | Sizes for multiple hidden layers (comma-separated, e.g., "128,64"). Overrides `--hidden_size`. |
 | `--data_dir` | "mnist" | Directory containing MNIST dataset files |
-| `--activation` | relu | Activation function (relu/sigmoid/tanh) |
+| `--activation` | relu | Activation function (relu/leaky_relu/gelu/sigmoid/tanh) |
+| `--optimizer` | sgd | Optimizer (sgd/momentum_sgd/momentum/adamw) |
+| `--momentum` | 0.9 | Momentum coefficient (used by momentum_sgd) |
+| `--nesterov` | 0 | Nesterov momentum flag (0 or 1, used by momentum_sgd) |
+| `--weight_decay` | 0.0 | Weight decay (used by momentum_sgd/adamw) |
+| `--beta1` | 0.9 | AdamW beta1 |
+| `--beta2` | 0.999 | AdamW beta2 |
+| `--eps` | 1e-8 | AdamW epsilon |
 | `--init` | he | Weight initialization strategy (he/xavier/manual) |
 | `--seed` | 0 | Random seed (0 = random) |
 
@@ -91,6 +134,24 @@ The `scripts/` directory contains various utilities for benchmarking and running
   * `exp_init_comparison.sh`: Compare weight initialization strategies.
 * **Visualization**:
   * Python scripts (e.g., `scripts/Utils/plot_metrics.py`) are used by the shell scripts to generate performance plots.
+
+### Performance Reproducibility
+
+* Compare MLP vs CNN on fixed settings (`batch=256`, `seed=42`, `MNIST`):
+
+```bash
+./scripts/Performance/compare_cnn_mlp.sh
+```
+
+This generates logs and a CSV summary at `output/gprof_compare/compare_cnn_mlp.csv`.
+
+* Run CNN gprof pipeline (configure, build, run, export reports):
+
+```bash
+./scripts/Performance/run_gprof_cnn.sh
+```
+
+This generates `gmon.*`, `gprof_flat.txt`, and `gprof_callgraph.txt` in `output/gprof/`.
 
 ## Architecture
 

@@ -12,8 +12,8 @@ L'objectif principal est de comprendre les mécanismes internes des frameworks d
 
 * **Moteur d'Autodifférentiation** : Implémentation d'un graphe de calcul dynamique (DAG) supportant la différenciation automatique en mode inverse.
 * **Opérations Tensorielles Optimisées** : Multiplication matricielle optimisée utilisant le "cache blocking", le multithreading OpenMP et l'intégration optionnelle de BLAS.
-* **Réseau de Neurones Configurable** : Prise en charge de configurations arbitraires de couches, de fonctions d'activation (ReLU, Sigmoid, Tanh) et de stratégies d'initialisation (He, Xavier).
-* **Pipeline d'Entraînement** : Boucle d'apprentissage complète avec Descente de Gradient Stochastique (SGD), perte CrossEntropy et traitement par mini-batch.
+* **Réseau de Neurones Configurable** : Prise en charge de configurations arbitraires de couches, de fonctions d'activation (ReLU, LeakyReLU, GELU, Sigmoid, Tanh) et de stratégies d'initialisation (He, Xavier).
+* **Pipeline d'Entraînement** : Boucle d'apprentissage complète avec SGD / MomentumSGD / AdamW, perte CrossEntropy et traitement par mini-batch.
 
 ## Prérequis
 
@@ -76,7 +76,14 @@ L'application supporte les arguments suivants :
 | `--hidden_size` | 128 | Taille d'une couche cachée unique |
 | `--hidden_sizes` | "" | Tailles pour plusieurs couches cachées (séparées par virgules, ex: "128,64"). Ecrase `--hidden_size` |
 | `--data_dir` | "mnist" | Répertoire contenant les fichiers MNIST |
-| `--activation` | relu | Fonction d'activation (relu/sigmoid/tanh) |
+| `--activation` | relu | Fonction d'activation (relu/leaky_relu/gelu/sigmoid/tanh) |
+| `--optimizer` | sgd | Optimiseur (sgd/momentum_sgd/momentum/adamw) |
+| `--momentum` | 0.9 | Coefficient de momentum (momentum_sgd) |
+| `--nesterov` | 0 | Active Nesterov (0/1, momentum_sgd) |
+| `--weight_decay` | 0.0 | Weight decay (momentum_sgd/adamw) |
+| `--beta1` | 0.9 | AdamW beta1 |
+| `--beta2` | 0.999 | AdamW beta2 |
+| `--eps` | 1e-8 | AdamW epsilon |
 | `--init` | he | Stratégie d'initialisation des poids (he/xavier/manual) |
 | `--seed` | 0 | Graine aléatoire (0 = aléatoire) |
 

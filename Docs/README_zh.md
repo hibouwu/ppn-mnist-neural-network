@@ -12,8 +12,8 @@
 
 * **自定义自动微分引擎**：支持反向模式自动微分的动态计算图 (DAG) 实现。
 * **优化张量运算**：结合缓存分块、OpenMP 多线程及可选 BLAS 集成的矩阵乘法内核。
-* **可配置神经网络**：支持任意层配置、激活函数（ReLU, Sigmoid, Tanh）及权重初始化策略（He, Xavier）。
-* **训练流水线**：包含随机梯度下降 (SGD)、交叉熵损失 (CrossEntropy) 和小批量处理 (Mini-batch) 的完整训练循环。
+* **可配置神经网络**：支持任意层配置、激活函数（ReLU, LeakyReLU, GELU, Sigmoid, Tanh）及权重初始化策略（He, Xavier）。
+* **训练流水线**：包含 SGD / MomentumSGD / AdamW、交叉熵损失 (CrossEntropy) 和小批量处理 (Mini-batch) 的完整训练循环。
 
 ## 环境要求
 
@@ -43,10 +43,29 @@ sudo apt install cmake g++ libopenblas-dev wget gzip
 ### 1. 编译项目
 
 ```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j$(nproc)
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=OFF
+cmake --build build -j$(nproc)
 ```
+
+### 1.1 串行版与 MPI 版构建
+
+项目只生成一个训练可执行文件 `ppn_train`。是否启用 MPI 由 CMake 配置阶段的 `-DENABLE_MPI=ON` 决定，不会生成另一个不同名字的可执行文件。
+
+普通单进程构建：
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=OFF
+cmake --build build -j$(nproc)
+```
+
+启用 MPI 的分布式构建：
+
+```bash
+cmake -S . -B build-mpi -DCMAKE_BUILD_TYPE=Release -DENABLE_MPI=ON
+cmake --build build-mpi -j$(nproc)
+```
+
+建议使用 `build` 和 `build-mpi` 这样的两个不同目录并存保存两套配置。`ENABLE_MPI` 只能在 CMake 配置阶段切换，不能在单独执行 `cmake --build` 时切换。
 
 ### 2. 数据集准备
 
@@ -64,6 +83,12 @@ cmake --build . -j$(nproc)
 ./build/ppn_train --epochs 20 --learning_rate 0.01 --batch_size 64 --hidden_size 128
 ```
 
+如果构建的是 MPI 版本，则用 `mpiexec` 启动同一个可执行文件：
+
+```bash
+mpiexec -n 4 ./build-mpi/ppn_train --epochs 20 --learning_rate 0.01 --batch_size 64 --hidden_size 128
+```
+
 ### 命令行选项
 
 应用程序支持以下命令行参数：
@@ -76,7 +101,14 @@ cmake --build . -j$(nproc)
 | `--hidden_size` | 128 | 单个隐藏层的大小 |
 | `--hidden_sizes` | "" | 多个隐藏层的大小（逗号分隔，例如 "128,64"）。覆盖 `--hidden_size` |
 | `--data_dir` | "mnist" | 包含 MNIST 数据集文件的目录 |
-| `--activation` | relu | 激活函数 (relu/sigmoid/tanh) |
+| `--activation` | relu | 激活函数 (relu/leaky_relu/gelu/sigmoid/tanh) |
+| `--optimizer` | sgd | 优化器 (sgd/momentum_sgd/momentum/adamw) |
+| `--momentum` | 0.9 | 动量系数（用于 momentum_sgd） |
+| `--nesterov` | 0 | Nesterov 动量开关（0/1，用于 momentum_sgd） |
+| `--weight_decay` | 0.0 | 权重衰减（用于 momentum_sgd/adamw） |
+| `--beta1` | 0.9 | AdamW 的 beta1 |
+| `--beta2` | 0.999 | AdamW 的 beta2 |
+| `--eps` | 1e-8 | AdamW 的 epsilon |
 | `--init` | he | 权重初始化策略 (he/xavier/manual) |
 | `--seed` | 0 | 随机种子 (0 = 随机) |
 
