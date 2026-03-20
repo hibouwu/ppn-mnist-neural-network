@@ -1,7 +1,7 @@
 /**
  * @file cnn_network.hpp
- * @brief Configurable CNN network for MNIST (1x28x28).
- *        Default configuration reproduces LeNet-5.
+ * @brief Configurable CNN network with dataset-dependent input shape.
+ *        Default configuration reproduces LeNet-5 on MNIST.
  */
 #pragma once
 
@@ -18,6 +18,9 @@
  * @brief Configuration for a CNN with variable conv stages and FC layers.
  */
 struct CNNConfig {
+    size_t input_channels = 1;
+    size_t input_height = 28;
+    size_t input_width = 28;
     std::vector<size_t> conv_channels;    // Output channels per stage  [required]
     std::vector<size_t> conv_kernels;     // Square kernel size         [default 3]
     std::vector<size_t> conv_strides;     // Conv stride                [default 1]
@@ -63,5 +66,9 @@ private:
     std::vector<bool>            pool_after_;
     std::vector<LinearLayer>     fcs_;     // hidden + output
     ReLU relu_;
+    size_t input_channels_;
+    size_t input_height_;
+    size_t input_width_;
+    size_t input_dim_;
     size_t flatten_dim_;                   // C*H*W after all conv/pool stages
 };

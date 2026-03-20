@@ -46,6 +46,7 @@ build-*/
 .vscode/
 
 *-ubyte
+*.JPEG
 trancripts.txt
 
 # latex

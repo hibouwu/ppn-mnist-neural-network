@@ -13,7 +13,9 @@
 
 namespace fs = std::filesystem;
 
+#include "dataset.hpp"
 #include "mnist_dataset.hpp"
+#include "tiny_imagenet_dataset.hpp"
 #include "dataloader.hpp"
 #include "distributed/distributed.hpp"
 #include "network.hpp"
@@ -168,6 +170,45 @@ static std::string joinHiddenSizes(const std::vector<int>& hs) {
     return os.str();
 }
 
+static DatasetInfo inferDatasetInfo(const std::string& dataset_name) {
+    if (dataset_name == "mnist") {
+        DatasetInfo info;
+        info.name = "mnist";
+        info.input_channels = 1;
+        info.input_height = 28;
+        info.input_width = 28;
+        info.input_dim = 28 * 28;
+        info.num_classes = 10;
+        return info;
+    }
+    if (dataset_name == "tiny-imagenet") {
+        DatasetInfo info;
+        info.name = "tiny-imagenet";
+        info.input_channels = 3;
+        info.input_height = 64;
+        info.input_width = 64;
+        info.input_dim = 3 * 64 * 64;
+        info.num_classes = 200;
+        return info;
+    }
+    throw std::invalid_argument(
+        "unsupported --dataset '" + dataset_name +
+        "'. Expected 'mnist' or 'tiny-imagenet'.");
+}
+
+static std::unique_ptr<Dataset> createDataset(const std::string& dataset_name,
+                                              const std::string& data_dir) {
+    if (dataset_name == "mnist") {
+        return std::make_unique<MNISTDataset>(data_dir);
+    }
+    if (dataset_name == "tiny-imagenet") {
+        return std::make_unique<TinyImageNetDataset>(data_dir);
+    }
+    throw std::invalid_argument(
+        "unsupported --dataset '" + dataset_name +
+        "'. Expected 'mnist' or 'tiny-imagenet'.");
+}
+
 struct DatasetShard {
     Matrix inputs;
     Matrix targets;
@@ -290,6 +331,7 @@ struct Config {
     int hidden_size = 128;                // Legacy single hidden layer width for MLP.
     std::string hidden_sizes = "";        // Preferred MLP hidden sizes, e.g. "256,128,64". Empty -> use hidden_size.
 
+    std::string dataset = "mnist";        // Dataset: mnist / tiny-imagenet.
     std::string data_dir = "mnist";       // MNIST dataset folder path.
     unsigned int seed = 0;                // RNG seed. 0 means "non-deterministic/random seed path".
     std::string activation = "relu";      // MLP activation: relu / leaky_relu / gelu / sigmoid / tanh.
@@ -349,6 +391,8 @@ int main(int argc, char** argv) {
                 cfg.hidden_sizes = requireValue(arg);
             } else if (arg == "--data_dir") {
                 cfg.data_dir = requireValue(arg);
+            } else if (arg == "--dataset") {
+                cfg.dataset = requireValue(arg);
             } else if (arg == "--seed") {
                 cfg.seed = parseUnsignedIntStrict(requireValue(arg), arg);
             } else if (arg == "--activation") {
@@ -435,7 +479,19 @@ int main(int argc, char** argv) {
     }
 
     if (isMaster) {
+        DatasetInfo datasetInfo;
+        try {
+            datasetInfo = inferDatasetInfo(cfg.dataset);
+        } catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << std::endl;
+            return 1;
+        }
         std::cout << "Starting training with config:" << "\n"
+                  << "  Dataset: " << cfg.dataset << "\n"
+                  << "  Data Dir: " << cfg.data_dir << "\n"
+                  << "  Input Shape: " << datasetInfo.input_channels << "x"
+                  << datasetInfo.input_height << "x" << datasetInfo.input_width << "\n"
+                  << "  Classes: " << datasetInfo.num_classes << "\n"
                   << "  Epochs: " << cfg.epochs << "\n"
                   << "  Batch Size: " << cfg.batch_size << "\n"
                   << "  Learning Rate: " << cfg.learning_rate << "\n"
@@ -464,6 +520,14 @@ int main(int argc, char** argv) {
         std::cerr << "Error: unsupported --optimizer '" << cfg.optimizer
                   << "'. Expected 'sgd', 'momentum_sgd' (or 'momentum'), or 'adamw'."
                   << std::endl;
+        return 1;
+    }
+
+    DatasetInfo datasetInfo;
+    try {
+        datasetInfo = inferDatasetInfo(cfg.dataset);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
 
@@ -508,6 +572,10 @@ int main(int argc, char** argv) {
                 if (!cfg.cnn_fc_hidden_sizes.empty()) {
                     cnnCfg.fc_hidden_sizes = parseUintList(cfg.cnn_fc_hidden_sizes, "cnn_fc_hidden_sizes");
                 }
+                cnnCfg.input_channels = datasetInfo.input_channels;
+                cnnCfg.input_height = datasetInfo.input_height;
+                cnnCfg.input_width = datasetInfo.input_width;
+                cnnCfg.num_classes = datasetInfo.num_classes;
             } catch (const std::exception& e) {
                 std::cerr << "Error parsing CNN arguments: " << e.what() << std::endl;
                 return 1;
@@ -518,6 +586,10 @@ int main(int argc, char** argv) {
             }
         } else {
             cnnCfg = CNNConfig::lenet5();
+            cnnCfg.input_channels = datasetInfo.input_channels;
+            cnnCfg.input_height = datasetInfo.input_height;
+            cnnCfg.input_width = datasetInfo.input_width;
+            cnnCfg.num_classes = datasetInfo.num_classes;
             if (isMaster) {
                 std::cout << "Building LeNet-5 CNN (default)..." << std::endl;
             }
@@ -535,9 +607,21 @@ int main(int argc, char** argv) {
         try {
             auto mlp = std::make_unique<MLPNetwork>();
             if (hiddenVec.size() == 1) {
-                *mlp = MLPNetwork::createSingleHidden(784, hiddenVec[0], 10, cfg.activation, cfg.init, cfg.seed);
+                *mlp = MLPNetwork::createSingleHidden(
+                    static_cast<int>(datasetInfo.input_dim),
+                    hiddenVec[0],
+                    static_cast<int>(datasetInfo.num_classes),
+                    cfg.activation,
+                    cfg.init,
+                    cfg.seed);
             } else {
-                *mlp = MLPNetwork::createMultiHidden(784, hiddenVec, 10, cfg.activation, cfg.init, cfg.seed);
+                *mlp = MLPNetwork::createMultiHidden(
+                    static_cast<int>(datasetInfo.input_dim),
+                    hiddenVec,
+                    static_cast<int>(datasetInfo.num_classes),
+                    cfg.activation,
+                    cfg.init,
+                    cfg.seed);
             }
             model = std::move(mlp);
         } catch (const std::exception& e) {
@@ -553,34 +637,78 @@ int main(int argc, char** argv) {
     try {
         // 2. Prepare Data
         if (isMaster) {
-            std::cout << "Loading MNIST dataset..." << std::endl;
+            std::cout << "Loading dataset..." << std::endl;
         }
-        MNISTDataset dataset(cfg.data_dir);
-        dataset.load();
+        auto dataset = createDataset(cfg.dataset, cfg.data_dir);
+        std::unique_ptr<DataLoader> trainLoader;
+        std::unique_ptr<DataLoader> testLoader;
 
-        if (isMaster) {
-            std::cout << "Loaded " << dataset.getTrainImages().rows << " training samples and "
-                      << dataset.getTestImages().rows << " test samples." << std::endl;
+        if (cfg.dataset == "tiny-imagenet") {
+            auto* tinyDataset = dynamic_cast<TinyImageNetDataset*>(dataset.get());
+            if (tinyDataset == nullptr) {
+                throw std::runtime_error("Internal error: tiny-imagenet dataset cast failed.");
+            }
+
+            tinyDataset->prepareStreaming();
+
+            if (isMaster) {
+                std::cout << "Prepared " << tinyDataset->trainSampleCount()
+                          << " training samples and "
+                          << tinyDataset->testSampleCount()
+                          << " test samples." << std::endl;
+            }
+
+            const auto trainIndices = makePaddedRoundRobinIndices(
+                tinyDataset->trainSampleCount(), dist.rank(), dist.worldSize());
+            const auto testIndices = makeRoundRobinIndices(
+                tinyDataset->testSampleCount(), dist.rank(), dist.worldSize());
+
+            if (isMaster && dist.worldSize() > 1) {
+                std::cout << "MPI data parallel enabled: local train shard rows = "
+                          << trainIndices.size()
+                          << ", local test shard rows = " << testIndices.size()
+                          << std::endl;
+            }
+
+            trainLoader = std::make_unique<DataLoader>(
+                tinyDataset->makeTrainBatchSource(trainIndices),
+                cfg.batch_size,
+                cfg.seed);
+            testLoader = std::make_unique<DataLoader>(
+                tinyDataset->makeTestBatchSource(testIndices),
+                cfg.batch_size,
+                cfg.seed);
+        } else {
+            dataset->load();
+
+            if (isMaster) {
+                std::cout << "Loaded " << dataset->getTrainImages().rows << " training samples and "
+                          << dataset->getTestImages().rows << " test samples." << std::endl;
+            }
+
+            DatasetShard trainShard = makeShard(
+                dataset->getTrainImages(),
+                dataset->getTrainLabels(),
+                makePaddedRoundRobinIndices(
+                    dataset->getTrainImages().rows, dist.rank(), dist.worldSize()));
+            DatasetShard testShard = makeShard(
+                dataset->getTestImages(),
+                dataset->getTestLabels(),
+                makeRoundRobinIndices(
+                    dataset->getTestImages().rows, dist.rank(), dist.worldSize()));
+
+            if (isMaster && dist.worldSize() > 1) {
+                std::cout << "MPI data parallel enabled: local train shard rows = "
+                          << trainShard.inputs.rows
+                          << ", local test shard rows = " << testShard.inputs.rows
+                          << std::endl;
+            }
+
+            trainLoader = std::make_unique<DataLoader>(
+                trainShard.inputs, trainShard.targets, cfg.batch_size, cfg.seed);
+            testLoader = std::make_unique<DataLoader>(
+                testShard.inputs, testShard.targets, cfg.batch_size, cfg.seed);
         }
-
-        DatasetShard trainShard = makeShard(
-            dataset.getTrainImages(),
-            dataset.getTrainLabels(),
-            makePaddedRoundRobinIndices(dataset.getTrainImages().rows, dist.rank(), dist.worldSize()));
-        DatasetShard testShard = makeShard(
-            dataset.getTestImages(),
-            dataset.getTestLabels(),
-            makeRoundRobinIndices(dataset.getTestImages().rows, dist.rank(), dist.worldSize()));
-
-        if (isMaster && dist.worldSize() > 1) {
-            std::cout << "MPI data parallel enabled: local train shard rows = "
-                      << trainShard.inputs.rows
-                      << ", local test shard rows = " << testShard.inputs.rows
-                      << std::endl;
-        }
-
-        DataLoader trainLoader(trainShard.inputs, trainShard.targets, cfg.batch_size, cfg.seed);
-        DataLoader testLoader(testShard.inputs, testShard.targets, cfg.batch_size, cfg.seed);
 
         // 3. Setup Loss & Optimizer
         CrossEntropyLoss lossFn;
@@ -622,7 +750,7 @@ int main(int argc, char** argv) {
         }
 
         // 4. Train
-        Trainer trainer(*model, lossFn, *optimizer, trainLoader, gradSyncFn);
+        Trainer trainer(*model, lossFn, *optimizer, *trainLoader, gradSyncFn);
 
         if (isMaster) {
             std::cout << "Training started..." << std::endl;
@@ -659,7 +787,7 @@ int main(int argc, char** argv) {
             trainMetrics.profile = reduceEpochProfile(dist, trainMetrics.profile);
 
             // Evaluate on test set with a separate trainer bound to testLoader
-            Trainer testTrainer(*model, lossFn, *optimizer, testLoader);
+            Trainer testTrainer(*model, lossFn, *optimizer, *testLoader);
             Metrics testMetrics = reduceMetrics(dist, testTrainer.evaluate());
             lastTestMetrics = testMetrics;
             hasLastTestMetrics = true;
@@ -756,7 +884,7 @@ int main(int argc, char** argv) {
         if (cfg.epochs > 0 && hasLastTestMetrics) {
             testMetrics = lastTestMetrics;
         } else {
-            Trainer evaluator(*model, lossFn, *optimizer, testLoader);
+            Trainer evaluator(*model, lossFn, *optimizer, *testLoader);
             testMetrics = reduceMetrics(dist, evaluator.evaluate());
         }
 

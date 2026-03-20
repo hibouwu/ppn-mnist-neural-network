@@ -74,6 +74,9 @@ void CNNConfig::validate() const {
     if (n == 0) {
         throw std::invalid_argument("CNNConfig: need at least 1 conv stage.");
     }
+    if (input_channels == 0 || input_height == 0 || input_width == 0) {
+        throw std::invalid_argument("input shape must be strictly positive.");
+    }
 
     auto check_len = [&](const auto& v, const std::string& name) {
         if (v.size() != n) {
@@ -117,21 +120,31 @@ void CNNConfig::validate() const {
 // =====================================================================
 
 CNNNetwork::CNNNetwork(const CNNConfig& cfg, unsigned int seed)
-    : flatten_dim_(0)
+    : input_channels_(0),
+      input_height_(0),
+      input_width_(0),
+      input_dim_(0),
+      flatten_dim_(0)
 {
     // Local copy for expand + validate
     CNNConfig c = cfg;
     c.expandDefaults();
     c.validate();
+    input_channels_ = c.input_channels;
+    input_height_ = c.input_height;
+    input_width_ = c.input_width;
+    input_dim_ = input_channels_ * input_height_ * input_width_;
 
     size_t n = c.stages();
     pool_after_ = std::vector<bool>(c.pool_after.begin(), c.pool_after.end());
 
     // --- Build conv/pool layers and compute flatten_dim ---
-    size_t C = 1, H = 28, W = 28;   // Fixed MNIST input
+    size_t C = c.input_channels;
+    size_t H = c.input_height;
+    size_t W = c.input_width;
 
     for (size_t i = 0; i < n; ++i) {
-        size_t in_ch = (i == 0) ? 1 : c.conv_channels[i - 1];
+        size_t in_ch = (i == 0) ? c.input_channels : c.conv_channels[i - 1];
         convs_.emplace_back(in_ch, c.conv_channels[i],
                             c.conv_kernels[i], c.conv_kernels[i],
                             c.conv_strides[i], c.conv_paddings[i]);
@@ -191,12 +204,15 @@ Node::Ptr CNNNetwork::forward(const Node::Ptr& input) const {
         throw std::invalid_argument("CNNNetwork::forward: input node is null.");
     }
     const Matrix& in = input->value();
-    if (in.cols != 784) {
-        throw std::invalid_argument("CNNNetwork::forward: expected input (N, 784).");
+    if (in.cols != input_dim_) {
+        throw std::invalid_argument(
+            "CNNNetwork::forward: expected input (N, " + std::to_string(input_dim_) + ").");
     }
 
     size_t N = in.rows;
-    size_t C = 1, H = 28, W = 28;
+    size_t C = input_channels_;
+    size_t H = input_height_;
+    size_t W = input_width_;
 
     auto x = input;
 

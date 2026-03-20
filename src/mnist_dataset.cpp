@@ -8,7 +8,14 @@ extern "C" {
 #include <cstdio>
 
 MNISTDataset::MNISTDataset(const std::string& data_dir)
-    : data_dir_(data_dir) {}
+    : data_dir_(data_dir) {
+    info_.name = "mnist";
+    info_.input_channels = 1;
+    info_.input_height = 28;
+    info_.input_width = 28;
+    info_.input_dim = 28 * 28;
+    info_.num_classes = 10;
+}
 
 void MNISTDataset::load() {
     // 60000 training images, 10000 test images

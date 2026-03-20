@@ -29,6 +29,9 @@ static void testLeNet5Default() {
 static void testSingleStage() {
     std::cout << "  testSingleStage... ";
     CNNConfig cfg;
+    cfg.input_channels = 3;
+    cfg.input_height = 64;
+    cfg.input_width = 64;
     cfg.conv_channels = {8};
     cfg.conv_kernels = {3};
     cfg.conv_strides = {1};
@@ -40,7 +43,7 @@ static void testSingleStage() {
 
     CNNNetwork net(cfg, 42);
 
-    Matrix input_data(4, 784);
+    Matrix input_data(4, 64 * 64 * 3);
     input_data.randomInit(-0.5, 0.5, false, 42);
     auto x = constant(input_data);
 
@@ -53,6 +56,9 @@ static void testSingleStage() {
 static void testMultiStage() {
     std::cout << "  testMultiStage... ";
     CNNConfig cfg;
+    cfg.input_channels = 3;
+    cfg.input_height = 64;
+    cfg.input_width = 64;
     cfg.conv_channels = {6, 16, 32};
     cfg.conv_kernels = {5, 3, 3};
     cfg.conv_paddings = {2, 1, 1};
@@ -61,7 +67,7 @@ static void testMultiStage() {
 
     CNNNetwork net(cfg, 42);
 
-    Matrix input_data(2, 784);
+    Matrix input_data(2, 64 * 64 * 3);
     input_data.randomInit(-0.5, 0.5, false, 42);
     auto x = constant(input_data);
 
@@ -125,8 +131,11 @@ static void testLengthMismatch() {
 static void testInvalidShape() {
     std::cout << "  testInvalidShape... ";
     CNNConfig cfg;
+    cfg.input_channels = 3;
+    cfg.input_height = 64;
+    cfg.input_width = 64;
     cfg.conv_channels = {8};
-    cfg.conv_kernels = {99};   // kernel too large for 28x28
+    cfg.conv_kernels = {99};   // kernel too large for 64x64
     cfg.conv_paddings = {0};
     cfg.conv_strides = {1};
 
@@ -143,6 +152,9 @@ static void testInvalidShape() {
 static void testBackwardGradients() {
     std::cout << "  testBackwardGradients... ";
     CNNConfig cfg;
+    cfg.input_channels = 3;
+    cfg.input_height = 64;
+    cfg.input_width = 64;
     cfg.conv_channels = {4};
     cfg.conv_kernels = {3};
     cfg.conv_paddings = {1};
@@ -151,7 +163,7 @@ static void testBackwardGradients() {
 
     CNNNetwork net(cfg, 42);
 
-    Matrix input_data(2, 784);
+    Matrix input_data(2, 64 * 64 * 3);
     input_data.randomInit(-0.5, 0.5, false, 42);
     auto x = constant(input_data);
 

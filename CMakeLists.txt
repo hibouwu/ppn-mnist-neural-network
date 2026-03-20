@@ -32,9 +32,15 @@ find_path(OPENBLAS_INCLUDE_DIR
 find_library(OPENBLAS_LIB
     NAMES openblaso openblas openblas64
 )
+find_library(JPEG_LIB
+    NAMES jpeg
+)
 
 if(NOT OPENBLAS_INCLUDE_DIR OR NOT OPENBLAS_LIB)
     message(FATAL_ERROR "OpenBLAS not found: set OPENBLAS_INCLUDE_DIR and OPENBLAS_LIB")
+endif()
+if(NOT JPEG_LIB)
+    message(FATAL_ERROR "libjpeg not found")
 endif()
 
 find_package(OpenMP)
@@ -78,10 +84,12 @@ add_executable(test_gradient_check tests/test_gradient_check.cpp ${SOURCES})
 
 add_executable(test_dataloader tests/test_dataloader.cpp ${SOURCES})
 add_executable(test_optimizer tests/test_optimizer.cpp ${SOURCES})
+add_executable(test_tiny_imagenet_dataset tests/test_tiny_imagenet_dataset.cpp ${SOURCES})
 
 # Main Application
 add_executable(ppn_train src/main.cpp ${SOURCES})
 target_link_libraries(ppn_train PRIVATE ${OPENBLAS_LIB} mnist_reader_lib)
+target_link_libraries(ppn_train PRIVATE ${JPEG_LIB})
 if(ENABLE_MPI)
     target_compile_definitions(ppn_train PRIVATE USE_MPI)
     target_link_libraries(ppn_train PRIVATE MPI::MPI_CXX)
@@ -96,10 +104,11 @@ set(TEST_TARGETS
     test_gradient_check
     test_dataloader
     test_optimizer
+    test_tiny_imagenet_dataset
 )
 
 foreach(target ${TEST_TARGETS})
-    target_link_libraries(${target} PRIVATE ${OPENBLAS_LIB} mnist_reader_lib)
+    target_link_libraries(${target} PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
 endforeach()
 
 add_test(NAME MatrixTest COMMAND test_matrix)
@@ -110,17 +119,18 @@ add_test(NAME AutodiffTest COMMAND test_autodiff)
 add_test(NAME GradientCheckTest COMMAND test_gradient_check)
 add_test(NAME DataLoaderTest COMMAND test_dataloader WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME OptimizerTest COMMAND test_optimizer)
+add_test(NAME TinyImageNetDatasetTest COMMAND test_tiny_imagenet_dataset)
 
 add_executable(test_benchmark_large tests/test_benchmark_large.cpp ${SOURCES})
-target_link_libraries(test_benchmark_large PUBLIC ${OPENBLAS_LIB} mnist_reader_lib)
+target_link_libraries(test_benchmark_large PUBLIC ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
 
 
 add_executable(test_init tests/test_init.cpp ${SOURCES})
-target_link_libraries(test_init PRIVATE ${OPENBLAS_LIB} mnist_reader_lib)
+target_link_libraries(test_init PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
 add_test(NAME InitTest COMMAND test_init)
 
 add_executable(test_cnn_configurable tests/test_cnn_configurable.cpp ${SOURCES})
-target_link_libraries(test_cnn_configurable PRIVATE ${OPENBLAS_LIB} mnist_reader_lib)
+target_link_libraries(test_cnn_configurable PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
 add_test(NAME CNNConfigurableTest COMMAND test_cnn_configurable)
 
 # CLI regression tests for argument validation (must fail fast before data loading).
@@ -157,6 +167,11 @@ set_tests_properties(CLINonFiniteLearningRateTest PROPERTIES
 add_test(NAME CLIBatchSizeZeroTest
     COMMAND ppn_train --batch_size 0 --epochs 0)
 set_tests_properties(CLIBatchSizeZeroTest PROPERTIES
+    WILL_FAIL TRUE)
+
+add_test(NAME CLIInvalidDatasetTest
+    COMMAND ppn_train --dataset not_a_dataset --epochs 0)
+set_tests_properties(CLIInvalidDatasetTest PROPERTIES
     WILL_FAIL TRUE)
 
 add_test(NAME CLISeedNegativeTest
