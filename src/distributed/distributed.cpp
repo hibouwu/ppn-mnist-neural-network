@@ -66,6 +66,24 @@ void DistributedContext::allReduceSum(double* data, std::size_t n) const {
 #endif
 }
 
+void DistributedContext::allReduceMax(double* data, std::size_t n) const {
+    if (data == nullptr || n == 0) {
+        return;
+    }
+
+#ifdef USE_MPI
+    if (n > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        throw std::overflow_error("MPI allReduceMax count exceeds int range.");
+    }
+    if (MPI_Allreduce(MPI_IN_PLACE, data, static_cast<int>(n), MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD) != MPI_SUCCESS) {
+        throw std::runtime_error("MPI_Allreduce failed for max-reduced double buffer.");
+    }
+#else
+    (void)data;
+    (void)n;
+#endif
+}
+
 std::uint64_t DistributedContext::allReduceSumU64(std::uint64_t value) const {
 #ifdef USE_MPI
     std::uint64_t result = 0;

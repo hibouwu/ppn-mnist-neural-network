@@ -253,6 +253,31 @@ static Metrics reduceMetrics(const DistributedContext& dist, Metrics metrics) {
 
     return metrics;
 }
+
+static EpochProfile reduceEpochProfile(const DistributedContext& dist, EpochProfile profile) {
+    double max_fields[] = {
+        profile.epoch_time_s,
+        profile.data_time_s,
+        profile.fwd_bwd_time_s,
+        profile.sync_total_time_s,
+        profile.sync_wait_time_s,
+        profile.opt_time_s,
+        profile.step_time_s_sum,
+        profile.max_step_time_s
+    };
+    dist.allReduceMax(max_fields, sizeof(max_fields) / sizeof(max_fields[0]));
+
+    profile.epoch_time_s = max_fields[0];
+    profile.data_time_s = max_fields[1];
+    profile.fwd_bwd_time_s = max_fields[2];
+    profile.sync_total_time_s = max_fields[3];
+    profile.sync_wait_time_s = max_fields[4];
+    profile.opt_time_s = max_fields[5];
+    profile.step_time_s_sum = max_fields[6];
+    profile.max_step_time_s = max_fields[7];
+    profile.step_count = dist.allReduceSumU64(profile.step_count);
+    return profile;
+}
 // --------------------------------------------
 
 // configuration struct
@@ -615,7 +640,11 @@ int main(int argc, char** argv) {
         }
 
         if (metricsFile.is_open()) {
-            metricsFile << "epoch,train_loss,train_acc,test_loss,test_acc\n";
+            metricsFile
+                << "epoch,train_loss,train_acc,test_loss,test_acc,train_samples,"
+                << "epoch_time_s,data_time_s,fwd_bwd_time_s,sync_total_time_s,sync_wait_time_s,opt_time_s,"
+                << "avg_step_time_ms,max_step_time_ms,samples_per_s,allreduce_wait_ratio,"
+                << "world_size,batch_size\n";
         }
 
         Metrics lastTestMetrics;
@@ -627,6 +656,7 @@ int main(int argc, char** argv) {
             #endif
 
             Metrics trainMetrics = reduceMetrics(dist, trainer.trainEpoch());
+            trainMetrics.profile = reduceEpochProfile(dist, trainMetrics.profile);
 
             // Evaluate on test set with a separate trainer bound to testLoader
             Trainer testTrainer(*model, lossFn, *optimizer, testLoader);
@@ -634,12 +664,35 @@ int main(int argc, char** argv) {
             lastTestMetrics = testMetrics;
             hasLastTestMetrics = true;
 
+            const double avg_step_time_ms =
+                (trainMetrics.profile.step_count > 0)
+                    ? (trainMetrics.profile.step_time_s_sum /
+                       static_cast<double>(trainMetrics.profile.step_count)) * 1000.0
+                    : 0.0;
+            const double max_step_time_ms = trainMetrics.profile.max_step_time_s * 1000.0;
+            const double samples_per_s =
+                (trainMetrics.profile.epoch_time_s > 0.0)
+                    ? static_cast<double>(trainMetrics.sample_count) / trainMetrics.profile.epoch_time_s
+                    : 0.0;
+            const double allreduce_wait_ratio =
+                (trainMetrics.profile.epoch_time_s > 0.0)
+                    ? trainMetrics.profile.sync_wait_time_s / trainMetrics.profile.epoch_time_s
+                    : 0.0;
+
             if (isMaster) {
                 std::cout << "Epoch " << epoch << "/" << cfg.epochs
                           << ": [Train] loss = " << std::fixed << std::setprecision(4) << trainMetrics.avg_loss
                           << ", acc = " << std::fixed << std::setprecision(2) << (trainMetrics.accuracy * 100.0) << "%"
                           << " | [Test] loss = " << std::fixed << std::setprecision(4) << testMetrics.avg_loss
                           << ", acc = " << std::fixed << std::setprecision(2) << (testMetrics.accuracy * 100.0) << "%"
+                          << " | epoch = " << std::fixed << std::setprecision(3) << trainMetrics.profile.epoch_time_s << "s"
+                          << ", data = " << trainMetrics.profile.data_time_s << "s"
+                          << ", fwd_bwd = " << trainMetrics.profile.fwd_bwd_time_s << "s"
+                          << ", sync_total = " << trainMetrics.profile.sync_total_time_s << "s"
+                          << ", sync_wait = " << trainMetrics.profile.sync_wait_time_s << "s"
+                          << ", opt = " << trainMetrics.profile.opt_time_s << "s"
+                          << ", avg_step = " << avg_step_time_ms << "ms"
+                          << ", samples/s = " << samples_per_s
                           << std::endl;
             }
 
@@ -671,7 +724,20 @@ int main(int argc, char** argv) {
             if (metricsFile.is_open()) {
                 metricsFile << epoch << ","
                             << trainMetrics.avg_loss << "," << trainMetrics.accuracy << ","
-                            << testMetrics.avg_loss << "," << testMetrics.accuracy << "\n";
+                            << testMetrics.avg_loss << "," << testMetrics.accuracy << ","
+                            << trainMetrics.sample_count << ","
+                            << trainMetrics.profile.epoch_time_s << ","
+                            << trainMetrics.profile.data_time_s << ","
+                            << trainMetrics.profile.fwd_bwd_time_s << ","
+                            << trainMetrics.profile.sync_total_time_s << ","
+                            << trainMetrics.profile.sync_wait_time_s << ","
+                            << trainMetrics.profile.opt_time_s << ","
+                            << avg_step_time_ms << ","
+                            << max_step_time_ms << ","
+                            << samples_per_s << ","
+                            << allreduce_wait_ratio << ","
+                            << dist.worldSize() << ","
+                            << cfg.batch_size << "\n";
             }
         }
 

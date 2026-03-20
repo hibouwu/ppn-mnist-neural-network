@@ -1,5 +1,7 @@
 #include "trainer.hpp"
 #include "node.hpp"      // Node::constant
+#include <chrono>
+#include <algorithm>
 #include <limits>
 
 // Trainer keeps references to all components.
@@ -27,9 +29,13 @@ Metrics Trainer::evaluate() {
 
 // Shared implementation for training and evaluation.
 Metrics Trainer::runEpoch(bool training) {
+    using Clock = std::chrono::steady_clock;
+    const auto epoch_start = Clock::now();
+
     double total_loss = 0.0;
     std::uint64_t total_samples = 0;
     std::uint64_t total_correct = 0;
+    EpochProfile profile;
 
     // Assumed DataLoader API: reset() and hasNext().
     dataLoader_.reset();
@@ -39,8 +45,12 @@ Metrics Trainer::runEpoch(bool training) {
     Matrix batch_y(dataLoader_.batchSize(), dataLoader_.targetCols());
 
     while (dataLoader_.hasNext()) {
+        const auto step_start = Clock::now();
 
+        const auto data_start = Clock::now();
         size_t actual = dataLoader_.nextBatchInto(batch_x, batch_y);
+        const auto data_end = Clock::now();
+        profile.data_time_s += std::chrono::duration<double>(data_end - data_start).count();
         if (actual == 0) break;
         
         // Each batch is (inputs, targets).
@@ -55,6 +65,7 @@ Metrics Trainer::runEpoch(bool training) {
         auto y = constant(targets);
 
         // Forward pass through the model.
+        const auto fwd_bwd_start = Clock::now();
         auto preds = model_.forward(x);
 
         // Loss node (usually a scalar).
@@ -71,14 +82,37 @@ Metrics Trainer::runEpoch(bool training) {
         if (training) {
             optimizer_.zeroGrad();
             loss_node->backward();
+            const auto fwd_bwd_end = Clock::now();
+            profile.fwd_bwd_time_s += std::chrono::duration<double>(fwd_bwd_end - fwd_bwd_start).count();
+
             std::uint64_t global_batch_size = batch_size;
             if (grad_sync_fn_) {
+                const auto sync_start = Clock::now();
                 global_batch_size = grad_sync_fn_(trainable_params_, batch_size);
+                const auto sync_end = Clock::now();
+                const double sync_time_s =
+                    std::chrono::duration<double>(sync_end - sync_start).count();
+                // Current path is fully blocking, so total communication time equals exposed wait time.
+                profile.sync_total_time_s += sync_time_s;
+                profile.sync_wait_time_s += sync_time_s;
             }
             if (global_batch_size > 0) {
+                const auto opt_start = Clock::now();
                 optimizer_.step(1.0 / static_cast<double>(global_batch_size));
+                const auto opt_end = Clock::now();
+                profile.opt_time_s += std::chrono::duration<double>(opt_end - opt_start).count();
             }
+        } else {
+            const auto fwd_bwd_end = Clock::now();
+            profile.fwd_bwd_time_s += std::chrono::duration<double>(fwd_bwd_end - fwd_bwd_start).count();
         }
+
+        const auto step_end = Clock::now();
+        const double step_time_s =
+            std::chrono::duration<double>(step_end - step_start).count();
+        profile.step_time_s_sum += step_time_s;
+        profile.max_step_time_s = std::max(profile.max_step_time_s, step_time_s);
+        profile.step_count += 1;
     }
 
     Metrics m;
@@ -90,6 +124,8 @@ Metrics Trainer::runEpoch(bool training) {
         m.accuracy = static_cast<double>(total_correct) /
                      static_cast<double>(total_samples);
     }
+    profile.epoch_time_s = std::chrono::duration<double>(Clock::now() - epoch_start).count();
+    m.profile = profile;
     return m;
 }
 

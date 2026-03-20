@@ -9,6 +9,18 @@
 #include "optimizer.hpp"  // Optimizer
 #include "dataloader.hpp" // DataLoader
 
+struct EpochProfile {
+    double epoch_time_s = 0.0;
+    double data_time_s = 0.0;
+    double fwd_bwd_time_s = 0.0;
+    double sync_total_time_s = 0.0;
+    double sync_wait_time_s = 0.0;
+    double opt_time_s = 0.0;
+    double step_time_s_sum = 0.0;
+    double max_step_time_s = 0.0;
+    std::uint64_t step_count = 0;
+};
+
 // Basic statistics for one epoch
 struct Metrics {
     double loss_sum = 0.0;   // summed loss over all processed samples
@@ -16,6 +28,7 @@ struct Metrics {
     std::uint64_t correct_count = 0;
     double avg_loss = 0.0;   // mean loss over all samples
     double accuracy = 0.0;   // classification accuracy in [0, 1]
+    EpochProfile profile;
 };
 
 // Trainer: orchestrates model, loss, optimizer and dataloader.
