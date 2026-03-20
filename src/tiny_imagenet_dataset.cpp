@@ -123,8 +123,15 @@ public:
             }
 
             double* dst = inputs.data.data() + row * input_dim_;
-            for (std::size_t i = 0; i < decoded.pixels.size(); ++i) {
-                dst[i] = static_cast<double>(decoded.pixels[i]) / 255.0;
+            for (std::size_t h = 0; h < 64; ++h) {
+                for (std::size_t w = 0; w < 64; ++w) {
+                    for (std::size_t c = 0; c < 3; ++c) {
+                        const std::size_t src_idx = (h * 64 + w) * 3 + c;
+                        const std::size_t dst_idx = c * 64 * 64 + h * 64 + w;
+                        dst[dst_idx] =
+                            static_cast<double>(decoded.pixels[src_idx]) / 255.0;
+                    }
+                }
             }
 
             if (sample.second >= num_classes_) {
@@ -282,9 +289,19 @@ Matrix TinyImageNetDataset::loadSplitImages(
                 samples[row].first);
         }
 
-        for (std::size_t i = 0; i < decoded.pixels.size(); ++i) {
-            images.data[row * info_.input_dim + i] =
-                static_cast<double>(decoded.pixels[i]) / 255.0;
+        double* dst = images.data.data() + row * info_.input_dim;
+        for (std::size_t h = 0; h < info_.input_height; ++h) {
+            for (std::size_t w = 0; w < info_.input_width; ++w) {
+                for (std::size_t c = 0; c < info_.input_channels; ++c) {
+                    const std::size_t src_idx =
+                        (h * info_.input_width + w) * info_.input_channels + c;
+                    const std::size_t dst_idx =
+                        c * info_.input_height * info_.input_width +
+                        h * info_.input_width + w;
+                    dst[dst_idx] =
+                        static_cast<double>(decoded.pixels[src_idx]) / 255.0;
+                }
+            }
         }
     }
 
