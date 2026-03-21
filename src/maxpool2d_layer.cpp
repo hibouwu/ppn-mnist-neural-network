@@ -7,6 +7,21 @@
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
+#include <cstdlib>
+#include <cstring>
+
+
+namespace {
+bool cnn_parallel_enabled() {
+    static int mode = -1;
+    if (mode == -1) {
+        const char* v = std::getenv("CNN_PARALLEL");
+        mode = (v && std::strcmp(v, "1") == 0) ? 1 : 0;
+    }
+    return mode == 1;
+}
+}
+
 
 MaxPool2DLayer::MaxPool2DLayer(size_t pH, size_t pW, size_t stride)
     : pool_h_(pH), pool_w_(pW), stride_(stride)
@@ -62,7 +77,7 @@ Node::Ptr MaxPool2DLayer::forward(const Node::Ptr& input,
     // Store max indices for backward: one index per output element
     // index = position within the (H, W) spatial grid
     auto max_indices = std::make_shared<std::vector<size_t>>(N * C * H_out * W_out);
-
+    #pragma omp parallel for collapse(2) if(cnn_parallel_enabled()) schedule(static)
     for (size_t n = 0; n < N; ++n) {
         for (size_t c = 0; c < C; ++c) {
             for (size_t oh = 0; oh < H_out; ++oh) {
@@ -104,17 +119,22 @@ Node::Ptr MaxPool2DLayer::forward(const Node::Ptr& input,
         const double* grad_data = grad.data.data();
         const size_t dX_stride = dX.cols;
         const size_t grad_stride = grad.cols;
-
+        #pragma omp parallel for collapse(2) if(cnn_parallel_enabled()) schedule(static)
         for (size_t n = 0; n < N; ++n) {
             for (size_t c = 0; c < C; ++c) {
+                const size_t dx_nc_base = n * dX_stride + c * H * W;
+                const size_t out_nc_base = n * C * H_out * W_out + c * H_out * W_out;
+                const size_t grad_n_base = n * grad_stride;
+                const size_t out_c_col_base = c * H_out * W_out;
                 for (size_t oh = 0; oh < H_out; ++oh) {
                     for (size_t ow = 0; ow < W_out; ++ow) {
-                        size_t out_col = c * H_out * W_out + oh * W_out + ow;
-                        size_t idx = (*max_indices)[n * C * H_out * W_out + out_col];
+                        const size_t hw = oh * W_out + ow;
+                        const size_t out_col = out_c_col_base + hw; 
+                        const size_t idx = (*max_indices)[out_nc_base + hw];
 
                         // Scatter gradient to the max position
-                        size_t input_col = c * H * W + idx;
-                        dX_data[n * dX_stride + input_col] += grad_data[n * grad_stride + out_col];
+                 
+                        dX_data[dx_nc_base + idx] += grad_data[grad_n_base + out_col];
                     }
                 }
             }

@@ -11,6 +11,19 @@
 #include <cassert>
 #include <limits>
 #include <stdexcept>
+#include <cstdlib>
+#include <cstring>
+
+namespace {
+bool cnn_parallel_enabled() {
+    static int mode = -1; // -1: uninit, 0: naive, 1: parallel
+    if (mode == -1) {
+        const char* v = std::getenv("CNN_PARALLEL");
+        mode = (v && std::strcmp(v, "1") == 0) ? 1 : 0;
+    }
+    return mode == 1;
+}
+}
 
 Conv2DLayer::Conv2DLayer(size_t in_ch, size_t out_ch,
                          size_t kH, size_t kW,
@@ -69,18 +82,27 @@ std::vector<Node::Ptr> Conv2DLayer::parameters() const {
 Matrix Conv2DLayer::im2col(const Matrix& input,
                            size_t N, size_t C, size_t H, size_t W,
                            size_t H_out, size_t W_out) const {
-    size_t col_h = kernel_h_ * kernel_w_ * C;
+    const size_t col_h = kernel_h_ * kernel_w_ * C;
     Matrix cols(N * H_out * W_out, col_h);
     const double* input_data = input.data.data();
     double* cols_data = cols.data.data();
     const size_t input_stride = input.cols;
+    const size_t HW = H * W;
+    const size_t NHW_out = H_out * W_out;
+
+
+    #pragma omp parallel for if(cnn_parallel_enabled()) schedule(static)
 
     for (size_t n = 0; n < N; ++n) {
+        const size_t in_n_base = n * input_stride;
+        const size_t out_n_row_base = n * NHW_out;
         for (size_t oh = 0; oh < H_out; ++oh) {
             for (size_t ow = 0; ow < W_out; ++ow) {
-                size_t row = n * H_out * W_out + oh * W_out + ow;
+                const size_t row = out_n_row_base + oh * W_out + ow;
+                const size_t row_base = row * col_h;
                 size_t col_idx = 0;
                 for (size_t c = 0; c < C; ++c) {
+                    const size_t in_c_base = c * HW;
                     for (size_t kh = 0; kh < kernel_h_; ++kh) {
                         for (size_t kw = 0; kw < kernel_w_; ++kw) {
                             int ih = static_cast<int>(oh * stride_ + kh) - static_cast<int>(padding_);
@@ -88,11 +110,11 @@ Matrix Conv2DLayer::im2col(const Matrix& input,
                             if (ih >= 0 && ih < static_cast<int>(H) &&
                                 iw >= 0 && iw < static_cast<int>(W)) {
                                 // input(n, c*H*W + ih*W + iw)
-                                size_t input_idx = c * H * W + static_cast<size_t>(ih) * W + static_cast<size_t>(iw);
-                                cols_data[row * col_h + col_idx] = input_data[n * input_stride + input_idx];
+                                const size_t input_idx = in_c_base + static_cast<size_t>(ih) * W + static_cast<size_t>(iw);
+                                cols_data[row_base + col_idx] = input_data[in_n_base + input_idx];
                             } else {
                                 // Explicit for zero-padding semantics.
-                                cols_data[row * col_h + col_idx] = 0.0;
+                                cols_data[row_base + col_idx] = 0.0;
                             }
                             ++col_idx;
                         }
@@ -115,21 +137,31 @@ Matrix Conv2DLayer::col2im(const Matrix& cols,
     double* input_grad_data = input_grad.data.data();
     const size_t cols_stride = cols.cols;
     const size_t input_grad_stride = input_grad.cols;
+    const size_t HW = H * W;
+    const size_t NHW_out = H_out * W_out;
+
+
+   #pragma omp parallel for if(cnn_parallel_enabled()) schedule(static)
 
     for (size_t n = 0; n < N; ++n) {
+        const size_t in_n_base = n * input_grad_stride;
+        const size_t row_n_base = n * NHW_out;
         for (size_t oh = 0; oh < H_out; ++oh) {
             for (size_t ow = 0; ow < W_out; ++ow) {
-                size_t row = n * H_out * W_out + oh * W_out + ow;
+                const size_t row = row_n_base + oh * W_out + ow;
+                const size_t row_base = row * cols_stride;
                 size_t col_idx = 0;
                 for (size_t c = 0; c < C; ++c) {
+                    const size_t in_c_base = c * HW;
                     for (size_t kh = 0; kh < kernel_h_; ++kh) {
                         for (size_t kw = 0; kw < kernel_w_; ++kw) {
                             int ih = static_cast<int>(oh * stride_ + kh) - static_cast<int>(padding_);
                             int iw = static_cast<int>(ow * stride_ + kw) - static_cast<int>(padding_);
                             if (ih >= 0 && ih < static_cast<int>(H) &&
                                 iw >= 0 && iw < static_cast<int>(W)) {
-                                size_t input_idx = c * H * W + static_cast<size_t>(ih) * W + static_cast<size_t>(iw);
-                                input_grad_data[n * input_grad_stride + input_idx] += cols_data[row * cols_stride + col_idx];
+                                const size_t input_idx = in_c_base + static_cast<size_t>(ih) * W + static_cast<size_t>(iw);
+                                input_grad_data[in_n_base + input_idx] += cols_data[row_base + col_idx];
+
                             }
                             ++col_idx;
                         }
@@ -190,14 +222,24 @@ Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
     double* result_data = result.data.data();
     const double* out_const_data = out.data.data();
     const size_t result_stride = result.cols;
+    const size_t HWW = H_out * W_out;
+
+    #pragma omp parallel for if(cnn_parallel_enabled()) schedule(static)
+
     for (size_t n = 0; n < N; ++n) {
+        const size_t src_n_row_base = n * HWW;
+        const size_t dst_n_base = n * result_stride;
         for (size_t oc = 0; oc < out_channels_; ++oc) {
+            const size_t dst_oc_base = oc * HWW;
+            const double b = bv(0, oc);
             for (size_t oh = 0; oh < H_out; ++oh) {
                 for (size_t ow = 0; ow < W_out; ++ow) {
-                    size_t src_row = n * H_out * W_out + oh * W_out + ow;
-                    size_t dst_col = oc * H_out * W_out + oh * W_out + ow;
-                    result_data[n * result_stride + dst_col] =
-                        out_const_data[src_row * out_stride + oc] + bv(0, oc);
+                   const size_t hw = oh * W_out + ow;
+                   const size_t src_row = src_n_row_base + hw;
+                   const size_t dst_col = dst_oc_base + hw;
+                   result_data[dst_n_base + dst_col] =
+                   out_const_data[src_row * out_stride + oc] + b;
+
                 }
             }
         }
@@ -226,13 +268,22 @@ Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
         const double* grad_data = grad.data.data();
         const size_t grad_stride = grad.cols;
         const size_t dout_stride = dout.cols;
+        const size_t HWW = H_out * W_out;
+
+        #pragma omp parallel for if(cnn_parallel_enabled()) schedule(static)
+
         for (size_t n = 0; n < N; ++n) {
+            const size_t grad_n_base = n * grad_stride;
+            const size_t dout_n_row_base = n * HWW;
             for (size_t oc = 0; oc < out_ch; ++oc) {
+                const size_t grad_oc_base = oc * HWW;
                 for (size_t oh = 0; oh < H_out; ++oh) {
                     for (size_t ow = 0; ow < W_out; ++ow) {
-                        size_t src_col = oc * H_out * W_out + oh * W_out + ow;
-                        size_t dst_row = n * H_out * W_out + oh * W_out + ow;
-                        dout_data[dst_row * dout_stride + oc] = grad_data[n * grad_stride + src_col];
+                        const size_t hw = oh * W_out + ow;
+                        const size_t src_col = grad_oc_base + hw;
+                        const size_t dst_row = dout_n_row_base + hw;
+                        dout_data[dst_row * dout_stride + oc] = grad_data[grad_n_base + src_col];
+
                     }
                 }
             }
@@ -241,7 +292,7 @@ Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
         // --- dW: kernels gradient ---
         // Reuse cached im2col from forward to avoid recomputing it in backward.
         const Matrix& cols_bw = *cols_bw_ptr;
-        size_t col_w_local = cols_bw.cols;
+        const size_t col_w_local = cols_bw.cols;
         // dW = dout^T @ cols → (out_ch, col_w)
         Matrix dW(out_ch, col_w_local);
         dout.matmul_into(cols_bw, dW, true, false);
@@ -253,8 +304,9 @@ Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
         const double* dout_const_data = dout.data.data();
         double* db_data = db.data.data();
         for (size_t i = 0; i < dout.rows; ++i) {
+            const double* row_ptr = dout_const_data + i * dout_stride;
             for (size_t j = 0; j < out_ch; ++j) {
-                db_data[j] += dout_const_data[i * dout_stride + j];
+                db_data[j] += row_ptr[j];
             }
         }
         bias_ptr->addGrad(db);

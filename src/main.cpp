@@ -27,6 +27,10 @@ namespace fs = std::filesystem;
 
 #include "profiling.hpp"
 
+#include <string>
+#include <cstdlib>   // setenv
+
+
 // ------------------ helpers ------------------
 static long long parseIntStrict(const std::string& s, const std::string& name) {
     if (s.empty()) {
@@ -364,8 +368,23 @@ int main(int argc, char** argv) {
     Config cfg;
 
     try {
+        bool seen_naive = false;
+        bool seen_parallel = false;
         for (int i = 1; i < argc; ++i) {
+          
             std::string arg = argv[i];
+            if (arg == "-naive") {
+               
+                 seen_naive = true;
+                 continue;
+              
+            }
+            if (arg == "-parallel") {
+            
+                 seen_parallel = true;
+                 continue;
+            }
+
             auto requireValue = [&](const std::string& flag) -> std::string {
                 if (i + 1 >= argc) {
                     throw std::invalid_argument(flag + ": missing value.");
@@ -452,6 +471,12 @@ int main(int argc, char** argv) {
                 throw std::invalid_argument("unknown argument '" + arg + "'");
             }
         }
+
+        if (seen_naive && seen_parallel) {
+             throw std::invalid_argument("Use only one of -naive or -parallel.");
+        }
+        setenv("CNN_PARALLEL", seen_parallel ? "1" : "0", 1); // default naive
+
     } catch (const std::exception& e) {
         std::cerr << "Error parsing arguments: " << e.what() << std::endl;
         return 1;
