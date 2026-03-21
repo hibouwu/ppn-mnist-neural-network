@@ -9,13 +9,15 @@ Trainer::Trainer(NeuralNetwork& model,
                  LossFunction& lossFn,
                  Optimizer& optimizer,
                  DataLoader& dataLoader,
-                 GradSyncFn gradSyncFn)
+                 GradSyncFn gradSyncFn,
+                 ProgressFn progressFn)
     : model_(model),
       lossFn_(lossFn),
       optimizer_(optimizer),
       dataLoader_(dataLoader),
       trainable_params_(model.getParameters()),
-      grad_sync_fn_(std::move(gradSyncFn)) {}
+      grad_sync_fn_(std::move(gradSyncFn)),
+      progress_fn_(std::move(progressFn)) {}
 
 Metrics Trainer::trainEpoch() {
     Metrics m = runEpoch(/*training=*/true);
@@ -35,7 +37,12 @@ Metrics Trainer::runEpoch(bool training) {
     double total_loss = 0.0;
     std::uint64_t total_samples = 0;
     std::uint64_t total_correct = 0;
+    std::uint64_t processed_batches = 0;
     EpochProfile profile;
+    const std::uint64_t total_epoch_samples =
+        static_cast<std::uint64_t>(dataLoader_.totalRows());
+    const std::uint64_t total_epoch_batches =
+        static_cast<std::uint64_t>(dataLoader_.totalBatches());
 
     // Assumed DataLoader API: reset() and hasNext().
     dataLoader_.reset();
@@ -113,6 +120,15 @@ Metrics Trainer::runEpoch(bool training) {
         profile.step_time_s_sum += step_time_s;
         profile.max_step_time_s = std::max(profile.max_step_time_s, step_time_s);
         profile.step_count += 1;
+        processed_batches += 1;
+
+        if (progress_fn_) {
+            progress_fn_(training,
+                         processed_batches,
+                         total_epoch_batches,
+                         total_samples,
+                         total_epoch_samples);
+        }
     }
 
     Metrics m;

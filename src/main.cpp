@@ -337,7 +337,7 @@ struct Config {
     std::string activation = "relu";      // MLP activation: relu / leaky_relu / gelu / sigmoid / tanh.
     std::string init = "he";              // MLP init strategy: he / xavier / manual.
     std::string model = "mlp";            // Model type: mlp / cnn.
-    std::string optimizer = "sgd";        // Optimizer: sgd / momentum_sgd(/momentum) / adamw.
+    std::string optimizer = "momentum_sgd";  // Optimizer: sgd / momentum_sgd(/momentum) / adamw.
     double momentum = 0.9;                // Momentum for momentum_sgd.
     bool nesterov = false;                // Nesterov flag for momentum_sgd.
     double weight_decay = 0.0;            // Weight decay (>= 0).
@@ -750,7 +750,30 @@ int main(int argc, char** argv) {
         }
 
         // 4. Train
-        Trainer trainer(*model, lossFn, *optimizer, *trainLoader, gradSyncFn);
+        Trainer::ProgressFn progressFn = nullptr;
+        if (isMaster) {
+            progressFn = [](bool training,
+                            std::uint64_t processedBatches,
+                            std::uint64_t totalBatches,
+                            std::uint64_t processedSamples,
+                            std::uint64_t totalSamples) {
+                constexpr std::uint64_t kProgressInterval = 50;
+                const bool shouldPrint =
+                    processedBatches == totalBatches ||
+                    processedBatches == 1 ||
+                    (processedBatches % kProgressInterval) == 0;
+                if (!shouldPrint) {
+                    return;
+                }
+
+                std::cout << (training ? "[Train progress] " : "[Eval progress] ")
+                          << "batch " << processedBatches << "/" << totalBatches
+                          << ", samples " << processedSamples << "/" << totalSamples
+                          << std::endl;
+            };
+        }
+
+        Trainer trainer(*model, lossFn, *optimizer, *trainLoader, gradSyncFn, progressFn);
 
         if (isMaster) {
             std::cout << "Training started..." << std::endl;
@@ -787,7 +810,7 @@ int main(int argc, char** argv) {
             trainMetrics.profile = reduceEpochProfile(dist, trainMetrics.profile);
 
             // Evaluate on test set with a separate trainer bound to testLoader
-            Trainer testTrainer(*model, lossFn, *optimizer, *testLoader);
+            Trainer testTrainer(*model, lossFn, *optimizer, *testLoader, nullptr, progressFn);
             Metrics testMetrics = reduceMetrics(dist, testTrainer.evaluate());
             lastTestMetrics = testMetrics;
             hasLastTestMetrics = true;
