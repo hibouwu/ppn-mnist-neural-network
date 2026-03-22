@@ -67,8 +67,9 @@ add_library(mnist_reader_lib STATIC mnist_reader/mnist_reader.c)
 
 # Sources
 file(GLOB SOURCES "src/*.cpp")
+file(GLOB AUTOGRAD_SOURCES "src/autograd/*.cpp")
 file(GLOB DISTRIBUTED_SOURCES "src/distributed/*.cpp")
-list(APPEND SOURCES ${DISTRIBUTED_SOURCES})
+list(APPEND SOURCES ${AUTOGRAD_SOURCES} ${DISTRIBUTED_SOURCES})
 list(FILTER SOURCES EXCLUDE REGEX "src/main.cpp$")
 
 # Exécutables
@@ -81,6 +82,8 @@ enable_testing()
 
 add_executable(test_autodiff tests/test_autodiff.cpp ${SOURCES})
 add_executable(test_gradient_check tests/test_gradient_check.cpp ${SOURCES})
+add_executable(test_autograd_engine tests/test_autograd_engine.cpp ${SOURCES})
+add_executable(test_cnn_autograd tests/test_cnn_autograd.cpp ${SOURCES})
 
 add_executable(test_dataloader tests/test_dataloader.cpp ${SOURCES})
 add_executable(test_optimizer tests/test_optimizer.cpp ${SOURCES})
@@ -102,6 +105,8 @@ set(TEST_TARGETS
     test_mlp
     test_autodiff
     test_gradient_check
+    test_autograd_engine
+    test_cnn_autograd
     test_dataloader
     test_optimizer
     test_tiny_imagenet_dataset
@@ -117,6 +122,8 @@ add_test(NAME LinearTest COMMAND test_linear)
 add_test(NAME MLPTest COMMAND test_mlp)
 add_test(NAME AutodiffTest COMMAND test_autodiff)
 add_test(NAME GradientCheckTest COMMAND test_gradient_check)
+add_test(NAME AutogradEngineTest COMMAND test_autograd_engine)
+add_test(NAME CNNAutogradTest COMMAND test_cnn_autograd)
 add_test(NAME DataLoaderTest COMMAND test_dataloader WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME OptimizerTest COMMAND test_optimizer)
 add_test(NAME TinyImageNetDatasetTest COMMAND test_tiny_imagenet_dataset)

@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <cmath>
+#include <functional>
 #include <vector>
 
 // Numerical gradient check

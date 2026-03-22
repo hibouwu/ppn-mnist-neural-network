@@ -41,7 +41,8 @@ public:
      */
     OperationNode(OpKind type,
                   const Matrix& value,
-                  const std::vector<Node::Ptr>& parents);
+                  const std::vector<Node::Ptr>& parents,
+                  bool requiresGrad = true);
 
     /**
      * @brief Returns the operation type associated with this node.

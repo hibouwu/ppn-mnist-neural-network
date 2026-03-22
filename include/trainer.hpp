@@ -38,13 +38,20 @@ class Trainer {
 public:
     using GradSyncFn = std::function<std::uint64_t(
         const std::vector<Node::Ptr>& params, std::uint64_t local_batch)>;
+    using ProgressFn = std::function<void(
+        bool training,
+        std::uint64_t processed_batches,
+        std::uint64_t total_batches,
+        std::uint64_t processed_samples,
+        std::uint64_t total_samples)>;
 
     // Trainer keeps references; it does not own these objects.
     Trainer(NeuralNetwork& model,
             LossFunction& lossFn,
             Optimizer& optimizer,
             DataLoader& dataLoader,
-            GradSyncFn gradSyncFn = nullptr);
+            GradSyncFn gradSyncFn = nullptr,
+            ProgressFn progressFn = nullptr);
 
     // One training epoch (with backward + parameter updates)
     Metrics trainEpoch();
@@ -59,6 +66,7 @@ private:
     DataLoader&   dataLoader_;
     std::vector<Node::Ptr> trainable_params_;
     GradSyncFn grad_sync_fn_;
+    ProgressFn progress_fn_;
 
     // Shared implementation used by trainEpoch() and evaluate()
     Metrics runEpoch(bool training);

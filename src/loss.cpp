@@ -1,7 +1,68 @@
 #include "loss.hpp"
-#include <stdexcept>
-#include <cmath>
+#include "autograd/backward_context.hpp"
+#include "autograd/grad_fn.hpp"
 #include <algorithm>
+#include <cmath>
+#include <memory>
+#include <stdexcept>
+
+namespace {
+
+class MSELossGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        const auto& ctx = output.backwardContext();
+        if (inputs.size() != 2 || !ctx || ctx->sizes.empty()) {
+            throw std::logic_error("MSELossGradFn: invalid node state.");
+        }
+
+        const std::size_t channels = ctx->sizes[0];
+        const Matrix& target = inputs[1]->value();
+        const Matrix& pred = inputs[0]->value();
+        Matrix gp(pred.rows, pred.cols, 0.0);
+
+        const double coeff = (channels > 0)
+            ? (2.0 * grad_output.data[0] / static_cast<double>(channels))
+            : 0.0;
+        for (std::size_t i = 0; i < pred.data.size(); ++i) {
+            gp.data[i] = coeff * (pred.data[i] - target.data[i]);
+        }
+
+        return {{inputs[0], gp}};
+    }
+};
+
+class CrossEntropyLossGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        const auto& ctx = output.backwardContext();
+        if (inputs.size() != 2 || !ctx || ctx->matrices.empty()) {
+            throw std::logic_error("CrossEntropyLossGradFn: invalid node state.");
+        }
+
+        const Matrix& probs = ctx->matrices[0];
+        const Matrix& target = inputs[1]->value();
+        Matrix g_logits(probs.rows, probs.cols, 0.0);
+
+        const double g = grad_output.data[0];
+        for (std::size_t i = 0; i < probs.data.size(); ++i) {
+            g_logits.data[i] = g * (probs.data[i] - target.data[i]);
+        }
+
+        return {{inputs[0], g_logits}};
+    }
+};
+
+bool inferRequiresGrad(const LossFunction::NodePtr& pred,
+                       const LossFunction::NodePtr& target) {
+    return (pred && pred->requiresGrad()) || (target && target->requiresGrad());
+}
+
+}
 
 LossFunction::NodePtr MSELoss::forward(const NodePtr& pred, const NodePtr& target) {
     const Matrix& p = pred->value();
@@ -11,84 +72,61 @@ LossFunction::NodePtr MSELoss::forward(const NodePtr& pred, const NodePtr& targe
         throw std::invalid_argument("MSELoss::forward : pred/target shape mismatch");
     }
 
-    const std::size_t B = p.rows;
-    const std::size_t C = p.cols;
-    const std::size_t n = p.data.size();
-
-    // L = (1/C) * sum (p - t)^2   (donc somme sur batch, normalisée par nb de classes)
+    const std::size_t channels = p.cols;
     double sum = 0.0;
-    for (std::size_t i = 0; i < n; ++i) {
-        double d = p.data[i] - t.data[i];
+    for (std::size_t i = 0; i < p.data.size(); ++i) {
+        const double d = p.data[i] - t.data[i];
         sum += d * d;
     }
 
-    double loss_val = (C > 0) ? sum / static_cast<double>(C) : 0.0;
-
     Matrix out(1, 1);
-    out.data[0] = loss_val;
+    out.data[0] = (channels > 0) ? sum / static_cast<double>(channels) : 0.0;
 
-    auto loss = std::make_shared<Node>(out);
-    loss->addParent(pred);
+    const bool requires_grad = inferRequiresGrad(pred, target);
+    auto loss = std::make_shared<Node>(out, requires_grad);
+    if (!requires_grad) {
+        return loss;
+    }
 
-    // dL/dp_ij = (2/C) * (p_ij - t_ij) * grad_out
-    loss->setBackwardFn([pred, target, C](const Matrix& grad_out) {
-        const Matrix& p = pred->value();
-        const Matrix& t = target->value();
-
-        Matrix gp(p.rows, p.cols, 0.0);
-
-        double g = grad_out.data[0];
-        double coeff = (C > 0) ? (2.0 * g / static_cast<double>(C)) : 0.0;
-
-        const std::size_t n = p.data.size();
-        for (std::size_t i = 0; i < n; ++i) {
-            gp.data[i] = coeff * (p.data[i] - t.data[i]);
-        }
-
-        pred->addGrad(gp);
-        // target traité comme constante
-    });
-
+    auto context = std::make_shared<BackwardContext>();
+    context->sizes.push_back(channels);
+    loss->setInputs({pred, target});
+    loss->setBackwardContext(context);
+    loss->setGradFn(std::make_shared<MSELossGradFn>());
     return loss;
 }
 
 LossFunction::NodePtr CrossEntropyLoss::forward(const NodePtr& pred, const NodePtr& target) {
     const Matrix& logits = pred->value();
-    const Matrix& y      = target->value();
+    const Matrix& y = target->value();
 
     if (logits.rows != y.rows || logits.cols != y.cols) {
         throw std::invalid_argument("CrossEntropyLoss::forward : pred/target shape mismatch");
     }
 
-    const std::size_t B = logits.rows;
-    const std::size_t C = logits.cols;
-
-    // On calcule softmax(logits) de manière stable, et loss = sum_i - sum_c y_ic log(p_ic)
-    // IMPORTANT: on renvoie la somme sur le batch (pas la moyenne) pour coller à Trainer::avg_loss = total_loss/total_samples
-    Matrix probs(B, C, 0.0);
+    const std::size_t batch = logits.rows;
+    const std::size_t classes = logits.cols;
+    Matrix probs(batch, classes, 0.0);
 
     double total = 0.0;
-    for (std::size_t i = 0; i < B; ++i) {
-        // max pour stabilité
-        double m = logits.data[i * C + 0];
-        for (std::size_t c = 1; c < C; ++c) {
-            m = std::max(m, logits.data[i * C + c]);
+    for (std::size_t i = 0; i < batch; ++i) {
+        double max_logit = logits.data[i * classes];
+        for (std::size_t c = 1; c < classes; ++c) {
+            max_logit = std::max(max_logit, logits.data[i * classes + c]);
         }
 
-        // exp et somme
-        double s = 0.0;
-        for (std::size_t c = 0; c < C; ++c) {
-            double e = std::exp(logits.data[i * C + c] - m);
-            probs.data[i * C + c] = e;
-            s += e;
+        double denom = 0.0;
+        for (std::size_t c = 0; c < classes; ++c) {
+            const double e = std::exp(logits.data[i * classes + c] - max_logit);
+            probs.data[i * classes + c] = e;
+            denom += e;
         }
 
-        // normalisation + loss
-        for (std::size_t c = 0; c < C; ++c) {
-            probs.data[i * C + c] = probs.data[i * C + c] / (s + eps_);
-            double yi = y.data[i * C + c];
+        for (std::size_t c = 0; c < classes; ++c) {
+            probs.data[i * classes + c] /= (denom + eps_);
+            const double yi = y.data[i * classes + c];
             if (yi != 0.0) {
-                total += -yi * std::log(probs.data[i * C + c] + eps_);
+                total += -yi * std::log(probs.data[i * classes + c] + eps_);
             }
         }
     }
@@ -96,25 +134,16 @@ LossFunction::NodePtr CrossEntropyLoss::forward(const NodePtr& pred, const NodeP
     Matrix out(1, 1);
     out.data[0] = total;
 
-    auto loss = std::make_shared<Node>(out);
-    loss->addParent(pred);
+    const bool requires_grad = inferRequiresGrad(pred, target);
+    auto loss = std::make_shared<Node>(out, requires_grad);
+    if (!requires_grad) {
+        return loss;
+    }
 
-    // Gradient connu et stable pour CE(softmax(logits), y):
-    // dL/dlogits = (probs - y) * grad_out  (ici loss est somme batch, donc pas /B)
-    loss->setBackwardFn([pred, target, probs](const Matrix& grad_out) {
-        const Matrix& y = target->value();
-        Matrix g_logits(probs.rows, probs.cols, 0.0);
-
-        double g = grad_out.data[0];
-
-        const std::size_t n = probs.data.size();
-        for (std::size_t i = 0; i < n; ++i) {
-            g_logits.data[i] = g * (probs.data[i] - y.data[i]);
-        }
-
-        pred->addGrad(g_logits);
-    });
-
+    auto context = std::make_shared<BackwardContext>();
+    context->matrices.push_back(probs);
+    loss->setInputs({pred, target});
+    loss->setBackwardContext(context);
+    loss->setGradFn(std::make_shared<CrossEntropyLossGradFn>());
     return loss;
 }
-

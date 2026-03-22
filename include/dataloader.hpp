@@ -20,6 +20,8 @@ public:
     size_t batchSize() const { return batchSize_; }
     size_t inputCols() const { return source_->inputCols(); }
     size_t targetCols() const { return source_->targetCols(); }
+    size_t totalRows() const { return indices_.size(); }
+    size_t totalBatches() const { return (indices_.size() + batchSize_ - 1) / batchSize_; }
 
 private:
     std::shared_ptr<const BatchSource> source_;

@@ -3,13 +3,14 @@
  * @brief 2D max pooling layer implementation.
  */
 #include "maxpool2d_layer.hpp"
+#include "autograd/backward_context.hpp"
+#include "autograd/grad_fn.hpp"
 #include <limits>
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <cstdlib>
 #include <cstring>
-
 
 namespace {
 bool cnn_parallel_enabled() {
@@ -20,8 +21,62 @@ bool cnn_parallel_enabled() {
     }
     return mode == 1;
 }
+
+bool inferRequiresGrad(const Node::Ptr& input) {
+    return input && input->requiresGrad();
 }
 
+class MaxPool2DGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        const auto& ctx = output.backwardContext();
+        if (inputs.size() != 1 || !ctx || ctx->sizes.size() < 6 || ctx->index_vectors.empty()) {
+            throw std::logic_error("MaxPool2DGradFn: invalid node state.");
+        }
+
+        const Node::Ptr& input = inputs[0];
+        if (!input->requiresGrad()) {
+            return {};
+        }
+
+        const std::size_t N = ctx->sizes[0];
+        const std::size_t C = ctx->sizes[1];
+        const std::size_t H = ctx->sizes[2];
+        const std::size_t W = ctx->sizes[3];
+        const std::size_t H_out = ctx->sizes[4];
+        const std::size_t W_out = ctx->sizes[5];
+        const std::vector<std::size_t>& max_indices = ctx->index_vectors[0];
+
+        Matrix dX(N, C * H * W, 0.0);
+        double* dX_data = dX.data.data();
+        const double* grad_data = grad_output.data.data();
+        const std::size_t dX_stride = dX.cols;
+        const std::size_t grad_stride = grad_output.cols;
+
+        #pragma omp parallel for collapse(2) if(cnn_parallel_enabled()) schedule(static)
+        for (std::size_t n = 0; n < N; ++n) {
+            for (std::size_t c = 0; c < C; ++c) {
+                const std::size_t dx_nc_base = n * dX_stride + c * H * W;
+                const std::size_t out_nc_base = n * C * H_out * W_out + c * H_out * W_out;
+                const std::size_t grad_n_base = n * grad_stride;
+                const std::size_t out_c_col_base = c * H_out * W_out;
+                for (std::size_t oh = 0; oh < H_out; ++oh) {
+                    for (std::size_t ow = 0; ow < W_out; ++ow) {
+                        const std::size_t hw = oh * W_out + ow;
+                        const std::size_t out_col = out_c_col_base + hw;
+                        const std::size_t idx = max_indices[out_nc_base + hw];
+                        dX_data[dx_nc_base + idx] += grad_data[grad_n_base + out_col];
+                    }
+                }
+            }
+        }
+
+        return {{input, dX}};
+    }
+};
+}
 
 MaxPool2DLayer::MaxPool2DLayer(size_t pH, size_t pW, size_t stride)
     : pool_h_(pH), pool_w_(pW), stride_(stride)
@@ -74,9 +129,8 @@ Node::Ptr MaxPool2DLayer::forward(const Node::Ptr& input,
     double* out_data = out.data.data();
     const size_t in_stride = x.cols;
     const size_t out_stride = out.cols;
-    // Store max indices for backward: one index per output element
-    // index = position within the (H, W) spatial grid
-    auto max_indices = std::make_shared<std::vector<size_t>>(N * C * H_out * W_out);
+    std::vector<std::size_t> max_indices(N * C * H_out * W_out);
+
     #pragma omp parallel for collapse(2) if(cnn_parallel_enabled()) schedule(static)
     for (size_t n = 0; n < N; ++n) {
         for (size_t c = 0; c < C; ++c) {
@@ -87,11 +141,10 @@ Node::Ptr MaxPool2DLayer::forward(const Node::Ptr& input,
 
                     for (size_t ph = 0; ph < pool_h_; ++ph) {
                         for (size_t pw = 0; pw < pool_w_; ++pw) {
-                            size_t ih = oh * stride_ + ph;
-                            size_t iw = ow * stride_ + pw;
-                            // input(n, c*H*W + ih*W + iw)
-                            size_t input_col = c * H * W + ih * W + iw;
-                            double val = in_data[n * in_stride + input_col];
+                            const size_t ih = oh * stride_ + ph;
+                            const size_t iw = ow * stride_ + pw;
+                            const size_t input_col = c * H * W + ih * W + iw;
+                            const double val = in_data[n * in_stride + input_col];
                             if (val > max_val) {
                                 max_val = val;
                                 max_idx = ih * W + iw;
@@ -99,49 +152,25 @@ Node::Ptr MaxPool2DLayer::forward(const Node::Ptr& input,
                         }
                     }
 
-                    size_t out_col = c * H_out * W_out + oh * W_out + ow;
+                    const size_t out_col = c * H_out * W_out + oh * W_out + ow;
                     out_data[n * out_stride + out_col] = max_val;
-                    (*max_indices)[n * C * H_out * W_out + c * H_out * W_out + oh * W_out + ow] = max_idx;
+                    max_indices[n * C * H_out * W_out + c * H_out * W_out + oh * W_out + ow] = max_idx;
                 }
             }
         }
     }
 
-    auto node = std::make_shared<Node>(out);
-    node->addParent(input);
+    const bool requires_grad = inferRequiresGrad(input);
+    auto node = std::make_shared<Node>(out, requires_grad);
+    if (!requires_grad) {
+        return node;
+    }
 
-    auto input_ptr = input;
-
-    node->setBackwardFn([input_ptr, max_indices, N, C, H, W, H_out, W_out](const Matrix& grad) {
-        // grad shape: (N, C*H_out*W_out)
-        Matrix dX(N, C * H * W, 0.0);
-        double* dX_data = dX.data.data();
-        const double* grad_data = grad.data.data();
-        const size_t dX_stride = dX.cols;
-        const size_t grad_stride = grad.cols;
-        #pragma omp parallel for collapse(2) if(cnn_parallel_enabled()) schedule(static)
-        for (size_t n = 0; n < N; ++n) {
-            for (size_t c = 0; c < C; ++c) {
-                const size_t dx_nc_base = n * dX_stride + c * H * W;
-                const size_t out_nc_base = n * C * H_out * W_out + c * H_out * W_out;
-                const size_t grad_n_base = n * grad_stride;
-                const size_t out_c_col_base = c * H_out * W_out;
-                for (size_t oh = 0; oh < H_out; ++oh) {
-                    for (size_t ow = 0; ow < W_out; ++ow) {
-                        const size_t hw = oh * W_out + ow;
-                        const size_t out_col = out_c_col_base + hw; 
-                        const size_t idx = (*max_indices)[out_nc_base + hw];
-
-                        // Scatter gradient to the max position
-                 
-                        dX_data[dx_nc_base + idx] += grad_data[grad_n_base + out_col];
-                    }
-                }
-            }
-        }
-
-        input_ptr->addGrad(dX);
-    });
-
+    auto context = std::make_shared<BackwardContext>();
+    context->sizes = {N, C, H, W, H_out, W_out};
+    context->index_vectors.push_back(std::move(max_indices));
+    node->setInputs({input});
+    node->setBackwardContext(context);
+    node->setGradFn(std::make_shared<MaxPool2DGradFn>());
     return node;
 }

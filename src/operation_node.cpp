@@ -4,7 +4,7 @@
  * @brief OperationNode constructor.
  *
  * It forwards the value to the base Node constructor, stores the operation type
- * and registers all parents in the underlying computation graph.
+ * and registers all inputs in the underlying computation graph.
  *
  * @param type    The operation kind that produced this node.
  * @param value   The forward value associated with this node.
@@ -12,11 +12,9 @@
  */
 OperationNode::OperationNode(OpKind type,
                              const Matrix& value,
-                             const std::vector<Node::Ptr>& parents)
-    : Node(value), opType_(type)
+                             const std::vector<Node::Ptr>& parents,
+                             bool requiresGrad)
+    : Node(value, requiresGrad), opType_(type)
 {
-    // Register all parents in the base class so that backpropagation
-    // can traverse the computation graph correctly.
-    for (const auto& p : parents)
-        addParent(p);
+    setInputs(parents);
 }

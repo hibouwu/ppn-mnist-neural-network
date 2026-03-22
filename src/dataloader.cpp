@@ -9,41 +9,41 @@ namespace {
 class MatrixBatchSource : public BatchSource {
 public:
     MatrixBatchSource(const Matrix& inputs, const Matrix& targets)
-        : inputs_(&inputs), targets_(&targets) {
-        if (inputs_->rows != targets_->rows) {
+        : inputs_(inputs), targets_(targets) {
+        if (inputs_.rows != targets_.rows) {
             throw std::invalid_argument("DataLoader: inputs/targets rows mismatch.");
         }
     }
 
-    std::size_t rowCount() const override { return inputs_->rows; }
-    std::size_t inputCols() const override { return inputs_->cols; }
-    std::size_t targetCols() const override { return targets_->cols; }
+    std::size_t rowCount() const override { return inputs_.rows; }
+    std::size_t inputCols() const override { return inputs_.cols; }
+    std::size_t targetCols() const override { return targets_.cols; }
 
     void loadRows(const std::vector<std::size_t>& indices,
                   Matrix& inputs,
                   Matrix& targets) const override {
-        if (inputs.rows != indices.size() || inputs.cols != inputs_->cols) {
-            inputs = Matrix(indices.size(), inputs_->cols);
+        if (inputs.rows != indices.size() || inputs.cols != inputs_.cols) {
+            inputs = Matrix(indices.size(), inputs_.cols);
         }
-        if (targets.rows != indices.size() || targets.cols != targets_->cols) {
-            targets = Matrix(indices.size(), targets_->cols);
+        if (targets.rows != indices.size() || targets.cols != targets_.cols) {
+            targets = Matrix(indices.size(), targets_.cols);
         }
 
         for (std::size_t i = 0; i < indices.size(); ++i) {
             const std::size_t idx = indices[i];
-            const double* src_x = inputs_->data.data() + idx * inputs_->cols;
-            double* dst_x = inputs.data.data() + i * inputs_->cols;
-            std::copy_n(src_x, inputs_->cols, dst_x);
+            const double* src_x = inputs_.data.data() + idx * inputs_.cols;
+            double* dst_x = inputs.data.data() + i * inputs_.cols;
+            std::copy_n(src_x, inputs_.cols, dst_x);
 
-            const double* src_y = targets_->data.data() + idx * targets_->cols;
-            double* dst_y = targets.data.data() + i * targets_->cols;
-            std::copy_n(src_y, targets_->cols, dst_y);
+            const double* src_y = targets_.data.data() + idx * targets_.cols;
+            double* dst_y = targets.data.data() + i * targets_.cols;
+            std::copy_n(src_y, targets_.cols, dst_y);
         }
     }
 
 private:
-    const Matrix* inputs_;
-    const Matrix* targets_;
+    Matrix inputs_;
+    Matrix targets_;
 };
 
 } // namespace

@@ -1,6 +1,11 @@
 #include "math_ops.hpp"
-#include <cmath>
+#include "autograd/backward_context.hpp"
+#include "autograd/grad_fn.hpp"
 #include <algorithm>
+#include <cstdint>
+#include <cmath>
+#include <memory>
+#include <stdexcept>
 
 namespace MathOps {
 
@@ -8,378 +13,393 @@ using NodePtr = std::shared_ptr<Node>;
 constexpr double kSqrt2OverPi = 0.7978845608028654;
 constexpr double kGeluCubicCoeff = 0.044715;
 
-/**
- * @brief Element-wise addition between two nodes, with basic broadcasting support.
- *
- * The forward pass computes:
- *   - Standard element-wise sum if both matrices have identical shapes.
- *   - Broadcasting on the second operand if its shape is (1, M) and the first
- *     operand is (N, M), i.e. the same row is added to each row of the first matrix.
- *
- * The backward pass:
- *   - Propagates the gradient directly to both parents in the standard case.
- *   - If broadcasting was used, the gradient for the broadcasted parent is
- *     obtained by summing gradients over all rows.
- *
- * @param a First input node.
- * @param b Second input node.
- * @return A new OperationNode representing the addition.
- */
+namespace {
+
+bool inferRequiresGrad(const std::vector<NodePtr>& inputs) {
+    for (const auto& input : inputs) {
+        if (input && input->requiresGrad()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::shared_ptr<BackwardContext> makeContext() {
+    return std::make_shared<BackwardContext>();
+}
+
+class AddGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        const auto& ctx = output.backwardContext();
+        if (inputs.size() != 2 || !ctx) {
+            throw std::logic_error("AddGradFn: invalid node state.");
+        }
+
+        const bool broadcast_b = !ctx->flags.empty() && ctx->flags[0] != 0;
+        std::vector<GradientContribution> contributions;
+        contributions.reserve(2);
+
+        contributions.push_back({inputs[0], grad_output});
+
+        if (broadcast_b) {
+            Matrix grad_b(1, grad_output.cols, 0.0);
+            for (size_t j = 0; j < grad_output.cols; ++j) {
+                double sum = 0.0;
+                for (size_t i = 0; i < grad_output.rows; ++i) {
+                    sum += grad_output(i, j);
+                }
+                grad_b(0, j) = sum;
+            }
+            contributions.push_back({inputs[1], grad_b});
+        } else {
+            contributions.push_back({inputs[1], grad_output});
+        }
+        return contributions;
+    }
+};
+
+class MulGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        if (inputs.size() != 2) {
+            throw std::logic_error("MulGradFn: invalid node inputs.");
+        }
+        return {
+            {inputs[0], grad_output.mul(inputs[1]->value())},
+            {inputs[1], grad_output.mul(inputs[0]->value())},
+        };
+    }
+};
+
+class MatMulGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        if (inputs.size() != 2) {
+            throw std::logic_error("MatMulGradFn: invalid node inputs.");
+        }
+
+        Matrix dA(grad_output.rows, inputs[1]->value().rows);
+        grad_output.matmul_into(inputs[1]->value(), dA, false, true);
+
+        Matrix dB(inputs[0]->value().cols, grad_output.cols);
+        inputs[0]->value().matmul_into(grad_output, dB, true, false);
+
+        return {
+            {inputs[0], dA},
+            {inputs[1], dB},
+        };
+    }
+};
+
+class SumGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        if (inputs.size() != 1) {
+            throw std::logic_error("SumGradFn: invalid node inputs.");
+        }
+        Matrix gx(inputs[0]->value().rows, inputs[0]->value().cols, grad_output.data[0]);
+        return {{inputs[0], gx}};
+    }
+};
+
+class MeanGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        const auto& ctx = output.backwardContext();
+        if (inputs.size() != 1 || !ctx || ctx->sizes.empty()) {
+            throw std::logic_error("MeanGradFn: invalid node state.");
+        }
+        const std::size_t count = ctx->sizes[0];
+        const double coeff = count > 0 ? grad_output.data[0] / static_cast<double>(count) : 0.0;
+        Matrix gx(inputs[0]->value().rows, inputs[0]->value().cols, coeff);
+        return {{inputs[0], gx}};
+    }
+};
+
+class ReLUGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        const auto& ctx = output.backwardContext();
+        if (inputs.size() != 1 || !ctx || ctx->matrices.empty()) {
+            throw std::logic_error("ReLUGradFn: invalid node state.");
+        }
+        const Matrix& relu_out = ctx->matrices[0];
+        Matrix gx(grad_output.rows, grad_output.cols, 0.0);
+        for (size_t i = 0; i < relu_out.data.size(); ++i) {
+            gx.data[i] = (relu_out.data[i] > 0.0) ? grad_output.data[i] : 0.0;
+        }
+        return {{inputs[0], gx}};
+    }
+};
+
+class LeakyReLUGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        const auto& ctx = output.backwardContext();
+        if (inputs.size() != 1 || !ctx || ctx->matrices.empty() || ctx->scalars.empty()) {
+            throw std::logic_error("LeakyReLUGradFn: invalid node state.");
+        }
+        const Matrix& in = ctx->matrices[0];
+        const double alpha = ctx->scalars[0];
+        Matrix gx(grad_output.rows, grad_output.cols, 0.0);
+        for (size_t i = 0; i < in.data.size(); ++i) {
+            gx.data[i] = grad_output.data[i] * ((in.data[i] > 0.0) ? 1.0 : alpha);
+        }
+        return {{inputs[0], gx}};
+    }
+};
+
+class GELUGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        const auto& ctx = output.backwardContext();
+        if (inputs.size() != 1 || !ctx || ctx->matrices.empty()) {
+            throw std::logic_error("GELUGradFn: invalid node state.");
+        }
+        const Matrix& in = ctx->matrices[0];
+        Matrix gx(grad_output.rows, grad_output.cols, 0.0);
+        for (size_t i = 0; i < in.data.size(); ++i) {
+            const double xi = in.data[i];
+            const double xi2 = xi * xi;
+            const double u = kSqrt2OverPi * (xi + kGeluCubicCoeff * xi * xi2);
+            const double t = std::tanh(u);
+            const double sech2 = 1.0 - t * t;
+            const double du_dx = kSqrt2OverPi * (1.0 + 3.0 * kGeluCubicCoeff * xi2);
+            const double dy_dx = 0.5 * (1.0 + t) + 0.5 * xi * sech2 * du_dx;
+            gx.data[i] = grad_output.data[i] * dy_dx;
+        }
+        return {{inputs[0], gx}};
+    }
+};
+
+class SigmoidGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        const auto& ctx = output.backwardContext();
+        if (inputs.size() != 1 || !ctx || ctx->matrices.empty()) {
+            throw std::logic_error("SigmoidGradFn: invalid node state.");
+        }
+        const Matrix& sig = ctx->matrices[0];
+        Matrix gx(grad_output.rows, grad_output.cols, 0.0);
+        for (size_t i = 0; i < sig.data.size(); ++i) {
+            gx.data[i] = grad_output.data[i] * sig.data[i] * (1.0 - sig.data[i]);
+        }
+        return {{inputs[0], gx}};
+    }
+};
+
+class TanhGradFn final : public GradFn {
+public:
+    std::vector<GradientContribution> apply(const Node& output,
+                                            const Matrix& grad_output) const override {
+        const auto& inputs = output.inputs();
+        const auto& ctx = output.backwardContext();
+        if (inputs.size() != 1 || !ctx || ctx->matrices.empty()) {
+            throw std::logic_error("TanhGradFn: invalid node state.");
+        }
+        const Matrix& out = ctx->matrices[0];
+        Matrix gx(grad_output.rows, grad_output.cols, 0.0);
+        for (size_t i = 0; i < out.data.size(); ++i) {
+            gx.data[i] = grad_output.data[i] * (1.0 - out.data[i] * out.data[i]);
+        }
+        return {{inputs[0], gx}};
+    }
+};
+
+template <typename GradFnT>
+Node::Ptr makeUnaryNode(OpKind kind,
+                        const Node::Ptr& input,
+                        Matrix out,
+                        std::shared_ptr<BackwardContext> context = nullptr) {
+    const bool requires_grad = inferRequiresGrad({input});
+    auto node = std::make_shared<OperationNode>(kind, out, std::vector<Node::Ptr>{input}, requires_grad);
+    if (!requires_grad) {
+        return node;
+    }
+    node->setInputs({input});
+    node->setBackwardContext(std::move(context));
+    node->setGradFn(std::make_shared<GradFnT>());
+    return node;
+}
+
+}
+
 Node::Ptr add(const Node::Ptr& a, const Node::Ptr& b) {
     const Matrix& val_a = a->value();
     const Matrix& val_b = b->value();
-    
-    // Check for broadcasting pattern: (N, M) + (1, M)
-    bool broadcast_b = (val_b.rows == 1 && val_b.cols == val_a.cols && val_a.rows > 1);
-    
+
+    const bool broadcast_b = (val_b.rows == 1 && val_b.cols == val_a.cols && val_a.rows > 1);
     Matrix out(val_a.rows, val_a.cols);
-    
+
     if (broadcast_b) {
-        // Broadcasting: each row of 'a' adds the single row of 'b'
         for (size_t i = 0; i < val_a.rows; ++i) {
             for (size_t j = 0; j < val_a.cols; ++j) {
                 out(i, j) = val_a(i, j) + val_b(0, j);
             }
         }
     } else {
-        // Standard element-wise addition
         out = val_a.add(val_b);
     }
 
-    auto node = std::make_shared<OperationNode>(OpKind::ADD, out, std::vector<Node::Ptr>{a, b});
+    const bool requires_grad = inferRequiresGrad({a, b});
+    auto node = std::make_shared<OperationNode>(OpKind::ADD, out, std::vector<Node::Ptr>{a, b}, requires_grad);
+    if (!requires_grad) {
+        return node;
+    }
 
-    // Backward: dL/dA = grad, dL/dB = grad (or reduced along rows if B was broadcasted)
-    node->setBackwardFn([a_ptr=a, b_ptr=b, broadcast_b](const Matrix& grad){
-        // Gradient w.r.t. 'a' has the same shape as grad
-        a_ptr->addGrad(grad);
-        
-        if (broadcast_b) {
-            // If 'b' was broadcasted, we sum gradients along rows to get a (1, M) gradient.
-            Matrix grad_b(1, grad.cols);
-            for (size_t j = 0; j < grad.cols; ++j) {
-                double sum = 0.0;
-                for (size_t i = 0; i < grad.rows; ++i) {
-                    sum += grad(i, j);
-                }
-                grad_b(0, j) = sum;
-            }
-            b_ptr->addGrad(grad_b);
-        } else {
-            // No broadcasting: gradient has the same shape as grad.
-            b_ptr->addGrad(grad);
-        }
-    });
-
+    auto context = makeContext();
+    context->flags.push_back(static_cast<std::uint8_t>(broadcast_b));
+    node->setInputs({a, b});
+    node->setBackwardContext(context);
+    node->setGradFn(std::make_shared<AddGradFn>());
     return node;
 }
 
-/**
- * @brief Element-wise multiplication (Hadamard product) between two nodes.
- *
- * Forward:
- *   out = a ⊙ b
- *
- * Backward:
- *   dL/da = grad ⊙ b
- *   dL/db = grad ⊙ a
- *
- * @param a First input node.
- * @param b Second input node.
- * @return A new OperationNode representing element-wise multiplication.
- */
 Node::Ptr mul(const Node::Ptr& a, const Node::Ptr& b) {
     Matrix out = a->value().mul(b->value());
-    auto node = std::make_shared<OperationNode>(OpKind::MUL, out, std::vector<Node::Ptr>{a, b});
-
-    node->setBackwardFn([a_ptr=a, b_ptr=b](const Matrix& grad){
-        // dL/dA = grad ⊙ B
-        a_ptr->addGrad(grad.mul(b_ptr->value()));
-        // dL/dB = grad ⊙ A
-        b_ptr->addGrad(grad.mul(a_ptr->value()));
-    });
-
+    const bool requires_grad = inferRequiresGrad({a, b});
+    auto node = std::make_shared<OperationNode>(OpKind::MUL, out, std::vector<Node::Ptr>{a, b}, requires_grad);
+    if (!requires_grad) {
+        return node;
+    }
+    node->setInputs({a, b});
+    node->setGradFn(std::make_shared<MulGradFn>());
+    node->setBackwardContext(makeContext());
     return node;
 }
 
-/**
- * @brief Matrix multiplication between two nodes.
- *
- * Forward:
- *   out = A @ B
- *
- * Backward:
- *   dL/dA = grad @ B^T
- *   dL/dB = A^T @ grad
- *
- * @param a Left-hand side node (A).
- * @param b Right-hand side node (B).
- * @return A new OperationNode representing the matrix multiplication.
- */
 Node::Ptr matmul(const Node::Ptr& a, const Node::Ptr& b) {
     Matrix out = a->value().matmul(b->value());
-    auto node = std::make_shared<OperationNode>(OpKind::MATMUL, out, std::vector<Node::Ptr>{a, b});
-
-    node->setBackwardFn([a_ptr=a, b_ptr=b](const Matrix& grad){
-        // dA = grad @ B^T (sans allouer B^T)
-        Matrix dA(grad.rows, b_ptr->value().rows);
-        grad.matmul_into(b_ptr->value(), dA, false, true);
-        a_ptr->addGrad(dA);
-
-        // dB = A^T @ grad (sans allouer A^T)
-        Matrix dB(a_ptr->value().cols, grad.cols);
-        a_ptr->value().matmul_into(grad, dB, true, false);
-        b_ptr->addGrad(dB);
-    });
-
+    const bool requires_grad = inferRequiresGrad({a, b});
+    auto node = std::make_shared<OperationNode>(OpKind::MATMUL, out, std::vector<Node::Ptr>{a, b}, requires_grad);
+    if (!requires_grad) {
+        return node;
+    }
+    node->setInputs({a, b});
+    node->setGradFn(std::make_shared<MatMulGradFn>());
+    node->setBackwardContext(makeContext());
     return node;
 }
 
-
-/**
- * @brief Sums all elements of the input node into a scalar node (1x1 matrix).
- *
- * Forward:
- *   out = ∑_i x_i
- *
- * Backward:
- *   dL/dx_i = grad_out (same scalar for all elements).
- *
- * @param x Input node.
- * @return A new Node storing the scalar sum.
- */
 Node::Ptr sum(const Node::Ptr& x) {
     const Matrix& xv = x->value();
-
     double s = 0.0;
-    for (double v : xv.data) s += v;
+    for (double v : xv.data) {
+        s += v;
+    }
+
     Matrix out(1, 1);
     out.data[0] = s;
 
-    auto node = std::make_shared<Node>(out);
-    node->addParent(x);
+    const bool requires_grad = inferRequiresGrad({x});
+    auto node = std::make_shared<Node>(out, requires_grad);
+    if (!requires_grad) {
+        return node;
+    }
 
-    // Backward: propagate the same scalar gradient to all elements.
-    node->setBackwardFn([x](const Matrix& grad_out) {
-        // grad_out is 1x1
-        double g = grad_out.data[0];
-        const Matrix& xv = x->value();
-        Matrix gx(xv.rows, xv.cols);
-        std::fill(gx.data.begin(), gx.data.end(), g);
-        x->addGrad(gx);
-    });
-
+    node->setInputs({x});
+    node->setBackwardContext(makeContext());
+    node->setGradFn(std::make_shared<SumGradFn>());
     return node;
 }
 
-
-/**
- * @brief Computes the mean of all elements of the input node.
- *
- * Forward:
- *   out = (1/N) * ∑_i x_i
- *
- * Backward:
- *   dL/dx_i = grad_out / N (same value for all elements).
- *
- * @param x Input node.
- * @return A new Node storing the scalar mean (1x1 matrix).
- */
 Node::Ptr mean(const Node::Ptr& x) {
     const Matrix& xv = x->value();
-    std::size_t N = xv.data.size();
-
-    // Forward: compute arithmetic mean of all elements
+    const std::size_t count = xv.data.size();
     double s = 0.0;
-    for (double v : xv.data) s += v;
-    double m = (N > 0 ? s / static_cast<double>(N) : 0.0);
+    for (double v : xv.data) {
+        s += v;
+    }
+
     Matrix out(1, 1);
-    out.data[0] = m;
+    out.data[0] = (count > 0) ? s / static_cast<double>(count) : 0.0;
 
-    auto node = std::make_shared<Node>(out);
-    node->addParent(x);
+    const bool requires_grad = inferRequiresGrad({x});
+    auto node = std::make_shared<Node>(out, requires_grad);
+    if (!requires_grad) {
+        return node;
+    }
 
-    // Backward: each element receives grad_out / N
-    node->setBackwardFn([x, N](const Matrix& grad_out) {
-        double g = grad_out.data[0];
-        const Matrix& xv = x->value();
-        Matrix gx(xv.rows, xv.cols);
-        double coeff = (N > 0 ? g / static_cast<double>(N) : 0.0);
-        std::fill(gx.data.begin(), gx.data.end(), coeff);
-        x->addGrad(gx);
-    });
-
+    auto context = makeContext();
+    context->sizes.push_back(count);
+    node->setInputs({x});
+    node->setBackwardContext(context);
+    node->setGradFn(std::make_shared<MeanGradFn>());
     return node;
 }
 
-/**
- * @brief Applies the ReLU activation function element-wise.
- *
- * Forward:
- *   out_i = max(0, x_i)
- *
- * Backward:
- *   dL/dx_i = grad_i if x_i > 0, else 0.
- *
- * @param x Input node.
- * @return A new OperationNode representing ReLU(x).
- */
 Node::Ptr relu(const Node::Ptr& x) {
     Matrix out = x->value();
-    for (size_t i = 0; i < out.data.size(); ++i)
-        out.data[i] = std::max(0.0, out.data[i]);
-
-    auto node = std::make_shared<OperationNode>(OpKind::RELU, out, std::vector<Node::Ptr>{x});
-
-    node->setBackwardFn([x,out](const Matrix& grad){
-        Matrix gx(grad.rows, grad.cols);
-        // Gradient flows only where the ReLU output was strictly positive
-        for (size_t i = 0; i < out.data.size(); ++i)
-            gx.data[i] = (out.data[i] > 0) ? grad.data[i] : 0.0;
-        x->addGrad(gx);
-    });
-
-    return node;
+    for (double& v : out.data) {
+        v = std::max(0.0, v);
+    }
+    auto context = makeContext();
+    context->matrices.push_back(out);
+    return makeUnaryNode<ReLUGradFn>(OpKind::RELU, x, std::move(out), std::move(context));
 }
 
-/**
- * @brief Applies the LeakyReLU activation function element-wise.
- *
- * Forward:
- *   out_i = x_i if x_i > 0 else alpha * x_i
- *
- * Backward:
- *   dL/dx_i = grad_i * (1 if x_i > 0 else alpha)
- *
- * @param x Input node.
- * @param alpha Negative slope coefficient.
- * @return A new OperationNode representing LeakyReLU(x).
- */
 Node::Ptr leaky_relu(const Node::Ptr& x, double alpha) {
     Matrix in = x->value();
     Matrix out = in;
-    for (size_t i = 0; i < out.data.size(); ++i) {
-        out.data[i] = (out.data[i] > 0.0) ? out.data[i] : (alpha * out.data[i]);
+    for (double& v : out.data) {
+        v = (v > 0.0) ? v : (alpha * v);
     }
-
-    auto node = std::make_shared<OperationNode>(OpKind::LEAKY_RELU, out, std::vector<Node::Ptr>{x});
-
-    node->setBackwardFn([x, in, alpha](const Matrix& grad) {
-        Matrix gx(grad.rows, grad.cols);
-        for (size_t i = 0; i < in.data.size(); ++i) {
-            const double slope = (in.data[i] > 0.0) ? 1.0 : alpha;
-            gx.data[i] = grad.data[i] * slope;
-        }
-        x->addGrad(gx);
-    });
-
-    return node;
+    auto context = makeContext();
+    context->matrices.push_back(in);
+    context->scalars.push_back(alpha);
+    return makeUnaryNode<LeakyReLUGradFn>(OpKind::LEAKY_RELU, x, std::move(out), std::move(context));
 }
 
-/**
- * @brief Applies the GELU activation element-wise using tanh approximation.
- *
- * Forward:
- *   out_i = 0.5 * x_i * (1 + tanh(k * (x_i + c * x_i^3)))
- *   where k = sqrt(2/pi), c = 0.044715
- *
- * Backward:
- *   dL/dx_i = grad_i * d(gelu_tanh_approx)/dx_i
- *
- * @param x Input node.
- * @return A new OperationNode representing GELU(x).
- */
 Node::Ptr gelu(const Node::Ptr& x) {
     Matrix in = x->value();
     Matrix out = in;
-
-    for (size_t i = 0; i < out.data.size(); ++i) {
-        const double xi = out.data[i];
-        const double xi3 = xi * xi * xi;
-        const double u = kSqrt2OverPi * (xi + kGeluCubicCoeff * xi3);
-        const double t = std::tanh(u);
-        out.data[i] = 0.5 * xi * (1.0 + t);
+    for (double& v : out.data) {
+        const double xi = v;
+        const double u = kSqrt2OverPi * (xi + kGeluCubicCoeff * xi * xi * xi);
+        v = 0.5 * xi * (1.0 + std::tanh(u));
     }
-
-    auto node = std::make_shared<OperationNode>(OpKind::GELU, out, std::vector<Node::Ptr>{x});
-
-    node->setBackwardFn([x, in](const Matrix& grad) {
-        Matrix gx(grad.rows, grad.cols);
-        for (size_t i = 0; i < in.data.size(); ++i) {
-            const double xi = in.data[i];
-            const double xi2 = xi * xi;
-            const double xi3 = xi2 * xi;
-            const double u = kSqrt2OverPi * (xi + kGeluCubicCoeff * xi3);
-            const double t = std::tanh(u);
-            const double sech2 = 1.0 - t * t;
-            const double du_dx = kSqrt2OverPi * (1.0 + 3.0 * kGeluCubicCoeff * xi2);
-            const double dy_dx = 0.5 * (1.0 + t) + 0.5 * xi * sech2 * du_dx;
-            gx.data[i] = grad.data[i] * dy_dx;
-        }
-        x->addGrad(gx);
-    });
-
-    return node;
+    auto context = makeContext();
+    context->matrices.push_back(in);
+    return makeUnaryNode<GELUGradFn>(OpKind::GELU, x, std::move(out), std::move(context));
 }
 
-/**
- * @brief Applies the sigmoid activation function element-wise.
- *
- * Forward:
- *   out_i = 1 / (1 + exp(-x_i))
- *
- * Backward:
- *   dL/dx_i = grad_i * out_i * (1 - out_i)
- *   (using the identity σ'(x) = σ(x) * (1 - σ(x)) ).
- *
- * @param x Input node.
- * @return A new OperationNode representing sigmoid(x).
- */
 Node::Ptr sigmoid(const Node::Ptr& x) {
     Matrix out = x->value();
-    for (size_t i = 0; i < out.data.size(); ++i)
-        out.data[i] = 1.0 / (1.0 + std::exp(-out.data[i]));
-
-    auto node = std::make_shared<OperationNode>(OpKind::SIGMOID, out, std::vector<Node::Ptr>{x});
-
-    node->setBackwardFn([x,out](const Matrix& grad){
-        Matrix gx(grad.rows, grad.cols);
-        for (size_t i = 0; i < out.data.size(); ++i)
-            gx.data[i] = grad.data[i] * out.data[i] * (1 - out.data[i]);
-        x->addGrad(gx);
-    });
-
-    return node;
+    for (double& v : out.data) {
+        v = 1.0 / (1.0 + std::exp(-v));
+    }
+    auto context = makeContext();
+    context->matrices.push_back(out);
+    return makeUnaryNode<SigmoidGradFn>(OpKind::SIGMOID, x, std::move(out), std::move(context));
 }
 
-/**
- * @brief Applies the hyperbolic tangent activation function element-wise.
- *
- * Forward:
- *   out_i = tanh(x_i)
- *
- * Backward:
- *   dL/dx_i = grad_i * (1 - out_i^2)
- *   (using the identity (tanh x)' = 1 - tanh^2 x ).
- *
- * @param x Input node.
- * @return A new OperationNode representing tanh(x).
- */
 Node::Ptr tanh(const Node::Ptr& x) {
     Matrix out = x->value();
-    for (size_t i = 0; i < out.data.size(); ++i)
-        out.data[i] = std::tanh(out.data[i]);
-
-    auto node = std::make_shared<OperationNode>(OpKind::TANH, out, std::vector<Node::Ptr>{x});
-
-    node->setBackwardFn([x,out](const Matrix& grad){
-        Matrix gx(grad.rows, grad.cols);
-        for (size_t i = 0; i < out.data.size(); ++i)
-            gx.data[i] =
-                grad.data[i] * (1 - out.data[i] * out.data[i]);
-        x->addGrad(gx);
-    });
-
-    return node;
+    for (double& v : out.data) {
+        v = std::tanh(v);
+    }
+    auto context = makeContext();
+    context->matrices.push_back(out);
+    return makeUnaryNode<TanhGradFn>(OpKind::TANH, x, std::move(out), std::move(context));
 }
 
 } // namespace MathOps

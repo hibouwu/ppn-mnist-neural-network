@@ -25,10 +25,12 @@ void LinearLayer::randomInit(double min, double max, InitType initType, unsigned
         Matrix w(in_dim, out_dim);
         w.randomInit(min, max, false, seed);
         weights_ = std::make_shared<Node>(w);
+        weights_->setIsParameter(true);
 
         Matrix b(1, out_dim);
         b.randomInit(min, max, false, seed);
         bias_ = std::make_shared<Node>(b);
+        bias_->setIsParameter(true);
     } 
     else if (initType == InitType::He) {
         // He Initialization (Kaiming): Normal(0, sqrt(2/fan_in))
@@ -37,10 +39,12 @@ void LinearLayer::randomInit(double min, double max, InitType initType, unsigned
         Matrix w(in_dim, out_dim);
         w.randomInit(0.0, stddev, true, seed);
         weights_ = std::make_shared<Node>(w);
+        weights_->setIsParameter(true);
         
         // Bias usually 0
         Matrix b(1, out_dim, 0.0);
         bias_ = std::make_shared<Node>(b);
+        bias_->setIsParameter(true);
     } 
     else if (initType == InitType::Xavier) {
         // Xavier (Glorot): Normal(0, sqrt(2/(fan_in + fan_out))) 
@@ -50,10 +54,12 @@ void LinearLayer::randomInit(double min, double max, InitType initType, unsigned
         Matrix w(in_dim, out_dim);
         w.randomInit(0.0, stddev, true, seed);
         weights_ = std::make_shared<Node>(w);
+        weights_->setIsParameter(true);
         
         // Bias usually 0
         Matrix b(1, out_dim, 0.0);
         bias_ = std::make_shared<Node>(b);
+        bias_->setIsParameter(true);
     }
 }
 

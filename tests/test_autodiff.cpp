@@ -320,8 +320,7 @@ void test_mse_loss() {
     Matrix p(1,3); p.data = {1.0, 2.0, 3.0};
     Matrix t(1,3); t.data = {1.0, 2.0, 4.0};
 
-    // On construit des nœuds constants (même style que Trainer)
-    auto P = constant(p);
+    auto P = std::make_shared<Node>(p);
     auto T = constant(t);
 
     // Interface LossFunction
@@ -348,7 +347,7 @@ void test_ce_loss() {
     Matrix z(1,2); z.data = {0.0, 0.0};
     Matrix y(1,2); y.data = {1.0, 0.0};
 
-    auto Z = constant(z);
+    auto Z = std::make_shared<Node>(z);
     auto Y = constant(y);
 
     CrossEntropyLoss loss_fn;

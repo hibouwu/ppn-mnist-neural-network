@@ -119,6 +119,13 @@ int main() {
         assert(x_val.rows == 2);
         assert(y_val.cols == 2);
 
+        const double train_r = x_train(0, 0);
+        const double train_g = x_train(0, 64 * 64);
+        const double train_b = x_train(0, 2 * 64 * 64);
+        assert(train_r > 0.9);
+        assert(train_g < 0.1);
+        assert(train_b < 0.1);
+
         assert(y_train(0, 0) == 1.0 || y_train(0, 1) == 1.0);
         assert(y_train(1, 0) == 1.0 || y_train(1, 1) == 1.0);
 
