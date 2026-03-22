@@ -12,6 +12,7 @@
 // CNNConfig
 // =====================================================================
 
+
 CNNConfig CNNConfig::lenet5() {
     CNNConfig cfg;
     cfg.conv_channels   = {6, 16};
@@ -24,6 +25,23 @@ CNNConfig CNNConfig::lenet5() {
     cfg.fc_hidden_sizes = {120, 84};
     cfg.num_classes     = 10;
     return cfg;
+}
+
+static LinearLayer::InitType parseInit(const std::string& init_name) {
+    if (init_name == "he") return LinearLayer::InitType::He;
+    if (init_name == "xavier") return LinearLayer::InitType::Xavier;
+    return LinearLayer::InitType::Manual;
+}
+
+static std::unique_ptr<ActivationFunction> makeActivation(const std::string& name) {
+    if (name == "relu")       return std::make_unique<ReLU>();
+    if (name == "leaky_relu") return std::make_unique<LeakyReLU>();
+    if (name == "gelu")       return std::make_unique<GELU>();
+    if (name == "sigmoid")    return std::make_unique<Sigmoid>();
+    if (name == "tanh")       return std::make_unique<Tanh>();
+    throw std::invalid_argument(
+        "unsupported activation '" + name +
+        "'. Expected one of: relu, leaky_relu, gelu, sigmoid, tanh.");
 }
 
 static void expandVec(std::vector<size_t>& v, size_t n,
@@ -119,61 +137,72 @@ void CNNConfig::validate() const {
 // CNNNetwork
 // =====================================================================
 
-CNNNetwork::CNNNetwork(const CNNConfig& cfg, unsigned int seed)
-    : input_channels_(0),
-      input_height_(0),
-      input_width_(0),
-      input_dim_(0),
-      flatten_dim_(0)
+CNNNetwork::CNNNetwork(const CNNConfig& cfg,
+                       const std::string& activation_name,
+                       const std::string& init_name,
+                       unsigned int seed)
+    : activation_(makeActivation(activation_name)),
+        init_name_(init_name),
+        input_channels_(cfg.input_channels),
+        input_height_(cfg.input_height),
+        input_width_(cfg.input_width),
+        input_dim_(cfg.input_channels * cfg.input_height * cfg.input_width),
+        flatten_dim_(0)
 {
-    // Local copy for expand + validate
     CNNConfig c = cfg;
     c.expandDefaults();
     c.validate();
-    input_channels_ = c.input_channels;
-    input_height_ = c.input_height;
-    input_width_ = c.input_width;
-    input_dim_ = input_channels_ * input_height_ * input_width_;
 
     size_t n = c.stages();
     pool_after_ = std::vector<bool>(c.pool_after.begin(), c.pool_after.end());
 
-    // --- Build conv/pool layers and compute flatten_dim ---
-    size_t C = c.input_channels;
-    size_t H = c.input_height;
-    size_t W = c.input_width;
+    // Fixed MNIST input
+    size_t C = input_channels_;
+    size_t H = input_height_;
+    size_t W = input_width_;
 
+    // --- Build conv/pool layers and compute final flatten dimension ---
     for (size_t i = 0; i < n; ++i) {
-        size_t in_ch = (i == 0) ? c.input_channels : c.conv_channels[i - 1];
-        convs_.emplace_back(in_ch, c.conv_channels[i],
-                            c.conv_kernels[i], c.conv_kernels[i],
-                            c.conv_strides[i], c.conv_paddings[i]);
+        size_t in_ch = (i == 0) ? input_channels_ : c.conv_channels[i - 1];
 
-        // Create pool layer (even if not used, cost is negligible)
-        pools_.emplace_back(c.pool_kernels[i], c.pool_kernels[i],
-                            c.pool_strides[i]);
+        convs_.emplace_back(
+            in_ch,
+            c.conv_channels[i],
+            c.conv_kernels[i],
+            c.conv_kernels[i],
+            c.conv_strides[i],
+            c.conv_paddings[i]
+        );
 
-        // Shape after conv
+        pools_.emplace_back(
+            c.pool_kernels[i],
+            c.pool_kernels[i],
+            c.pool_strides[i]
+        );
+
         auto [cH, cW] = convs_.back().outputShape(H, W);
         if (cH == 0 || cW == 0) {
             throw std::invalid_argument(
                 "Stage " + std::to_string(i) +
-                ": conv output shape is 0 (H=" + std::to_string(cH) +
-                ", W=" + std::to_string(cW) + ").");
+                ": conv output shape is 0."
+            );
         }
-        H = cH; W = cW;
+
+        H = cH;
+        W = cW;
         C = c.conv_channels[i];
 
-        // Shape after pool (if enabled)
         if (pool_after_[i]) {
             auto [pH, pW] = pools_.back().outputShape(H, W);
             if (pH == 0 || pW == 0) {
                 throw std::invalid_argument(
                     "Stage " + std::to_string(i) +
-                    ": pool output shape is 0 (H=" + std::to_string(pH) +
-                    ", W=" + std::to_string(pW) + ").");
+                    ": pool output shape is 0."
+                );
             }
-            H = pH; W = pW;
+
+            H = pH;
+            W = pW;
         }
     }
 
@@ -185,19 +214,28 @@ CNNNetwork::CNNNetwork(const CNNConfig& cfg, unsigned int seed)
         fcs_.emplace_back(prev, h);
         prev = h;
     }
-    fcs_.emplace_back(prev, c.num_classes);  // Output layer
+    fcs_.emplace_back(prev, c.num_classes);
 
-    // --- Initialize weights ---
+    // --- Initialize parameters ---
     unsigned int s = seed;
+
+    // Conv init: keep current Conv2DLayer randomInit behavior
     for (size_t i = 0; i < convs_.size(); ++i) {
         convs_[i].randomInit(s);
         if (s != 0) ++s;
     }
+
+    // FC init: configurable
+    LinearLayer::InitType init_type = parseInit(init_name_);
     for (size_t i = 0; i < fcs_.size(); ++i) {
-        fcs_[i].randomInit(0.0, 0.0, LinearLayer::InitType::He, s);
+        fcs_[i].randomInit(0.0, 0.0, init_type, s);
         if (s != 0) ++s;
     }
 }
+
+CNNNetwork::CNNNetwork(const CNNConfig& cfg, unsigned int seed)
+    : CNNNetwork(cfg, "relu", "he", seed)
+{}
 
 Node::Ptr CNNNetwork::forward(const Node::Ptr& input) const {
     if (!input) {
@@ -219,7 +257,7 @@ Node::Ptr CNNNetwork::forward(const Node::Ptr& input) const {
     // Conv stages
     for (size_t i = 0; i < convs_.size(); ++i) {
         x = convs_[i].forward(x, N, C, H, W);
-        x = relu_.forward(x);
+        x = activation_->forward(x);
 
         auto [cH, cW] = convs_[i].outputShape(H, W);
         C = convs_[i].outChannels();
@@ -238,7 +276,7 @@ Node::Ptr CNNNetwork::forward(const Node::Ptr& input) const {
     for (size_t i = 0; i < fcs_.size(); ++i) {
         x = fcs_[i].forward(x);
         if (i + 1 < fcs_.size()) {
-            x = relu_.forward(x);
+            x = activation_->forward(x);
         }
     }
 

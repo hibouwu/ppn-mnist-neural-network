@@ -50,12 +50,16 @@ struct CNNConfig {
  */
 class CNNNetwork : public NeuralNetwork {
 public:
-    /**
-     * @brief Construct from config.
-     * @param cfg  Network configuration (will be expanded and validated).
-     * @param seed Random seed (0 = random).
-     */
+    //  relu + he
     explicit CNNNetwork(const CNNConfig& cfg, unsigned int seed = 0);
+
+    //  activation / init
+    explicit CNNNetwork(
+        const CNNConfig& cfg,
+        const std::string& activation_name,
+        const std::string& init_name,
+        unsigned int seed = 0
+    );
 
     Node::Ptr forward(const Node::Ptr& input) const override;
     std::vector<Node::Ptr> getParameters() const override;
@@ -64,11 +68,12 @@ private:
     std::vector<Conv2DLayer>     convs_;
     std::vector<MaxPool2DLayer>  pools_;
     std::vector<bool>            pool_after_;
-    std::vector<LinearLayer>     fcs_;     // hidden + output
-    ReLU relu_;
+    std::vector<LinearLayer>     fcs_;
+    std::unique_ptr<ActivationFunction> activation_;
+    std::string init_name_;
+    size_t flatten_dim_;
     size_t input_channels_;
     size_t input_height_;
     size_t input_width_;
     size_t input_dim_;
-    size_t flatten_dim_;                   // C*H*W after all conv/pool stages
 };
