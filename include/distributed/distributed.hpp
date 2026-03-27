@@ -2,6 +2,19 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
+
+#ifdef USE_MPI
+#include <mpi.h>
+#endif
+
+struct DistributedRequest {
+#ifdef USE_MPI
+    MPI_Request request = MPI_REQUEST_NULL;
+#else
+    bool completed = true;
+#endif
+};
 
 class DistributedContext {
 public:
@@ -18,6 +31,10 @@ public:
     void allReduceSum(double* data, std::size_t n) const;
     void allReduceMax(double* data, std::size_t n) const;
     std::uint64_t allReduceSumU64(std::uint64_t value) const;
+    DistributedRequest iallReduceSum(double* data, std::size_t n) const;
+    void wait(DistributedRequest& req) const;
+    void waitAll(std::vector<DistributedRequest>& reqs) const;
+    bool isNullRequest(const DistributedRequest& req) const;
 
 private:
     int rank_ = 0;

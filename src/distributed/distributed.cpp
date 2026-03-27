@@ -95,3 +95,56 @@ std::uint64_t DistributedContext::allReduceSumU64(std::uint64_t value) const {
     return value;
 #endif
 }
+
+DistributedRequest DistributedContext::iallReduceSum(double* data, std::size_t n) const {
+    DistributedRequest req;
+    if (data == nullptr || n == 0 || world_size_ <= 1) {
+        return req;
+    }
+
+#ifdef USE_MPI
+    if (n > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        throw std::overflow_error("MPI iallReduceSum count exceeds int range.");
+    }
+    if (MPI_Iallreduce(MPI_IN_PLACE,
+                       data,
+                       static_cast<int>(n),
+                       MPI_DOUBLE,
+                       MPI_SUM,
+                       MPI_COMM_WORLD,
+                       &req.request) != MPI_SUCCESS) {
+        throw std::runtime_error("MPI_Iallreduce failed for double buffer.");
+    }
+#else
+    (void)data;
+    (void)n;
+#endif
+
+    return req;
+}
+
+void DistributedContext::wait(DistributedRequest& req) const {
+#ifdef USE_MPI
+    if (req.request != MPI_REQUEST_NULL) {
+        if (MPI_Wait(&req.request, MPI_STATUS_IGNORE) != MPI_SUCCESS) {
+            throw std::runtime_error("MPI_Wait failed.");
+        }
+    }
+#else
+    (void)req;
+#endif
+}
+
+void DistributedContext::waitAll(std::vector<DistributedRequest>& reqs) const {
+    for (auto& req : reqs) {
+        wait(req);
+    }
+}
+
+bool DistributedContext::isNullRequest(const DistributedRequest& req) const {
+#ifdef USE_MPI
+    return req.request == MPI_REQUEST_NULL;
+#else
+    return req.completed;
+#endif
+}

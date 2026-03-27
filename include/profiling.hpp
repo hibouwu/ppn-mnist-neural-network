@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <vector>
 
 struct MatmulImplStats {
     const char* name = "";
@@ -17,3 +18,13 @@ struct MatmulEpochStats {
 void matmulProfileEpochReset();
 void matmulProfileRecord(const char* impl, long long us);
 MatmulEpochStats matmulProfileEpochSnapshot();
+
+struct OpTimingStat {
+    const char* name = "";
+    std::size_t calls = 0;
+    long long total_us = 0;
+};
+
+void opProfileEpochReset();
+void opProfileRecord(const char* name, long long us);
+std::vector<OpTimingStat> opProfileEpochSnapshot();

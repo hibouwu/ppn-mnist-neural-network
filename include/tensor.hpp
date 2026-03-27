@@ -18,6 +18,8 @@ public:
     // Constructeur de copie, opérateur d'assignation
     Matrix(const Matrix& other);
     Matrix& operator=(const Matrix& other);
+    Matrix(Matrix&& other) noexcept = default;
+    Matrix& operator=(Matrix&& other) noexcept = default;
 
     // Destructeur
     ~Matrix() = default;
@@ -28,6 +30,7 @@ public:
 
     // Opérations de base
     Matrix add(const Matrix& other) const;
+    void addInPlace(const Matrix& other);
     Matrix mul(const Matrix& other) const;        // multiplication élément par élément
     Matrix matmul(const Matrix& other) const;     // produit matriciel
     void matmul_into(const Matrix& other, Matrix& out, bool transA = false, bool transB = false) const;

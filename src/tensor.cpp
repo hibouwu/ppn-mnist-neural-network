@@ -214,6 +214,17 @@ Matrix Matrix::add(const Matrix& other) const {
     return result;
 }
 
+void Matrix::addInPlace(const Matrix& other) {
+    if (rows != other.rows || cols != other.cols) {
+        throw std::invalid_argument(
+            "Dimensions incompatibles pour l'addition inplace");
+    }
+    const std::size_t n = data.size();
+    for (std::size_t i = 0; i < n; ++i) {
+        data[i] += other.data[i];
+    }
+}
+
 Matrix Matrix::mul(const Matrix& other) const {
     if (rows != other.rows || cols != other.cols) {
         throw std::invalid_argument(

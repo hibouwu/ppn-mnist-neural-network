@@ -1,8 +1,41 @@
 #include "trainer.hpp"
+#include "autograd/engine.hpp"
+#include "distributed/gradient_sync_runtime.hpp"
 #include "node.hpp"      // Node::constant
 #include <chrono>
 #include <algorithm>
 #include <limits>
+#include <optional>
+
+namespace {
+
+void accumulateSyncProfile(EpochProfile& profile,
+                           const SyncStepProfile& sync_profile,
+                           std::optional<double> sync_total_time_s = std::nullopt) {
+    profile.sync_pack_time_s += sync_profile.pack_time_s;
+    profile.sync_launch_time_s += sync_profile.launch_time_s;
+    profile.sync_unpack_time_s += sync_profile.unpack_time_s;
+    profile.sync_bucket_count += sync_profile.bucket_count;
+    profile.sync_bucket_bytes += sync_profile.bucket_bytes;
+    profile.sync_launched_bucket_count += sync_profile.launched_bucket_count;
+    profile.sync_effective_overlap = std::max<std::uint64_t>(
+        profile.sync_effective_overlap,
+        sync_profile.effective_overlap ? 1ULL : 0ULL);
+
+    if (sync_total_time_s.has_value()) {
+        profile.sync_total_time_s += *sync_total_time_s;
+        return;
+    }
+
+    profile.sync_total_time_s +=
+        sync_profile.pack_time_s +
+        sync_profile.launch_time_s +
+        sync_profile.wait_time_s +
+        sync_profile.unpack_time_s +
+        sync_profile.batch_reduce_time_s;
+}
+
+}
 
 // Trainer keeps references to all components.
 Trainer::Trainer(NeuralNetwork& model,
@@ -10,14 +43,18 @@ Trainer::Trainer(NeuralNetwork& model,
                  Optimizer& optimizer,
                  DataLoader& dataLoader,
                  GradSyncFn gradSyncFn,
-                 ProgressFn progressFn)
+                 ProgressFn progressFn,
+                 GradientSyncRuntime* gradientSyncRuntime,
+                 SyncProfileProviderFn syncProfileProvider)
     : model_(model),
       lossFn_(lossFn),
       optimizer_(optimizer),
       dataLoader_(dataLoader),
       trainable_params_(model.getParameters()),
       grad_sync_fn_(std::move(gradSyncFn)),
-      progress_fn_(std::move(progressFn)) {}
+      progress_fn_(std::move(progressFn)),
+      gradient_sync_runtime_(gradientSyncRuntime),
+      sync_profile_provider_(std::move(syncProfileProvider)) {}
 
 Metrics Trainer::trainEpoch() {
     Metrics m = runEpoch(/*training=*/true);
@@ -88,20 +125,47 @@ Metrics Trainer::runEpoch(bool training) {
         // Backward + parameter update only in training mode.
         if (training) {
             optimizer_.zeroGrad();
-            loss_node->backward();
+            std::uint64_t global_batch_size = batch_size;
+            if (gradient_sync_runtime_) {
+                gradient_sync_runtime_->beginStep(batch_size);
+                AutogradEngine engine;
+                engine.setReachableLeafHook([this](const std::vector<Node::Ptr>& reachable_leaf_params) {
+                    gradient_sync_runtime_->planStep(reachable_leaf_params);
+                });
+                engine.setParameterReadyHook([this](Node& param) {
+                    gradient_sync_runtime_->onParameterGradReady(param);
+                });
+                engine.setBackwardCompleteHook([this]() {
+                    gradient_sync_runtime_->onBackwardComplete();
+                });
+                engine.backward(loss_node);
+            } else {
+                loss_node->backward();
+            }
             const auto fwd_bwd_end = Clock::now();
             profile.fwd_bwd_time_s += std::chrono::duration<double>(fwd_bwd_end - fwd_bwd_start).count();
 
-            std::uint64_t global_batch_size = batch_size;
-            if (grad_sync_fn_) {
+            if (gradient_sync_runtime_) {
+                const auto sync_start = Clock::now();
+                global_batch_size = gradient_sync_runtime_->finalizeAndGetGlobalBatch();
+                const auto sync_end = Clock::now();
+                profile.sync_wait_time_s += std::chrono::duration<double>(sync_end - sync_start).count();
+                if (sync_profile_provider_) {
+                    const auto sync_profile = sync_profile_provider_();
+                    accumulateSyncProfile(profile, sync_profile);
+                }
+            } else if (grad_sync_fn_) {
                 const auto sync_start = Clock::now();
                 global_batch_size = grad_sync_fn_(trainable_params_, batch_size);
                 const auto sync_end = Clock::now();
                 const double sync_time_s =
                     std::chrono::duration<double>(sync_end - sync_start).count();
-                // Current path is fully blocking, so total communication time equals exposed wait time.
                 profile.sync_total_time_s += sync_time_s;
                 profile.sync_wait_time_s += sync_time_s;
+                if (sync_profile_provider_) {
+                    const auto sync_profile = sync_profile_provider_();
+                    accumulateSyncProfile(profile, sync_profile, sync_time_s);
+                }
             }
             if (global_batch_size > 0) {
                 const auto opt_start = Clock::now();

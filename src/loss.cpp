@@ -1,20 +1,27 @@
 #include "loss.hpp"
 #include "autograd/backward_context.hpp"
 #include "autograd/grad_fn.hpp"
+#include "profiling.hpp"
 #include <algorithm>
 #include <cmath>
 #include <memory>
 #include <stdexcept>
+#include <chrono>
 
 namespace {
 
 class MSELossGradFn final : public GradFn {
 public:
-    std::vector<GradientContribution> apply(const Node& output,
-                                            const Matrix& grad_output) const override {
+    ContributionList apply(const Node& output,
+                           const Matrix& grad_output,
+                           InputIndexView input_indices) const override {
+#ifdef PROFILE_OPS
+        using Clock = std::chrono::steady_clock;
+        auto start = Clock::now();
+#endif
         const auto& inputs = output.inputs();
         const auto& ctx = output.backwardContext();
-        if (inputs.size() != 2 || !ctx || ctx->sizes.empty()) {
+        if (inputs.size() != 2 || input_indices.size() != inputs.size() || !ctx || ctx->sizes.empty()) {
             throw std::logic_error("MSELossGradFn: invalid node state.");
         }
 
@@ -30,17 +37,31 @@ public:
             gp.data[i] = coeff * (pred.data[i] - target.data[i]);
         }
 
-        return {{inputs[0], gp}};
+        ContributionList out;
+        if (input_indices[0] != kInvalidNodeIndex) {
+            out.push_back({input_indices[0], std::move(gp)});
+        }
+#ifdef PROFILE_OPS
+        opProfileRecord(
+            "mse_loss_backward",
+            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start).count());
+#endif
+        return out;
     }
 };
 
 class CrossEntropyLossGradFn final : public GradFn {
 public:
-    std::vector<GradientContribution> apply(const Node& output,
-                                            const Matrix& grad_output) const override {
+    ContributionList apply(const Node& output,
+                           const Matrix& grad_output,
+                           InputIndexView input_indices) const override {
+#ifdef PROFILE_OPS
+        using Clock = std::chrono::steady_clock;
+        auto start = Clock::now();
+#endif
         const auto& inputs = output.inputs();
         const auto& ctx = output.backwardContext();
-        if (inputs.size() != 2 || !ctx || ctx->matrices.empty()) {
+        if (inputs.size() != 2 || input_indices.size() != inputs.size() || !ctx || ctx->matrices.empty()) {
             throw std::logic_error("CrossEntropyLossGradFn: invalid node state.");
         }
 
@@ -53,7 +74,16 @@ public:
             g_logits.data[i] = g * (probs.data[i] - target.data[i]);
         }
 
-        return {{inputs[0], g_logits}};
+        ContributionList out;
+        if (input_indices[0] != kInvalidNodeIndex) {
+            out.push_back({input_indices[0], std::move(g_logits)});
+        }
+#ifdef PROFILE_OPS
+        opProfileRecord(
+            "cross_entropy_backward",
+            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start).count());
+#endif
+        return out;
     }
 };
 
@@ -65,6 +95,10 @@ bool inferRequiresGrad(const LossFunction::NodePtr& pred,
 }
 
 LossFunction::NodePtr MSELoss::forward(const NodePtr& pred, const NodePtr& target) {
+#ifdef PROFILE_OPS
+    using Clock = std::chrono::steady_clock;
+    auto start = Clock::now();
+#endif
     const Matrix& p = pred->value();
     const Matrix& t = target->value();
 
@@ -93,10 +127,19 @@ LossFunction::NodePtr MSELoss::forward(const NodePtr& pred, const NodePtr& targe
     loss->setInputs({pred, target});
     loss->setBackwardContext(context);
     loss->setGradFn(std::make_shared<MSELossGradFn>());
+#ifdef PROFILE_OPS
+    opProfileRecord(
+        "mse_loss_forward",
+        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start).count());
+#endif
     return loss;
 }
 
 LossFunction::NodePtr CrossEntropyLoss::forward(const NodePtr& pred, const NodePtr& target) {
+#ifdef PROFILE_OPS
+    using Clock = std::chrono::steady_clock;
+    auto start = Clock::now();
+#endif
     const Matrix& logits = pred->value();
     const Matrix& y = target->value();
 
@@ -145,5 +188,10 @@ LossFunction::NodePtr CrossEntropyLoss::forward(const NodePtr& pred, const NodeP
     loss->setInputs({pred, target});
     loss->setBackwardContext(context);
     loss->setGradFn(std::make_shared<CrossEntropyLossGradFn>());
+#ifdef PROFILE_OPS
+    opProfileRecord(
+        "cross_entropy_forward",
+        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start).count());
+#endif
     return loss;
 }

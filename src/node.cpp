@@ -34,14 +34,13 @@ void Node::setInputs(std::vector<Ptr> inputs) {
 
 // Ajoute un gradient au gradient actuel : grad_ += g
 void Node::addGrad(const Matrix& g) {
-    Matrix& grad_ref = grad();
-    if (g.rows != grad_ref.rows || g.cols != grad_ref.cols) {
-        throw std::invalid_argument("Dimensions incompatibles dans addGrad.");
+    if (!grad_) {
+        if (g.rows != value_.rows || g.cols != value_.cols) {
+            throw std::invalid_argument("Dimensions incompatibles dans addGrad.");
+        }
+        grad_ = std::make_unique<Matrix>(makeZeroGradLike(value_));
     }
-    const std::size_t n = grad_ref.data.size();
-    for (std::size_t i = 0; i < n; ++i) {
-        grad_ref.data[i] += g.data[i];
-    }
+    grad_->addInPlace(g);
     has_explicit_seed_grad_ = true;
 }
 

@@ -10,10 +10,15 @@
 #include <limits>
 #include <cmath>
 #include <cstdint>
+#include <unordered_map>
 
 namespace fs = std::filesystem;
 
 #include "dataset.hpp"
+#include "io/derived_training_stats.hpp"
+#include "io/run_artifacts_writer.hpp"
+#include "io/run_op_stats.hpp"
+#include "io/training_output_formatter.hpp"
 #include "mnist_dataset.hpp"
 #include "tiny_imagenet_dataset.hpp"
 #include "dataloader.hpp"
@@ -22,6 +27,8 @@ namespace fs = std::filesystem;
 #include "cnn_network.hpp"
 #include "loss.hpp"
 #include "optimizer.hpp"
+#include "runtime/grad_sync_mode_info.hpp"
+#include "runtime/grad_sync_setup_factory.hpp"
 #include "trainer.hpp"
 #include "activation.hpp"
 
@@ -31,7 +38,6 @@ namespace fs = std::filesystem;
 #include <cstdlib>   // setenv
 
 
-// ------------------ helpers ------------------
 static long long parseIntStrict(const std::string& s, const std::string& name) {
     if (s.empty()) {
         throw std::invalid_argument(name + ": value must not be empty.");
@@ -70,6 +76,14 @@ static unsigned int parseUnsignedIntStrict(const std::string& s, const std::stri
             std::to_string(std::numeric_limits<unsigned int>::max()) + "], got " + s + ".");
     }
     return static_cast<unsigned int>(value);
+}
+
+static std::size_t parseSizeTStrict(const std::string& s, const std::string& name) {
+    long long value = parseIntStrict(s, name);
+    if (value <= 0) {
+        throw std::invalid_argument(name + ": expected > 0.");
+    }
+    return static_cast<std::size_t>(value);
 }
 
 static double parseDoubleStrict(const std::string& s, const std::string& name) {
@@ -306,6 +320,13 @@ static EpochProfile reduceEpochProfile(const DistributedContext& dist, EpochProf
         profile.fwd_bwd_time_s,
         profile.sync_total_time_s,
         profile.sync_wait_time_s,
+        profile.sync_pack_time_s,
+        profile.sync_launch_time_s,
+        profile.sync_unpack_time_s,
+        static_cast<double>(profile.sync_bucket_count),
+        static_cast<double>(profile.sync_bucket_bytes),
+        static_cast<double>(profile.sync_launched_bucket_count),
+        static_cast<double>(profile.sync_effective_overlap),
         profile.opt_time_s,
         profile.step_time_s_sum,
         profile.max_step_time_s
@@ -317,9 +338,16 @@ static EpochProfile reduceEpochProfile(const DistributedContext& dist, EpochProf
     profile.fwd_bwd_time_s = max_fields[2];
     profile.sync_total_time_s = max_fields[3];
     profile.sync_wait_time_s = max_fields[4];
-    profile.opt_time_s = max_fields[5];
-    profile.step_time_s_sum = max_fields[6];
-    profile.max_step_time_s = max_fields[7];
+    profile.sync_pack_time_s = max_fields[5];
+    profile.sync_launch_time_s = max_fields[6];
+    profile.sync_unpack_time_s = max_fields[7];
+    profile.sync_bucket_count = static_cast<std::uint64_t>(max_fields[8]);
+    profile.sync_bucket_bytes = static_cast<std::uint64_t>(max_fields[9]);
+    profile.sync_launched_bucket_count = static_cast<std::uint64_t>(max_fields[10]);
+    profile.sync_effective_overlap = static_cast<std::uint64_t>(max_fields[11]);
+    profile.opt_time_s = max_fields[12];
+    profile.step_time_s_sum = max_fields[13];
+    profile.max_step_time_s = max_fields[14];
     profile.step_count = dist.allReduceSumU64(profile.step_count);
     return profile;
 }
@@ -360,6 +388,8 @@ struct Config {
     std::string cnn_fc_hidden_sizes = ""; // Optional FC hidden dims after conv stack. Empty -> default FC layout.
 
     std::string out_dir = "output";       // Output directory for metrics/log artifacts.
+    std::string grad_sync_mode = "per_param"; // per_param / bucketed / overlap_bucketed
+    std::size_t bucket_size_bytes = 1024 * 1024;
 };
 
 int main(int argc, char** argv) {
@@ -467,6 +497,10 @@ int main(int argc, char** argv) {
                 cfg.cnn_fc_hidden_sizes = requireValue(arg);
             } else if (arg == "--out_dir") {
                 cfg.out_dir = requireValue(arg);
+            } else if (arg == "--grad_sync_mode") {
+                cfg.grad_sync_mode = requireValue(arg);
+            } else if (arg == "--bucket_size_bytes") {
+                cfg.bucket_size_bytes = parseSizeTStrict(requireValue(arg), arg);
             } else {
                 throw std::invalid_argument("unknown argument '" + arg + "'");
             }
@@ -503,39 +537,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (isMaster) {
-        DatasetInfo datasetInfo;
-        try {
-            datasetInfo = inferDatasetInfo(cfg.dataset);
-        } catch (const std::exception& e) {
-            std::cerr << "Error: " << e.what() << std::endl;
-            return 1;
-        }
-        std::cout << "Starting training with config:" << "\n"
-                  << "  Dataset: " << cfg.dataset << "\n"
-                  << "  Data Dir: " << cfg.data_dir << "\n"
-                  << "  Input Shape: " << datasetInfo.input_channels << "x"
-                  << datasetInfo.input_height << "x" << datasetInfo.input_width << "\n"
-                  << "  Classes: " << datasetInfo.num_classes << "\n"
-                  << "  Epochs: " << cfg.epochs << "\n"
-                  << "  Batch Size: " << cfg.batch_size << "\n"
-                  << "  Learning Rate: " << cfg.learning_rate << "\n"
-                  << "  Hidden (sizes): " << joinHiddenSizes(hiddenVec) << "\n"
-                  << "  Seed: " << cfg.seed << "\n"
-                  << "  Activation: " << cfg.activation << "\n"
-                  << "  Init: " << cfg.init << "\n"
-                  << "  Model: " << cfg.model << "\n"
-                  << "  Optimizer: " << cfg.optimizer << "\n"
-                  << "  Momentum: " << cfg.momentum << "\n"
-                  << "  Nesterov: " << (cfg.nesterov ? 1 : 0) << "\n"
-                  << "  Weight Decay: " << cfg.weight_decay << "\n"
-                  << "  Beta1: " << cfg.beta1 << "\n"
-                  << "  Beta2: " << cfg.beta2 << "\n"
-                  << "  Eps: " << cfg.eps << "\n";
-        if (dist.worldSize() > 1) {
-            std::cout << "  MPI World Size: " << dist.worldSize() << "\n";
-        }
-        std::cout << std::endl;
+    runtime::GradSyncModeInfo grad_sync_mode_info;
+    try {
+        grad_sync_mode_info = runtime::parseGradSyncModeInfo(cfg.grad_sync_mode);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
     }
 
     const bool optimizerIsSGD = (cfg.optimizer == "sgd");
@@ -554,6 +561,38 @@ int main(int argc, char** argv) {
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
+    }
+
+    if (isMaster) {
+        io::TrainingStartupSummaryData startup_summary_data;
+        startup_summary_data.dataset = cfg.dataset;
+        startup_summary_data.data_dir = cfg.data_dir;
+        startup_summary_data.dataset_info = datasetInfo;
+        startup_summary_data.epochs = cfg.epochs;
+        startup_summary_data.batch_size = cfg.batch_size;
+        startup_summary_data.learning_rate = cfg.learning_rate;
+        startup_summary_data.hidden_sizes = joinHiddenSizes(hiddenVec);
+        startup_summary_data.seed = cfg.seed;
+        startup_summary_data.activation = cfg.activation;
+        startup_summary_data.init = cfg.init;
+        startup_summary_data.model = cfg.model;
+        startup_summary_data.optimizer = cfg.optimizer;
+        startup_summary_data.grad_sync_mode = grad_sync_mode_info;
+        startup_summary_data.bucket_size_bytes = cfg.bucket_size_bytes;
+        startup_summary_data.momentum = cfg.momentum;
+        startup_summary_data.nesterov = cfg.nesterov;
+        startup_summary_data.weight_decay = cfg.weight_decay;
+        startup_summary_data.beta1 = cfg.beta1;
+        startup_summary_data.beta2 = cfg.beta2;
+        startup_summary_data.eps = cfg.eps;
+        startup_summary_data.world_size = dist.worldSize();
+        std::cout << io::formatTrainingStartupSummary(startup_summary_data);
+
+        const std::string grad_sync_warning =
+            io::formatGradSyncWarning(grad_sync_mode_info);
+        if (!grad_sync_warning.empty()) {
+            std::cout << grad_sync_warning << std::endl;
+        }
     }
 
     // 1. Build Model (fail-fast: validate config before loading data)
@@ -760,19 +799,11 @@ int main(int argc, char** argv) {
             );
         }
 
-        Trainer::GradSyncFn gradSyncFn = nullptr;
-        if (dist.worldSize() > 1) {
-            gradSyncFn = [&dist](const std::vector<Node::Ptr>& paramsToSync,
-                                 std::uint64_t localBatch) -> std::uint64_t {
-                for (const auto& param : paramsToSync) {
-                    Matrix& grad = param->grad();
-                    if (!grad.data.empty()) {
-                        dist.allReduceSum(grad.data.data(), grad.data.size());
-                    }
-                }
-                return dist.allReduceSumU64(localBatch);
-            };
-        }
+        runtime::GradSyncSetup grad_sync_setup = runtime::buildGradSyncSetup(
+            dist,
+            model->getParameters(),
+            grad_sync_mode_info,
+            cfg.bucket_size_bytes);
 
         // 4. Train
         Trainer::ProgressFn progressFn = nullptr;
@@ -798,7 +829,14 @@ int main(int argc, char** argv) {
             };
         }
 
-        Trainer trainer(*model, lossFn, *optimizer, *trainLoader, gradSyncFn, progressFn);
+        Trainer trainer(*model,
+                        lossFn,
+                        *optimizer,
+                        *trainLoader,
+                        grad_sync_setup.grad_sync_fn,
+                        progressFn,
+                        grad_sync_setup.gradient_sync_runtime.get(),
+                        grad_sync_setup.sync_profile_provider);
 
         if (isMaster) {
             std::cout << "Training started..." << std::endl;
@@ -809,19 +847,14 @@ int main(int argc, char** argv) {
             fs::create_directories(cfg.out_dir);
         }
 
-        // Open CSV file for logging
-        std::ofstream metricsFile;
-        if (isMaster) {
-            metricsFile.open(cfg.out_dir + "/metrics.csv");
-        }
+        io::RunArtifactsWriter artifacts_writer(
+            isMaster,
+            io::makeRunArtifactsPaths(cfg.out_dir));
+        artifacts_writer.initialize();
 
-        if (metricsFile.is_open()) {
-            metricsFile
-                << "epoch,train_loss,train_acc,test_loss,test_acc,train_samples,"
-                << "epoch_time_s,data_time_s,fwd_bwd_time_s,sync_total_time_s,sync_wait_time_s,opt_time_s,"
-                << "avg_step_time_ms,max_step_time_ms,samples_per_s,allreduce_wait_ratio,"
-                << "world_size,batch_size\n";
-        }
+        io::RunProfileSummary runProfileSummary;
+        runProfileSummary.grad_sync_mode = grad_sync_mode_info;
+        std::unordered_map<std::string, io::RunOpStat> runOpStats;
 
         Metrics lastTestMetrics;
         bool hasLastTestMetrics = false;
@@ -829,6 +862,9 @@ int main(int argc, char** argv) {
         for (int epoch = 1; epoch <= cfg.epochs; ++epoch) {
             #ifdef PROFILE_MATMUL
             matmulProfileEpochReset();
+            #endif
+            #ifdef PROFILE_OPS
+            opProfileEpochReset();
             #endif
 
             Metrics trainMetrics = reduceMetrics(dist, trainer.trainEpoch());
@@ -840,35 +876,16 @@ int main(int argc, char** argv) {
             lastTestMetrics = testMetrics;
             hasLastTestMetrics = true;
 
-            const double avg_step_time_ms =
-                (trainMetrics.profile.step_count > 0)
-                    ? (trainMetrics.profile.step_time_s_sum /
-                       static_cast<double>(trainMetrics.profile.step_count)) * 1000.0
-                    : 0.0;
-            const double max_step_time_ms = trainMetrics.profile.max_step_time_s * 1000.0;
-            const double samples_per_s =
-                (trainMetrics.profile.epoch_time_s > 0.0)
-                    ? static_cast<double>(trainMetrics.sample_count) / trainMetrics.profile.epoch_time_s
-                    : 0.0;
-            const double allreduce_wait_ratio =
-                (trainMetrics.profile.epoch_time_s > 0.0)
-                    ? trainMetrics.profile.sync_wait_time_s / trainMetrics.profile.epoch_time_s
-                    : 0.0;
+            const io::DerivedTrainingStats derived_stats =
+                io::deriveTrainingStats(trainMetrics);
 
             if (isMaster) {
-                std::cout << "Epoch " << epoch << "/" << cfg.epochs
-                          << ": [Train] loss = " << std::fixed << std::setprecision(4) << trainMetrics.avg_loss
-                          << ", acc = " << std::fixed << std::setprecision(2) << (trainMetrics.accuracy * 100.0) << "%"
-                          << " | [Test] loss = " << std::fixed << std::setprecision(4) << testMetrics.avg_loss
-                          << ", acc = " << std::fixed << std::setprecision(2) << (testMetrics.accuracy * 100.0) << "%"
-                          << " | epoch = " << std::fixed << std::setprecision(3) << trainMetrics.profile.epoch_time_s << "s"
-                          << ", data = " << trainMetrics.profile.data_time_s << "s"
-                          << ", fwd_bwd = " << trainMetrics.profile.fwd_bwd_time_s << "s"
-                          << ", sync_total = " << trainMetrics.profile.sync_total_time_s << "s"
-                          << ", sync_wait = " << trainMetrics.profile.sync_wait_time_s << "s"
-                          << ", opt = " << trainMetrics.profile.opt_time_s << "s"
-                          << ", avg_step = " << avg_step_time_ms << "ms"
-                          << ", samples/s = " << samples_per_s
+                std::cout << io::formatEpochSummary(
+                    epoch,
+                    cfg.epochs,
+                    trainMetrics,
+                    testMetrics,
+                    derived_stats)
                           << std::endl;
             }
 
@@ -897,32 +914,111 @@ int main(int argc, char** argv) {
             }
             #endif
 
-            if (metricsFile.is_open()) {
-                metricsFile << epoch << ","
-                            << trainMetrics.avg_loss << "," << trainMetrics.accuracy << ","
-                            << testMetrics.avg_loss << "," << testMetrics.accuracy << ","
-                            << trainMetrics.sample_count << ","
-                            << trainMetrics.profile.epoch_time_s << ","
-                            << trainMetrics.profile.data_time_s << ","
-                            << trainMetrics.profile.fwd_bwd_time_s << ","
-                            << trainMetrics.profile.sync_total_time_s << ","
-                            << trainMetrics.profile.sync_wait_time_s << ","
-                            << trainMetrics.profile.opt_time_s << ","
-                            << avg_step_time_ms << ","
-                            << max_step_time_ms << ","
-                            << samples_per_s << ","
-                            << allreduce_wait_ratio << ","
-                            << dist.worldSize() << ","
-                            << cfg.batch_size << "\n";
+            #ifdef PROFILE_OPS
+            std::vector<OpTimingStat> opStats = opProfileEpochSnapshot();
+            std::sort(opStats.begin(),
+                      opStats.end(),
+                      [](const OpTimingStat& a, const OpTimingStat& b) {
+                          return a.total_us > b.total_us;
+                      });
+            if (isMaster && !opStats.empty()) {
+                long long op_total_us = 0;
+                for (const auto& stat : opStats) {
+                    op_total_us += stat.total_us;
+                }
+                std::cout << "[PROFILE_OPS][Epoch " << epoch << "] top ops"
+                          << " (tracked_total_us=" << op_total_us << ")" << std::endl;
+                const std::size_t max_to_print = std::min<std::size_t>(opStats.size(), 20);
+                for (std::size_t i = 0; i < max_to_print; ++i) {
+                    const auto& stat = opStats[i];
+                    const double avg_us =
+                        (stat.calls > 0)
+                            ? static_cast<double>(stat.total_us) / static_cast<double>(stat.calls)
+                            : 0.0;
+                    std::cout << "  - " << stat.name
+                              << ": calls=" << stat.calls
+                              << ", total_us=" << stat.total_us
+                              << ", avg_us=" << std::fixed << std::setprecision(2) << avg_us
+                          << std::endl;
+                }
             }
+            #endif
+
+            long long epoch_profiled_total_us = 0;
+            #ifdef PROFILE_OPS
+            epoch_profiled_total_us = io::opStatsTotalUs(opStats);
+            #endif
+
+            if (isMaster) {
+                artifacts_writer.appendProfileEpochSummary(
+                    epoch,
+                    grad_sync_mode_info,
+                    trainMetrics.profile,
+                    epoch_profiled_total_us);
+                runProfileSummary.total_epochs += 1;
+                runProfileSummary.fwd_bwd_s += trainMetrics.profile.fwd_bwd_time_s;
+                runProfileSummary.sync_total_s += trainMetrics.profile.sync_total_time_s;
+                runProfileSummary.sync_wait_s += trainMetrics.profile.sync_wait_time_s;
+                runProfileSummary.sync_effective_overlap =
+                    std::max(runProfileSummary.sync_effective_overlap,
+                             trainMetrics.profile.sync_effective_overlap);
+                runProfileSummary.opt_s += trainMetrics.profile.opt_time_s;
+                runProfileSummary.profiled_total_us += epoch_profiled_total_us;
+            }
+
+            #ifdef PROFILE_OPS
+            if (isMaster) {
+                artifacts_writer.appendProfileEpochOps(epoch, opStats);
+                io::accumulateRunOpStats(runOpStats, opStats);
+            }
+            #endif
+
+            artifacts_writer.appendMetricsRow(
+                epoch,
+                trainMetrics,
+                testMetrics,
+                derived_stats,
+                grad_sync_mode_info,
+                dist.worldSize(),
+                cfg.batch_size);
         }
 
-        if (metricsFile.is_open()) {
-            metricsFile.close();
+        if (isMaster) {
+            artifacts_writer.writeRunSummary(runProfileSummary);
+            #ifdef PROFILE_OPS
+            artifacts_writer.writeRunOps(io::makeSortedRunOpStats(runOpStats));
+            #endif
         }
         if (isMaster) {
-            std::cout << "Training finished. Metrics saved to " << (cfg.out_dir + "/metrics.csv") << std::endl;
+            std::cout << "Training finished. Metrics saved to "
+                      << artifacts_writer.paths().metrics_csv_path << std::endl;
         }
+
+        #ifdef PROFILE_OPS
+        if (isMaster && runProfileSummary.total_epochs > 0) {
+            const std::vector<io::RunOpStat> runRows = io::makeSortedRunOpStats(runOpStats);
+
+            const double run_fwd_bwd_us = runProfileSummary.fwd_bwd_s * 1.0e6;
+            const double uncovered_us =
+                run_fwd_bwd_us - static_cast<double>(runProfileSummary.profiled_total_us);
+
+            std::cout << io::formatProfileRunTotalSummary(
+                runProfileSummary,
+                uncovered_us)
+                      << std::endl;
+
+            std::cout << "[PROFILE_RUN_TOTAL] top ops" << std::endl;
+            const std::size_t max_to_print = std::min<std::size_t>(runRows.size(), 10);
+            for (std::size_t i = 0; i < max_to_print; ++i) {
+                std::cout << io::formatProfileRunOpRow(
+                    i + 1,
+                    runRows[i],
+                    runProfileSummary.profiled_total_us,
+                    run_fwd_bwd_us)
+                          << std::endl;
+            }
+        }
+        #endif
 
         // 5. Final Evaluation
         if (isMaster) {

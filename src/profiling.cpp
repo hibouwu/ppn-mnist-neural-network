@@ -1,8 +1,11 @@
 #include "profiling.hpp"
 #include <cstring>
+#include <string>
+#include <unordered_map>
 
 namespace {
 MatmulEpochStats g_stats;
+std::unordered_map<std::string, OpTimingStat> g_op_stats;
 
 int implIndex(const char* impl) {
     if (std::strcmp(impl, "blas") == 0) return 0;
@@ -40,4 +43,26 @@ void matmulProfileRecord(const char* impl, long long us) {
 
 MatmulEpochStats matmulProfileEpochSnapshot() {
     return g_stats;
+}
+
+void opProfileEpochReset() {
+    g_op_stats.clear();
+}
+
+void opProfileRecord(const char* name, long long us) {
+    auto [it, inserted] = g_op_stats.emplace(std::string(name), OpTimingStat{name, 0, 0});
+    it->second.calls += 1;
+    it->second.total_us += us;
+    if (inserted) {
+        it->second.name = it->first.c_str();
+    }
+}
+
+std::vector<OpTimingStat> opProfileEpochSnapshot() {
+    std::vector<OpTimingStat> out;
+    out.reserve(g_op_stats.size());
+    for (const auto& [_, stat] : g_op_stats) {
+        out.push_back(stat);
+    }
+    return out;
 }

@@ -7,6 +7,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 # --- Options (profiling / blocked matmul) ---
 option(ENABLE_GPROF "Enable gprof instrumentation (-pg) for profiling builds" OFF)
 option(ENABLE_PROFILE_MATMUL "Print timing for matmul (PROFILE_MATMUL)" OFF)
+option(ENABLE_PROFILE_OPS "Print timing for selected forward/backward ops (PROFILE_OPS)" OFF)
 option(ENABLE_MPI "Enable MPI distributed data parallel" OFF)
 set(MATMUL_BLOCK_SIZE "" CACHE STRING "Block size for blocked matmul (e.g. 64,128). Empty = default in code")
 
@@ -18,6 +19,10 @@ endif()
 
 if(ENABLE_PROFILE_MATMUL)
     add_compile_definitions(PROFILE_MATMUL)
+endif()
+
+if(ENABLE_PROFILE_OPS)
+    add_compile_definitions(PROFILE_OPS)
 endif()
 
 if(NOT MATMUL_BLOCK_SIZE STREQUAL "")
@@ -69,7 +74,9 @@ add_library(mnist_reader_lib STATIC mnist_reader/mnist_reader.c)
 file(GLOB SOURCES "src/*.cpp")
 file(GLOB AUTOGRAD_SOURCES "src/autograd/*.cpp")
 file(GLOB DISTRIBUTED_SOURCES "src/distributed/*.cpp")
-list(APPEND SOURCES ${AUTOGRAD_SOURCES} ${DISTRIBUTED_SOURCES})
+file(GLOB IO_SOURCES "src/io/*.cpp")
+file(GLOB RUNTIME_SOURCES "src/runtime/*.cpp")
+list(APPEND SOURCES ${AUTOGRAD_SOURCES} ${DISTRIBUTED_SOURCES} ${IO_SOURCES} ${RUNTIME_SOURCES})
 list(FILTER SOURCES EXCLUDE REGEX "src/main.cpp$")
 
 # Exécutables
@@ -84,6 +91,8 @@ add_executable(test_autodiff tests/test_autodiff.cpp ${SOURCES})
 add_executable(test_gradient_check tests/test_gradient_check.cpp ${SOURCES})
 add_executable(test_autograd_engine tests/test_autograd_engine.cpp ${SOURCES})
 add_executable(test_cnn_autograd tests/test_cnn_autograd.cpp ${SOURCES})
+add_executable(test_distributed_sync tests/test_distributed_sync.cpp ${SOURCES})
+add_executable(test_distributed_sync_mpi_contracts tests/test_distributed_sync.cpp ${SOURCES})
 
 add_executable(test_dataloader tests/test_dataloader.cpp ${SOURCES})
 add_executable(test_optimizer tests/test_optimizer.cpp ${SOURCES})
@@ -107,6 +116,8 @@ set(TEST_TARGETS
     test_gradient_check
     test_autograd_engine
     test_cnn_autograd
+    test_distributed_sync
+    test_distributed_sync_mpi_contracts
     test_dataloader
     test_optimizer
     test_tiny_imagenet_dataset
@@ -116,6 +127,13 @@ foreach(target ${TEST_TARGETS})
     target_link_libraries(${target} PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
 endforeach()
 
+if(ENABLE_MPI)
+    target_compile_definitions(test_distributed_sync PRIVATE USE_MPI)
+    target_link_libraries(test_distributed_sync PRIVATE MPI::MPI_CXX)
+    target_compile_definitions(test_distributed_sync_mpi_contracts PRIVATE USE_MPI DISTRIBUTED_MPI_CONTRACTS_ONLY)
+    target_link_libraries(test_distributed_sync_mpi_contracts PRIVATE MPI::MPI_CXX)
+endif()
+
 add_test(NAME MatrixTest COMMAND test_matrix)
 add_test(NAME ActivationsTest COMMAND test_activations)
 add_test(NAME LinearTest COMMAND test_linear)
@@ -124,12 +142,20 @@ add_test(NAME AutodiffTest COMMAND test_autodiff)
 add_test(NAME GradientCheckTest COMMAND test_gradient_check)
 add_test(NAME AutogradEngineTest COMMAND test_autograd_engine)
 add_test(NAME CNNAutogradTest COMMAND test_cnn_autograd)
+add_test(NAME DistributedSyncTest COMMAND test_distributed_sync)
+if(ENABLE_MPI)
+    add_test(NAME DistributedSyncMPIContractsWorldSize2
+        COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 $<TARGET_FILE:test_distributed_sync_mpi_contracts>)
+endif()
 add_test(NAME DataLoaderTest COMMAND test_dataloader WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME OptimizerTest COMMAND test_optimizer)
 add_test(NAME TinyImageNetDatasetTest COMMAND test_tiny_imagenet_dataset)
 
 add_executable(test_benchmark_large tests/test_benchmark_large.cpp ${SOURCES})
 target_link_libraries(test_benchmark_large PUBLIC ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
+
+add_executable(test_autograd_runtime_benchmark tests/test_autograd_runtime_benchmark.cpp ${SOURCES})
+target_link_libraries(test_autograd_runtime_benchmark PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
 
 
 add_executable(test_init tests/test_init.cpp ${SOURCES})

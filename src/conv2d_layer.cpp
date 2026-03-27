@@ -7,6 +7,7 @@
 #include "autograd/grad_fn.hpp"
 #include "math_ops.hpp"
 #include "operation_node.hpp"
+#include "profiling.hpp"
 #include <cmath>
 #include <random>
 #include <algorithm>
@@ -15,6 +16,7 @@
 #include <stdexcept>
 #include <cstdlib>
 #include <cstring>
+#include <chrono>
 
 namespace {
 bool cnn_parallel_enabled() {
@@ -86,11 +88,16 @@ Matrix col2imFromContext(const Matrix& cols,
 
 class Conv2DGradFn final : public GradFn {
 public:
-    std::vector<GradientContribution> apply(const Node& output,
-                                            const Matrix& grad_output) const override {
+    ContributionList apply(const Node& output,
+                           const Matrix& grad_output,
+                           InputIndexView input_indices) const override {
+#ifdef PROFILE_OPS
+        using Clock = std::chrono::steady_clock;
+#endif
         const auto& inputs = output.inputs();
         const auto& ctx = output.backwardContext();
-        if (!ctx || inputs.size() < 2 || ctx->matrices.empty() || ctx->sizes.size() < 12 || ctx->flags.empty()) {
+        if (!ctx || input_indices.size() != inputs.size() || inputs.size() < 2 ||
+            ctx->matrices.empty() || ctx->sizes.size() < 12 || ctx->flags.empty()) {
             throw std::logic_error("Conv2DGradFn: invalid node state.");
         }
 
@@ -112,6 +119,9 @@ public:
         const std::size_t kernel_w = ctx->sizes[11];
 
         Matrix dout(N * H_out * W_out, out_channels);
+#ifdef PROFILE_OPS
+        auto grad_reshape_start = Clock::now();
+#endif
         double* dout_data = dout.data.data();
         const double* grad_data = grad_output.data.data();
         const std::size_t grad_stride = grad_output.cols;
@@ -134,20 +144,35 @@ public:
                 }
             }
         }
+#ifdef PROFILE_OPS
+        opProfileRecord(
+            "conv2d_backward_grad_reshape",
+            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - grad_reshape_start).count());
+#endif
 
         const Matrix& cols = ctx->matrices[0];
         const std::size_t col_w = cols.cols;
-        std::vector<GradientContribution> contributions;
-        contributions.reserve(3);
+        ContributionList contributions;
 
-        if (kernels && kernels->requiresGrad()) {
+        if (kernels && kernels->requiresGrad() && input_indices[1] != kInvalidNodeIndex) {
             Matrix dW(out_channels, col_w);
+#ifdef PROFILE_OPS
+            auto dw_start = Clock::now();
+#endif
             dout.matmul_into(cols, dW, true, false);
-            contributions.push_back({kernels, std::move(dW)});
+#ifdef PROFILE_OPS
+            opProfileRecord(
+                "conv2d_backward_dW_gemm",
+                std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - dw_start).count());
+#endif
+            contributions.push_back({input_indices[1], std::move(dW)});
         }
 
-        if (bias && bias->requiresGrad()) {
+        if (bias && bias->requiresGrad() && inputs.size() >= 3 && input_indices[2] != kInvalidNodeIndex) {
             Matrix db(1, out_channels, 0.0);
+#ifdef PROFILE_OPS
+            auto db_start = Clock::now();
+#endif
             const double* dout_const_data = dout.data.data();
             double* db_data = db.data.data();
             for (std::size_t i = 0; i < dout.rows; ++i) {
@@ -156,15 +181,34 @@ public:
                     db_data[j] += row_ptr[j];
                 }
             }
-            contributions.push_back({bias, std::move(db)});
+#ifdef PROFILE_OPS
+            opProfileRecord(
+                "conv2d_backward_db_reduce",
+                std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - db_start).count());
+#endif
+            contributions.push_back({input_indices[2], std::move(db)});
         }
 
-        if (input && input->requiresGrad()) {
+        if (input && input->requiresGrad() && input_indices[0] != kInvalidNodeIndex) {
             Matrix dcols(N * H_out * W_out, col_w);
+#ifdef PROFILE_OPS
+            auto dx_gemm_start = Clock::now();
+#endif
             dout.matmul_into(kernels->value(), dcols, false, false);
+#ifdef PROFILE_OPS
+            opProfileRecord(
+                "conv2d_backward_dX_gemm",
+                std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - dx_gemm_start).count());
+            auto col2im_start = Clock::now();
+#endif
             Matrix dX = col2imFromContext(
                 dcols, N, in_channels, H, W, H_out, W_out, kernel_h, kernel_w, stride, padding);
-            contributions.push_back({input, std::move(dX)});
+#ifdef PROFILE_OPS
+            opProfileRecord(
+                "conv2d_backward_col2im",
+                std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - col2im_start).count());
+#endif
+            contributions.push_back({input_indices[0], std::move(dX)});
         }
 
         return contributions;
@@ -327,6 +371,9 @@ Matrix Conv2DLayer::col2im(const Matrix& cols,
 // =====================================================================
 Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
                                size_t N, size_t C, size_t H, size_t W) const {
+#ifdef PROFILE_OPS
+    using Clock = std::chrono::steady_clock;
+#endif
     if (!input) {
         throw std::invalid_argument("Conv2DLayer::forward: input node is null.");
     }
@@ -355,13 +402,29 @@ Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
     auto [H_out, W_out] = outputShape(H, W);
 
     // im2col: (N*H_out*W_out, C*kH*kW)
+#ifdef PROFILE_OPS
+    auto im2col_start = Clock::now();
+#endif
     auto cols_ptr = std::make_shared<Matrix>(im2col(x, N, C, H, W, H_out, W_out));
+#ifdef PROFILE_OPS
+    opProfileRecord(
+        "conv2d_forward_im2col",
+        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - im2col_start).count());
+#endif
 
     // kernels_: (out_ch, col_w)
     // out = cols @ kernels^T → (N*H_out*W_out, out_ch)
     const Matrix& kv = kernels_->value();
     Matrix out(cols_ptr->rows, out_channels_);
+#ifdef PROFILE_OPS
+    auto gemm_start = Clock::now();
+#endif
     cols_ptr->matmul_into(kv, out, false, true);
+#ifdef PROFILE_OPS
+    opProfileRecord(
+        "conv2d_forward_gemm",
+        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - gemm_start).count());
+#endif
 
     // Reshape output to (N, out_ch * H_out * W_out)
     // While reshaping, apply bias to avoid an extra full pass over "out".
@@ -372,6 +435,10 @@ Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
     const double* out_const_data = out.data.data();
     const size_t result_stride = result.cols;
     const size_t HWW = H_out * W_out;
+
+#ifdef PROFILE_OPS
+    auto post_start = Clock::now();
+#endif
 
     #pragma omp parallel for if(cnn_parallel_enabled()) schedule(static)
 
@@ -393,6 +460,11 @@ Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
             }
         }
     }
+#ifdef PROFILE_OPS
+    opProfileRecord(
+        "conv2d_forward_bias_reshape",
+        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - post_start).count());
+#endif
 
     const bool requires_grad = inferRequiresGrad(input, kernels_, bias_);
     auto node = std::make_shared<Node>(result, requires_grad);

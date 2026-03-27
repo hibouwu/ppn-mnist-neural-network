@@ -5,12 +5,14 @@
 #include "maxpool2d_layer.hpp"
 #include "autograd/backward_context.hpp"
 #include "autograd/grad_fn.hpp"
+#include "profiling.hpp"
 #include <limits>
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <cstdlib>
 #include <cstring>
+#include <chrono>
 
 namespace {
 bool cnn_parallel_enabled() {
@@ -28,17 +30,22 @@ bool inferRequiresGrad(const Node::Ptr& input) {
 
 class MaxPool2DGradFn final : public GradFn {
 public:
-    std::vector<GradientContribution> apply(const Node& output,
-                                            const Matrix& grad_output) const override {
+    ContributionList apply(const Node& output,
+                           const Matrix& grad_output,
+                           InputIndexView input_indices) const override {
+#ifdef PROFILE_OPS
+        using Clock = std::chrono::steady_clock;
+        auto backward_start = Clock::now();
+#endif
         const auto& inputs = output.inputs();
         const auto& ctx = output.backwardContext();
-        if (inputs.size() != 1 || !ctx || ctx->sizes.size() < 6 || ctx->index_vectors.empty()) {
+        if (inputs.size() != 1 || input_indices.size() != inputs.size() || !ctx || ctx->sizes.size() < 6 || ctx->index_vectors.empty()) {
             throw std::logic_error("MaxPool2DGradFn: invalid node state.");
         }
 
         const Node::Ptr& input = inputs[0];
-        if (!input->requiresGrad()) {
-            return {};
+        if (!input->requiresGrad() || input_indices[0] == kInvalidNodeIndex) {
+            return ContributionList{};
         }
 
         const std::size_t N = ctx->sizes[0];
@@ -72,8 +79,15 @@ public:
                 }
             }
         }
+#ifdef PROFILE_OPS
+        opProfileRecord(
+            "maxpool2d_backward",
+            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - backward_start).count());
+#endif
 
-        return {{input, dX}};
+        ContributionList contributions;
+        contributions.push_back({input_indices[0], std::move(dX)});
+        return contributions;
     }
 };
 }
@@ -100,6 +114,10 @@ std::pair<size_t, size_t> MaxPool2DLayer::outputShape(size_t H, size_t W) const 
 
 Node::Ptr MaxPool2DLayer::forward(const Node::Ptr& input,
                                   size_t N, size_t C, size_t H, size_t W) const {
+#ifdef PROFILE_OPS
+    using Clock = std::chrono::steady_clock;
+    auto forward_start = Clock::now();
+#endif
     if (!input) {
         throw std::invalid_argument("MaxPool2DLayer::forward: input node is null.");
     }
@@ -159,6 +177,11 @@ Node::Ptr MaxPool2DLayer::forward(const Node::Ptr& input,
             }
         }
     }
+#ifdef PROFILE_OPS
+    opProfileRecord(
+        "maxpool2d_forward",
+        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - forward_start).count());
+#endif
 
     const bool requires_grad = inferRequiresGrad(input);
     auto node = std::make_shared<Node>(out, requires_grad);

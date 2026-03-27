@@ -4,10 +4,13 @@
 #include <cstdint>
 #include <functional>
 #include <vector>
+#include "distributed/sync_profile.hpp"
 #include "neural_network.hpp"  // NeuralNetwork
 #include "loss.hpp"       // LossFunction
 #include "optimizer.hpp"  // Optimizer
 #include "dataloader.hpp" // DataLoader
+
+class GradientSyncRuntime;
 
 struct EpochProfile {
     double epoch_time_s = 0.0;
@@ -15,10 +18,17 @@ struct EpochProfile {
     double fwd_bwd_time_s = 0.0;
     double sync_total_time_s = 0.0;
     double sync_wait_time_s = 0.0;
+    double sync_pack_time_s = 0.0;
+    double sync_launch_time_s = 0.0;
+    double sync_unpack_time_s = 0.0;
     double opt_time_s = 0.0;
     double step_time_s_sum = 0.0;
     double max_step_time_s = 0.0;
     std::uint64_t step_count = 0;
+    std::uint64_t sync_bucket_count = 0;
+    std::uint64_t sync_bucket_bytes = 0;
+    std::uint64_t sync_launched_bucket_count = 0;
+    std::uint64_t sync_effective_overlap = 0;
 };
 
 // Basic statistics for one epoch
@@ -38,6 +48,7 @@ class Trainer {
 public:
     using GradSyncFn = std::function<std::uint64_t(
         const std::vector<Node::Ptr>& params, std::uint64_t local_batch)>;
+    using SyncProfileProviderFn = std::function<SyncStepProfile()>;
     using ProgressFn = std::function<void(
         bool training,
         std::uint64_t processed_batches,
@@ -51,7 +62,9 @@ public:
             Optimizer& optimizer,
             DataLoader& dataLoader,
             GradSyncFn gradSyncFn = nullptr,
-            ProgressFn progressFn = nullptr);
+            ProgressFn progressFn = nullptr,
+            GradientSyncRuntime* gradientSyncRuntime = nullptr,
+            SyncProfileProviderFn syncProfileProvider = nullptr);
 
     // One training epoch (with backward + parameter updates)
     Metrics trainEpoch();
@@ -67,6 +80,8 @@ private:
     std::vector<Node::Ptr> trainable_params_;
     GradSyncFn grad_sync_fn_;
     ProgressFn progress_fn_;
+    GradientSyncRuntime* gradient_sync_runtime_ = nullptr;
+    SyncProfileProviderFn sync_profile_provider_;
 
     // Shared implementation used by trainEpoch() and evaluate()
     Metrics runEpoch(bool training);
