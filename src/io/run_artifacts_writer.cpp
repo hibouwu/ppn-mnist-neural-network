@@ -2,53 +2,143 @@
 
 #include "io/run_op_stats.hpp"
 
+#include <iomanip>
 #include <filesystem>
+#include <sstream>
 
 namespace fs = std::filesystem;
 
 namespace io {
 
-RunArtifactsPaths makeRunArtifactsPaths(const std::string& out_dir) {
+namespace {
+
+std::string traceChannelToString(SyncTraceChannel channel) {
+    switch (channel) {
+    case SyncTraceChannel::Simulated:
+        return "simulated";
+    case SyncTraceChannel::RealComm:
+        return "real_comm";
+    }
+    return "unknown";
+}
+
+std::string launchReasonToString(SyncLaunchReason reason) {
+    switch (reason) {
+    case SyncLaunchReason::None:
+        return "none";
+    case SyncLaunchReason::RealEarlyLaunch:
+        return "real_early_launch";
+    case SyncLaunchReason::StructuralZeroExpectedLaunch:
+        return "structural_zero_expected_launch";
+    case SyncLaunchReason::TailFlushLaunch:
+        return "tail_flush_launch";
+    }
+    return "unknown";
+}
+
+std::string requestLifecycleToString(SyncRequestLifecycle lifecycle) {
+    switch (lifecycle) {
+    case SyncRequestLifecycle::NotLaunched:
+        return "not_launched";
+    case SyncRequestLifecycle::SimulatedOnly:
+        return "simulated_only";
+    case SyncRequestLifecycle::InFlight:
+        return "in_flight";
+    case SyncRequestLifecycle::Completed:
+        return "completed";
+    }
+    return "unknown";
+}
+
+}
+
+RunArtifactsPaths makeRunArtifactsPaths(const std::string& out_dir, int rank) {
     RunArtifactsPaths paths;
     paths.metrics_csv_path = out_dir + "/metrics.csv";
     paths.profile_epoch_summary_csv_path = out_dir + "/profile_epoch_summary.csv";
     paths.profile_run_summary_csv_path = out_dir + "/profile_run_summary.csv";
     paths.profile_epoch_ops_csv_path = out_dir + "/profile_epoch_ops.csv";
     paths.profile_run_ops_csv_path = out_dir + "/profile_run_ops.csv";
+    paths.qualification_dir = out_dir + "/qualification";
+    std::ostringstream rank_dir;
+    rank_dir << paths.qualification_dir << "/rank_" << std::setw(3) << std::setfill('0') << rank;
+    paths.qualification_rank_dir = rank_dir.str();
+    paths.sync_trace_csv_path = paths.qualification_rank_dir + "/sync_trace.csv";
+    paths.parameter_layout_csv_path = paths.qualification_dir + "/parameter_layout.csv";
+    paths.parameter_snapshot_index_csv_path = paths.qualification_dir + "/parameter_snapshot_index.csv";
+    paths.parameter_snapshot_dir = paths.qualification_dir + "/parameter_snapshots";
     paths.run_id = fs::path(out_dir).filename().empty()
         ? std::string("default_run")
         : fs::path(out_dir).filename().string();
     return paths;
 }
 
-RunArtifactsWriter::RunArtifactsWriter(bool enabled, RunArtifactsPaths paths)
+RunArtifactsWriter::RunArtifactsWriter(bool enabled,
+                                       bool qualification_enabled,
+                                       RunArtifactsPaths paths)
     : enabled_(enabled),
+      qualification_enabled_(qualification_enabled),
       paths_(std::move(paths)) {}
 
 void RunArtifactsWriter::initialize() {
-    if (!enabled_) {
+    if (!enabled_ && !qualification_enabled_) {
         return;
     }
 
-    metrics_file_.open(paths_.metrics_csv_path, std::ios::trunc);
-    if (metrics_file_.is_open()) {
-        metrics_file_
-            << "epoch,train_loss,train_acc,test_loss,test_acc,train_samples,"
-            << "epoch_time_s,data_time_s,fwd_bwd_time_s,sync_total_time_s,sync_wait_time_s,"
-            << "sync_pack_time_s,sync_launch_time_s,sync_unpack_time_s,"
-            << "sync_bucket_count,sync_bucket_bytes,sync_launched_bucket_count,sync_effective_overlap,opt_time_s,"
-            << "avg_step_time_ms,max_step_time_ms,samples_per_s,allreduce_wait_ratio,"
-            << "grad_sync_mode_label,grad_sync_semantics,grad_sync_correctness_only,"
-            << "world_size,batch_size\n";
+    if (qualification_enabled_) {
+        fs::create_directories(paths_.qualification_rank_dir);
+        fs::create_directories(paths_.parameter_snapshot_dir);
     }
 
-    std::ofstream epoch_summary_out(paths_.profile_epoch_summary_csv_path, std::ios::trunc);
-    epoch_summary_out
-        << "epoch,grad_sync_mode_label,grad_sync_semantics,grad_sync_correctness_only,"
-           "fwd_bwd_s,sync_total_s,sync_wait_s,sync_effective_overlap,opt_s,profiled_total_us\n";
+    if (enabled_) {
+        metrics_file_.open(paths_.metrics_csv_path, std::ios::trunc);
+        if (metrics_file_.is_open()) {
+            metrics_file_
+                << "epoch,train_loss,train_acc,test_loss,test_acc,train_samples,"
+                << "epoch_time_s,data_time_s,fwd_bwd_time_s,sync_total_time_s,sync_wait_time_s,"
+                << "sync_pack_time_s,sync_launch_time_s,sync_unpack_time_s,"
+                << "sync_bucket_count,sync_bucket_bytes,sync_launched_bucket_count,sync_effective_overlap,opt_time_s,"
+                << "avg_step_time_ms,max_step_time_ms,samples_per_s,allreduce_wait_ratio,"
+                << "grad_sync_mode_label,grad_sync_semantics,grad_sync_correctness_only,"
+                << "world_size,batch_size\n";
+        }
 
-    std::ofstream epoch_ops_out(paths_.profile_epoch_ops_csv_path, std::ios::trunc);
-    epoch_ops_out << "epoch,scope,name,calls,total_us,avg_us\n";
+        std::ofstream epoch_summary_out(paths_.profile_epoch_summary_csv_path, std::ios::trunc);
+        epoch_summary_out
+            << "epoch,grad_sync_mode_label,grad_sync_semantics,grad_sync_correctness_only,"
+               "fwd_bwd_s,sync_total_s,sync_wait_s,sync_effective_overlap,opt_s,profiled_total_us\n";
+
+        std::ofstream epoch_ops_out(paths_.profile_epoch_ops_csv_path, std::ios::trunc);
+        epoch_ops_out << "epoch,scope,name,calls,total_us,avg_us\n";
+    }
+}
+
+void RunArtifactsWriter::initializeQualificationArtifacts(
+    const std::vector<Node::Ptr>& synchronizable_params) {
+    if (!qualification_enabled_) {
+        return;
+    }
+
+    std::ofstream trace_out(paths_.sync_trace_csv_path, std::ios::trunc);
+    trace_out
+        << "run_id,epoch,step,bucket_idx,expected_count,ready_count,outstanding_requests,"
+        << "seconds_since_begin_step,seconds_since_backward_complete,channel,reason,request_lifecycle\n";
+
+    if (enabled_) {
+        std::ofstream snapshot_index_out(paths_.parameter_snapshot_index_csv_path, std::ios::trunc);
+        snapshot_index_out << "epoch,step,relative_path,total_values,total_bytes\n";
+
+        std::ofstream layout_out(paths_.parameter_layout_csv_path, std::ios::trunc);
+        layout_out << "param_idx,rows,cols,numel\n";
+        for (std::size_t idx = 0; idx < synchronizable_params.size(); ++idx) {
+            const auto& param = synchronizable_params[idx];
+            const auto& value = param->value();
+            layout_out << idx << ","
+                       << value.rows << ","
+                       << value.cols << ","
+                       << value.data.size() << "\n";
+        }
+    }
 }
 
 void RunArtifactsWriter::appendProfileEpochSummary(int epoch,
@@ -126,6 +216,64 @@ void RunArtifactsWriter::appendMetricsRow(int epoch,
                   << mode_info.correctness_only << ","
                   << world_size << ","
                   << batch_size << "\n";
+}
+
+void RunArtifactsWriter::appendSyncTraceStep(int epoch,
+                                             std::uint64_t step_index,
+                                             const SyncStepProfile& profile) {
+    if (!qualification_enabled_) {
+        return;
+    }
+    std::ofstream out(paths_.sync_trace_csv_path, std::ios::app);
+    for (const auto& event : profile.launch_events) {
+        out << paths_.run_id << ","
+            << epoch << ","
+            << step_index << ","
+            << event.bucket_idx << ","
+            << event.expected_count << ","
+            << event.ready_count << ","
+            << event.outstanding_requests << ","
+            << std::setprecision(17) << event.seconds_since_begin_step << ","
+            << std::setprecision(17) << event.seconds_since_backward_complete << ","
+            << traceChannelToString(event.channel) << ","
+            << launchReasonToString(event.reason) << ","
+            << requestLifecycleToString(event.request_lifecycle) << "\n";
+    }
+}
+
+void RunArtifactsWriter::writeParameterSnapshot(
+    int epoch,
+    std::uint64_t step_index,
+    const std::vector<Node::Ptr>& synchronizable_params) {
+    if (!qualification_enabled_) {
+        return;
+    }
+
+    std::ostringstream filename;
+    filename << "epoch_" << std::setw(4) << std::setfill('0') << epoch
+             << "_step_" << std::setw(6) << std::setfill('0') << step_index
+             << ".bin";
+    const std::string relative_path = std::string("parameter_snapshots/") + filename.str();
+    const std::string full_path = paths_.qualification_dir + "/" + relative_path;
+
+    std::ofstream out(full_path, std::ios::binary | std::ios::trunc);
+    std::uint64_t total_values = 0;
+    for (const auto& param : synchronizable_params) {
+        const auto& values = param->value().data;
+        if (!values.empty()) {
+            out.write(reinterpret_cast<const char*>(values.data()),
+                      static_cast<std::streamsize>(values.size() * sizeof(double)));
+        }
+        total_values += static_cast<std::uint64_t>(values.size());
+    }
+    out.close();
+
+    std::ofstream index_out(paths_.parameter_snapshot_index_csv_path, std::ios::app);
+    index_out << epoch << ","
+              << step_index << ","
+              << relative_path << ","
+              << total_values << ","
+              << (total_values * sizeof(double)) << "\n";
 }
 
 void RunArtifactsWriter::writeRunSummary(const RunProfileSummary& summary) {

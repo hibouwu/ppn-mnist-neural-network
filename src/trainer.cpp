@@ -45,7 +45,8 @@ Trainer::Trainer(NeuralNetwork& model,
                  GradSyncFn gradSyncFn,
                  ProgressFn progressFn,
                  GradientSyncRuntime* gradientSyncRuntime,
-                 SyncProfileProviderFn syncProfileProvider)
+                 SyncProfileProviderFn syncProfileProvider,
+                 StepObserverFn stepObserver)
     : model_(model),
       lossFn_(lossFn),
       optimizer_(optimizer),
@@ -54,7 +55,8 @@ Trainer::Trainer(NeuralNetwork& model,
       grad_sync_fn_(std::move(gradSyncFn)),
       progress_fn_(std::move(progressFn)),
       gradient_sync_runtime_(gradientSyncRuntime),
-      sync_profile_provider_(std::move(syncProfileProvider)) {}
+      sync_profile_provider_(std::move(syncProfileProvider)),
+      step_observer_(std::move(stepObserver)) {}
 
 Metrics Trainer::trainEpoch() {
     Metrics m = runEpoch(/*training=*/true);
@@ -126,6 +128,7 @@ Metrics Trainer::runEpoch(bool training) {
         if (training) {
             optimizer_.zeroGrad();
             std::uint64_t global_batch_size = batch_size;
+            std::optional<SyncStepProfile> step_sync_profile;
             if (gradient_sync_runtime_) {
                 gradient_sync_runtime_->beginStep(batch_size);
                 AutogradEngine engine;
@@ -151,8 +154,8 @@ Metrics Trainer::runEpoch(bool training) {
                 const auto sync_end = Clock::now();
                 profile.sync_wait_time_s += std::chrono::duration<double>(sync_end - sync_start).count();
                 if (sync_profile_provider_) {
-                    const auto sync_profile = sync_profile_provider_();
-                    accumulateSyncProfile(profile, sync_profile);
+                    step_sync_profile = sync_profile_provider_();
+                    accumulateSyncProfile(profile, *step_sync_profile);
                 }
             } else if (grad_sync_fn_) {
                 const auto sync_start = Clock::now();
@@ -163,8 +166,8 @@ Metrics Trainer::runEpoch(bool training) {
                 profile.sync_total_time_s += sync_time_s;
                 profile.sync_wait_time_s += sync_time_s;
                 if (sync_profile_provider_) {
-                    const auto sync_profile = sync_profile_provider_();
-                    accumulateSyncProfile(profile, sync_profile, sync_time_s);
+                    step_sync_profile = sync_profile_provider_();
+                    accumulateSyncProfile(profile, *step_sync_profile, sync_time_s);
                 }
             }
             if (global_batch_size > 0) {
@@ -172,6 +175,10 @@ Metrics Trainer::runEpoch(bool training) {
                 optimizer_.step(1.0 / static_cast<double>(global_batch_size));
                 const auto opt_end = Clock::now();
                 profile.opt_time_s += std::chrono::duration<double>(opt_end - opt_start).count();
+            }
+            if (step_observer_) {
+                step_observer_(processed_batches + 1,
+                               step_sync_profile.has_value() ? &*step_sync_profile : nullptr);
             }
         } else {
             const auto fwd_bwd_end = Clock::now();

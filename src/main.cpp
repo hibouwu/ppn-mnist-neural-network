@@ -29,6 +29,7 @@ namespace fs = std::filesystem;
 #include "optimizer.hpp"
 #include "runtime/grad_sync_mode_info.hpp"
 #include "runtime/grad_sync_setup_factory.hpp"
+#include "runtime/synchronizable_params.hpp"
 #include "trainer.hpp"
 #include "activation.hpp"
 
@@ -390,6 +391,7 @@ struct Config {
     std::string out_dir = "output";       // Output directory for metrics/log artifacts.
     std::string grad_sync_mode = "per_param"; // per_param / bucketed / overlap_bucketed
     std::size_t bucket_size_bytes = 1024 * 1024;
+    bool qualification_artifacts = false;
 };
 
 int main(int argc, char** argv) {
@@ -501,6 +503,8 @@ int main(int argc, char** argv) {
                 cfg.grad_sync_mode = requireValue(arg);
             } else if (arg == "--bucket_size_bytes") {
                 cfg.bucket_size_bytes = parseSizeTStrict(requireValue(arg), arg);
+            } else if (arg == "--qualification_artifacts") {
+                cfg.qualification_artifacts = parseIntInRange(requireValue(arg), arg, 0, 1) != 0;
             } else {
                 throw std::invalid_argument("unknown argument '" + arg + "'");
             }
@@ -804,6 +808,8 @@ int main(int argc, char** argv) {
             model->getParameters(),
             grad_sync_mode_info,
             cfg.bucket_size_bytes);
+        const auto synchronizable_params =
+            runtime::collectSynchronizableParams(model->getParameters());
 
         // 4. Train
         Trainer::ProgressFn progressFn = nullptr;
@@ -829,14 +835,7 @@ int main(int argc, char** argv) {
             };
         }
 
-        Trainer trainer(*model,
-                        lossFn,
-                        *optimizer,
-                        *trainLoader,
-                        grad_sync_setup.grad_sync_fn,
-                        progressFn,
-                        grad_sync_setup.gradient_sync_runtime.get(),
-                        grad_sync_setup.sync_profile_provider);
+        int current_epoch_for_artifacts = 0;
 
         if (isMaster) {
             std::cout << "Training started..." << std::endl;
@@ -849,8 +848,36 @@ int main(int argc, char** argv) {
 
         io::RunArtifactsWriter artifacts_writer(
             isMaster,
-            io::makeRunArtifactsPaths(cfg.out_dir));
+            cfg.qualification_artifacts,
+            io::makeRunArtifactsPaths(cfg.out_dir, dist.rank()));
         artifacts_writer.initialize();
+        artifacts_writer.initializeQualificationArtifacts(synchronizable_params);
+
+        Trainer trainer(*model,
+                        lossFn,
+                        *optimizer,
+                        *trainLoader,
+                        grad_sync_setup.grad_sync_fn,
+                        progressFn,
+                        grad_sync_setup.gradient_sync_runtime.get(),
+                        grad_sync_setup.sync_profile_provider,
+                        [&artifacts_writer,
+                         &synchronizable_params,
+                         &current_epoch_for_artifacts,
+                         isMaster](std::uint64_t step_index, const SyncStepProfile* sync_profile) {
+                            if (sync_profile != nullptr) {
+                                artifacts_writer.appendSyncTraceStep(
+                                    current_epoch_for_artifacts,
+                                    step_index,
+                                    *sync_profile);
+                            }
+                            if (isMaster) {
+                                artifacts_writer.writeParameterSnapshot(
+                                    current_epoch_for_artifacts,
+                                    step_index,
+                                    synchronizable_params);
+                            }
+                        });
 
         io::RunProfileSummary runProfileSummary;
         runProfileSummary.grad_sync_mode = grad_sync_mode_info;
@@ -860,6 +887,7 @@ int main(int argc, char** argv) {
         bool hasLastTestMetrics = false;
 
         for (int epoch = 1; epoch <= cfg.epochs; ++epoch) {
+            current_epoch_for_artifacts = epoch;
             #ifdef PROFILE_MATMUL
             matmulProfileEpochReset();
             #endif

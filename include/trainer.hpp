@@ -55,6 +55,9 @@ public:
         std::uint64_t total_batches,
         std::uint64_t processed_samples,
         std::uint64_t total_samples)>;
+    using StepObserverFn = std::function<void(
+        std::uint64_t step_index,
+        const SyncStepProfile* sync_profile)>;
 
     // Trainer keeps references; it does not own these objects.
     Trainer(NeuralNetwork& model,
@@ -64,7 +67,8 @@ public:
             GradSyncFn gradSyncFn = nullptr,
             ProgressFn progressFn = nullptr,
             GradientSyncRuntime* gradientSyncRuntime = nullptr,
-            SyncProfileProviderFn syncProfileProvider = nullptr);
+            SyncProfileProviderFn syncProfileProvider = nullptr,
+            StepObserverFn stepObserver = nullptr);
 
     // One training epoch (with backward + parameter updates)
     Metrics trainEpoch();
@@ -82,6 +86,7 @@ private:
     ProgressFn progress_fn_;
     GradientSyncRuntime* gradient_sync_runtime_ = nullptr;
     SyncProfileProviderFn sync_profile_provider_;
+    StepObserverFn step_observer_;
 
     // Shared implementation used by trainEpoch() and evaluate()
     Metrics runEpoch(bool training);
