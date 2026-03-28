@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #ifdef USE_MPI
@@ -35,6 +36,7 @@ public:
     void wait(DistributedRequest& req) const;
     void waitAll(std::vector<DistributedRequest>& reqs) const;
     bool isNullRequest(const DistributedRequest& req) const;
+    std::vector<std::string> allGatherStrings(const std::string& local) const;
 
 private:
     int rank_ = 0;

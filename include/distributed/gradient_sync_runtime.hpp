@@ -6,7 +6,9 @@
 #include "distributed/sync_profile.hpp"
 
 #include <cstdint>
+#include <chrono>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -53,7 +55,19 @@ public:
     SyncStepProfile lastStepProfile() const override { return last_profile_; }
 
 private:
-    void launchBucket(std::size_t bucket_idx);
+    void validateLayoutAgreement() const;
+    void validateStableLayout() const;
+    void recordLaunchEvent(std::size_t bucket_idx,
+                           SyncTraceChannel channel,
+                           SyncLaunchReason reason,
+                           SyncRequestLifecycle lifecycle);
+    bool bucketPackReady(std::size_t bucket_idx) const;
+    bool bucketCanRealLaunch(std::size_t bucket_idx) const;
+    bool bucketCanSimulateLaunch(std::size_t bucket_idx) const;
+    void simulateLaunchBucket(std::size_t bucket_idx, SyncLaunchReason reason);
+    void launchBucket(std::size_t bucket_idx, SyncLaunchReason reason);
+    void drainSimulatedLaunchablePrefix();
+    void drainRealLaunchablePrefix(bool tail_flush_only);
     void resetStepState();
     std::uint64_t plannedBucketBytes() const;
 
@@ -62,7 +76,10 @@ private:
         std::size_t ready_count = 0;
         bool touched = false;
         bool launched = false;
+        bool simulated_launched = false;
         bool completed = false;
+        SyncLaunchReason launch_reason = SyncLaunchReason::None;
+        SyncRequestLifecycle request_lifecycle = SyncRequestLifecycle::NotLaunched;
         DistributedRequest request;
     };
 
@@ -72,17 +89,23 @@ private:
         std::vector<BucketStepState> buckets;
         std::uint64_t local_batch = 0;
         std::uint64_t global_batch_size = 0;
+        std::size_t real_launch_cursor = 0;
+        std::size_t simulated_launch_cursor = 0;
         bool global_batch_reduced = false;
         bool backward_complete = false;
         bool finalized = false;
         bool step_active = false;
         bool saw_ready_event = false;
         bool planning_completed = false;
+        std::chrono::steady_clock::time_point step_begin_time {};
+        std::chrono::steady_clock::time_point backward_complete_time {};
+        bool backward_complete_time_recorded = false;
     };
 
     const DistributedContext& dist_;
     ParamRegistry registry_;
     BucketLayout bucket_layout_;
+    const std::string layout_descriptor_;
     StepContext step_;
     SyncStepProfile last_profile_;
 };

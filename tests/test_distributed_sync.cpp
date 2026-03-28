@@ -12,6 +12,7 @@
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
@@ -55,6 +56,55 @@ void runBackwardWithRuntime(GradientSyncRuntime& runtime,
         runtime.onBackwardComplete();
     });
     engine.backward(loss);
+}
+
+std::string encodeLaunchSequence(const SyncStepProfile& profile, SyncTraceChannel channel) {
+    std::ostringstream out;
+    bool first = true;
+    for (const auto& event : profile.launch_events) {
+        if (event.channel != channel) {
+            continue;
+        }
+        if (!first) {
+            out << ",";
+        }
+        out << event.bucket_idx;
+        first = false;
+    }
+    return out.str();
+}
+
+std::string expectedPrefixSequence(std::size_t bucket_count) {
+    std::ostringstream out;
+    for (std::size_t bucket_idx = 0; bucket_idx < bucket_count; ++bucket_idx) {
+        if (bucket_idx > 0) {
+            out << ",";
+        }
+        out << bucket_idx;
+    }
+    return out.str();
+}
+
+std::size_t countLaunchEvents(const SyncStepProfile& profile,
+                              SyncTraceChannel channel,
+                              SyncLaunchReason reason) {
+    std::size_t count = 0;
+    for (const auto& event : profile.launch_events) {
+        if (event.channel == channel && event.reason == reason) {
+            count += 1;
+        }
+    }
+    return count;
+}
+
+void assertTraceLifecycleSeparation(const SyncStepProfile& profile) {
+    for (const auto& event : profile.launch_events) {
+        if (event.channel == SyncTraceChannel::Simulated) {
+            assert(event.request_lifecycle == SyncRequestLifecycle::SimulatedOnly);
+        } else {
+            assert(event.request_lifecycle != SyncRequestLifecycle::SimulatedOnly);
+        }
+    }
 }
 
 void test_bucket_layout_mapping_and_zero_fill() {
@@ -222,6 +272,277 @@ void test_bucketed_runtime_detects_missing_ready_in_planned_mode() {
         threw = true;
     }
     assert(threw);
+}
+
+void test_bucketed_runtime_emits_separate_simulated_and_real_traces() {
+    int argc = 0;
+    char** argv = nullptr;
+    DistributedContext dist(argc, argv);
+
+    auto p1 = makeParam(1, 1, 2.0);
+    auto p2 = makeParam(1, 1, 3.0);
+    auto loss = MathOps::sum(p1);
+
+    BucketedOverlapRuntime runtime(dist, {p1, p2}, sizeof(double));
+    runtime.beginStep(4);
+    runBackwardWithRuntime(runtime, loss);
+    const std::uint64_t global_batch = runtime.finalizeAndGetGlobalBatch();
+    assert(global_batch == 4);
+
+    const auto profile = runtime.lastStepProfile();
+    assert(!profile.launch_events.empty());
+    assert(!encodeLaunchSequence(profile, SyncTraceChannel::Simulated).empty());
+    assert(!encodeLaunchSequence(profile, SyncTraceChannel::RealComm).empty());
+    assert(profile.simulated_launch_bucket_count == profile.launched_bucket_count);
+    assert(countLaunchEvents(profile,
+                             SyncTraceChannel::RealComm,
+                             SyncLaunchReason::StructuralZeroExpectedLaunch) >= 1);
+    assertTraceLifecycleSeparation(profile);
+}
+
+void test_bucketed_runtime_pack_reads_final_ready_value() {
+    int argc = 0;
+    char** argv = nullptr;
+    DistributedContext dist(argc, argv);
+
+    auto p = makeParam(1, 1, 2.0);
+    auto c1 = constant(Matrix(1, 1, 3.0));
+    auto c2 = constant(Matrix(1, 1, 5.0));
+    auto loss = MathOps::add(MathOps::mul(p, c1), MathOps::mul(p, c2));
+
+    BucketedOverlapRuntime runtime(dist, {p}, sizeof(double));
+    runtime.beginStep(1);
+    runBackwardWithRuntime(runtime, loss);
+    const auto global_batch = runtime.finalizeAndGetGlobalBatch();
+
+    assert(global_batch == 1);
+    assert(almostEqual(p->grad().data[0], 8.0));
+    const auto profile = runtime.lastStepProfile();
+    assert(countLaunchEvents(profile,
+                             SyncTraceChannel::RealComm,
+                             SyncLaunchReason::RealEarlyLaunch) == 1);
+}
+
+void test_bucketed_runtime_later_bucket_ready_but_blocked_by_cursor() {
+    int argc = 0;
+    char** argv = nullptr;
+    DistributedContext dist(argc, argv);
+
+    auto p1 = makeParam(1, 1, 2.0);
+    auto p2 = makeParam(1, 1, 3.0);
+    BucketedOverlapRuntime runtime(dist, {p1, p2}, sizeof(double));
+    runtime.beginStep(1);
+    runtime.planStep({p1, p2});
+
+    seedGrad(p2, 7.0);
+    runtime.onParameterGradReady(*p2);
+    auto profile = runtime.lastStepProfile();
+    assert(encodeLaunchSequence(profile, SyncTraceChannel::RealComm).empty());
+
+    seedGrad(p1, 11.0);
+    runtime.onParameterGradReady(*p1);
+    profile = runtime.lastStepProfile();
+    assert(encodeLaunchSequence(profile, SyncTraceChannel::RealComm) == "0,1");
+
+    runtime.onBackwardComplete();
+    const auto global_batch = runtime.finalizeAndGetGlobalBatch();
+    assert(global_batch == 1);
+    assert(almostEqual(p1->grad().data[0], 11.0));
+    assert(almostEqual(p2->grad().data[0], 7.0));
+}
+
+void test_bucketed_runtime_finalize_negative_paths() {
+    int argc = 0;
+    char** argv = nullptr;
+    DistributedContext dist(argc, argv);
+
+    auto p1 = makeParam(1, 1, 2.0);
+    auto p2 = makeParam(1, 1, 3.0);
+
+    {
+        BucketedOverlapRuntime runtime(dist, {p1}, sizeof(double));
+        runtime.beginStep(1);
+        runtime.planStep({p1});
+
+        bool threw = false;
+        try {
+            (void)runtime.finalizeAndGetGlobalBatch();
+        } catch (const std::logic_error&) {
+            threw = true;
+        }
+        assert(threw);
+    }
+
+    {
+        BucketedOverlapRuntime runtime(dist, {p1}, sizeof(double));
+        runtime.beginStep(1);
+        runtime.planStep({p1});
+        seedGrad(p1, 1.0);
+        runtime.onParameterGradReady(*p1);
+        runtime.onBackwardComplete();
+        (void)runtime.finalizeAndGetGlobalBatch();
+
+        bool threw = false;
+        try {
+            (void)runtime.finalizeAndGetGlobalBatch();
+        } catch (const std::logic_error&) {
+            threw = true;
+        }
+        assert(threw);
+    }
+
+    {
+        BucketedOverlapRuntime runtime(dist, {p1, p2}, sizeof(double));
+        runtime.beginStep(1);
+        runtime.planStep({p1, p2});
+        seedGrad(p2, 1.0);
+        runtime.onParameterGradReady(*p2);
+
+        bool backward_threw = false;
+        try {
+            runtime.onBackwardComplete();
+        } catch (const std::logic_error&) {
+            backward_threw = true;
+        }
+        assert(backward_threw);
+
+        bool finalize_threw = false;
+        try {
+            (void)runtime.finalizeAndGetGlobalBatch();
+        } catch (const std::logic_error&) {
+            finalize_threw = true;
+        }
+        assert(finalize_threw);
+    }
+}
+
+void test_bucketed_runtime_shared_bucket_pack_safe_multiple_parameters() {
+    int argc = 0;
+    char** argv = nullptr;
+    DistributedContext dist(argc, argv);
+
+    auto p1 = makeParam(1, 1, 2.0);
+    auto p2 = makeParam(1, 1, 3.0);
+    auto c3 = constant(Matrix(1, 1, 3.0));
+    auto c5 = constant(Matrix(1, 1, 5.0));
+    auto c7 = constant(Matrix(1, 1, 7.0));
+    auto loss = MathOps::add(
+        MathOps::add(MathOps::mul(p1, c3), MathOps::mul(p1, c5)),
+        MathOps::mul(p2, c7));
+
+    BucketedOverlapRuntime runtime(dist, {p1, p2}, 2 * sizeof(double));
+    runtime.beginStep(1);
+    runBackwardWithRuntime(runtime, loss);
+    const auto global_batch = runtime.finalizeAndGetGlobalBatch();
+    assert(global_batch == 1);
+
+    assert(almostEqual(p1->grad().data[0], 8.0));
+    assert(almostEqual(p2->grad().data[0], 7.0));
+    const auto profile = runtime.lastStepProfile();
+    assert(encodeLaunchSequence(profile, SyncTraceChannel::RealComm) == "0");
+}
+
+void test_bucketed_baseline_and_overlap_match_parameter_grads() {
+    int argc = 0;
+    char** argv = nullptr;
+    DistributedContext dist(argc, argv);
+
+    auto baseline_p1 = makeParam(1, 1, 2.0);
+    auto baseline_p2 = makeParam(1, 1, 3.0);
+    auto overlap_p1 = makeParam(1, 1, 2.0);
+    auto overlap_p2 = makeParam(1, 1, 3.0);
+    auto c3 = constant(Matrix(1, 1, 3.0));
+    auto c5 = constant(Matrix(1, 1, 5.0));
+    auto c7 = constant(Matrix(1, 1, 7.0));
+
+    auto baseline_loss = MathOps::add(
+        MathOps::add(MathOps::mul(baseline_p1, c3), MathOps::mul(baseline_p1, c5)),
+        MathOps::mul(baseline_p2, c7));
+    baseline_loss->backward();
+
+    StepBoundaryBucketedSync baseline_sync(dist, {baseline_p1, baseline_p2}, 2 * sizeof(double));
+    const auto baseline_global_batch = baseline_sync.sync(1);
+    assert(baseline_global_batch == 1);
+
+    auto overlap_loss = MathOps::add(
+        MathOps::add(MathOps::mul(overlap_p1, c3), MathOps::mul(overlap_p1, c5)),
+        MathOps::mul(overlap_p2, c7));
+    BucketedOverlapRuntime overlap_runtime(dist, {overlap_p1, overlap_p2}, 2 * sizeof(double));
+    overlap_runtime.beginStep(1);
+    runBackwardWithRuntime(overlap_runtime, overlap_loss);
+    const auto overlap_global_batch = overlap_runtime.finalizeAndGetGlobalBatch();
+    assert(overlap_global_batch == 1);
+
+    assert(almostEqual(baseline_p1->grad().data[0], overlap_p1->grad().data[0]));
+    assert(almostEqual(baseline_p2->grad().data[0], overlap_p2->grad().data[0]));
+}
+
+void test_bucketed_runtime_layout_mismatch_fails_fast(DistributedContext& dist) {
+    if (dist.worldSize() != 2) {
+        throw std::runtime_error("MPI layout mismatch test requires world_size == 2.");
+    }
+
+    auto p1 = makeParam(1, 1, 2.0);
+    auto p2 = makeParam(1, 1, 30.0);
+
+    bool threw = false;
+    try {
+        if (dist.rank() == 0) {
+            BucketedOverlapRuntime runtime(dist, {p1, p2}, sizeof(double));
+            (void)runtime;
+        } else {
+            BucketedOverlapRuntime runtime(dist, {p2, p1}, sizeof(double));
+            (void)runtime;
+        }
+    } catch (const std::logic_error&) {
+        threw = true;
+    }
+    assert(threw);
+}
+
+void test_bucketed_runtime_real_launch_sequence_rank_consistent(DistributedContext& dist) {
+    if (dist.worldSize() != 2) {
+        throw std::runtime_error("MPI real launch sequence test requires world_size == 2.");
+    }
+
+    auto p1 = makeParam(1, 1, 2.0);
+    auto p2 = makeParam(1, 1, 3.0);
+    auto p3 = makeParam(1, 1, 4.0);
+    Node::Ptr loss = (dist.rank() == 0)
+        ? MathOps::add(MathOps::sum(p1), MathOps::sum(p3))
+        : MathOps::add(MathOps::sum(p2), MathOps::sum(p3));
+
+    BucketedOverlapRuntime runtime(dist, {p1, p2, p3}, 2 * sizeof(double));
+    runtime.beginStep(1);
+    runBackwardWithRuntime(runtime, loss);
+    (void)runtime.finalizeAndGetGlobalBatch();
+
+    const auto profile = runtime.lastStepProfile();
+    const auto sequences = dist.allGatherStrings(encodeLaunchSequence(profile, SyncTraceChannel::RealComm));
+    for (std::size_t i = 1; i < sequences.size(); ++i) {
+        assert(sequences[i] == sequences[0]);
+    }
+    assert(sequences[0] == expectedPrefixSequence(profile.launched_bucket_count));
+}
+
+void test_bucketed_runtime_tail_flush_trace_reason(DistributedContext& dist) {
+    if (dist.worldSize() != 2) {
+        throw std::runtime_error("MPI tail flush trace test requires world_size == 2.");
+    }
+
+    auto p1 = makeParam(1, 1, 2.0);
+    auto p2 = makeParam(1, 1, 3.0);
+    Node::Ptr loss = (dist.rank() == 0) ? MathOps::sum(p1) : MathOps::sum(p2);
+
+    BucketedOverlapRuntime runtime(dist, {p1, p2}, sizeof(double));
+    runtime.beginStep(1);
+    runBackwardWithRuntime(runtime, loss);
+    (void)runtime.finalizeAndGetGlobalBatch();
+
+    const auto profile = runtime.lastStepProfile();
+    assert(countLaunchEvents(profile,
+                             SyncTraceChannel::RealComm,
+                             SyncLaunchReason::TailFlushLaunch) >= 1);
 }
 
 void test_step_boundary_bucketed_sync_rank_divergent_active_sets(DistributedContext& dist) {
@@ -441,11 +762,14 @@ void test_bucketed_runtime_filters_frozen_and_non_parameter_leaves(DistributedCo
 
 int runMpiContractTests(int argc, char** argv) {
     DistributedContext dist(argc, argv);
+    test_bucketed_runtime_layout_mismatch_fails_fast(dist);
     test_step_boundary_bucketed_sync_rank_divergent_active_sets(dist);
     test_step_boundary_bucketed_sync_shared_bucket_partial_reachable(dist);
     test_step_boundary_bucketed_sync_filters_frozen_and_non_parameter_leaves(dist);
     test_bucketed_runtime_rank_divergent_active_sets_planned(dist);
     test_bucketed_runtime_shared_bucket_partial_reachable(dist);
+    test_bucketed_runtime_real_launch_sequence_rank_consistent(dist);
+    test_bucketed_runtime_tail_flush_trace_reason(dist);
     test_bucketed_runtime_no_cross_step_leak(dist);
     test_bucketed_runtime_filters_frozen_and_non_parameter_leaves(dist);
     std::cout << "Distributed MPI sync tests passed!" << std::endl;
@@ -460,6 +784,12 @@ int runLocalDistributedSyncTests() {
     test_bucketed_runtime_plan_must_precede_ready();
     test_bucketed_runtime_empty_step_is_legal();
     test_bucketed_runtime_detects_missing_ready_in_planned_mode();
+    test_bucketed_runtime_emits_separate_simulated_and_real_traces();
+    test_bucketed_runtime_pack_reads_final_ready_value();
+    test_bucketed_runtime_later_bucket_ready_but_blocked_by_cursor();
+    test_bucketed_runtime_finalize_negative_paths();
+    test_bucketed_runtime_shared_bucket_pack_safe_multiple_parameters();
+    test_bucketed_baseline_and_overlap_match_parameter_grads();
     std::cout << "Distributed sync tests passed!" << std::endl;
     return 0;
 }

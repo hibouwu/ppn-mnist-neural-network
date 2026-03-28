@@ -144,6 +144,33 @@ void test_parameter_ready_hook_fires_once_after_full_accumulation() {
     assert(almostEqual(p->grad().data[0], 8.0));
 }
 
+void test_parameter_ready_hook_matches_final_accumulated_tensor() {
+    Matrix p_val(1, 2);
+    p_val.data = {2.0, -1.0};
+    auto p = std::make_shared<Node>(p_val);
+    p->setIsParameter(true);
+    auto c1 = constant(Matrix(1, 2, 3.0));
+    auto c2 = constant(Matrix(1, 2, 5.0));
+    auto left = MathOps::sum(MathOps::mul(p, c1));
+    auto right = MathOps::sum(MathOps::mul(p, c2));
+    auto loss = MathOps::add(left, right);
+
+    Matrix grad_seen_at_hook(1, 2, 0.0);
+    int fire_count = 0;
+    AutogradEngine engine;
+    engine.setParameterReadyHook([&](Node& node) {
+        fire_count += 1;
+        grad_seen_at_hook = node.grad();
+    });
+    engine.backward(loss);
+
+    assert(fire_count == 1);
+    assert(grad_seen_at_hook.data.size() == p->grad().data.size());
+    for (std::size_t i = 0; i < p->grad().data.size(); ++i) {
+        assert(almostEqual(grad_seen_at_hook.data[i], p->grad().data[i]));
+    }
+}
+
 void test_parameter_ready_hook_ignores_non_parameter_leaves() {
     auto x = std::make_shared<Node>(Matrix(1, 1, 2.0));
     auto c = constant(Matrix(1, 1, 4.0));
@@ -199,6 +226,7 @@ int main() {
     test_root_seed_rules();
     test_parameter_ready_hook();
     test_parameter_ready_hook_fires_once_after_full_accumulation();
+    test_parameter_ready_hook_matches_final_accumulated_tensor();
     test_parameter_ready_hook_ignores_non_parameter_leaves();
     test_invalid_target_rejected();
     std::cout << "Autograd engine tests passed!" << std::endl;

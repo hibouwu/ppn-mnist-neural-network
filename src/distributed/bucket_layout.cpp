@@ -1,6 +1,7 @@
 #include "distributed/bucket_layout.hpp"
 
 #include <algorithm>
+#include <sstream>
 #include <stdexcept>
 
 namespace {
@@ -59,6 +60,14 @@ BucketLayout::BucketLayout(const ParamRegistry& registry, std::size_t bucket_siz
             if (!inserted) {
                 throw std::logic_error("BucketLayout: parameter appears in multiple buckets.");
             }
+            descriptor_entries_.push_back(DescriptorEntry{
+                registry.ordinalFor(*ref.param),
+                registry.logicalKeyFor(*ref.param),
+                ref.param->value().data.size(),
+                "double",
+                bucket_idx,
+                ref.offset_elems,
+                ref.length_elems});
         }
     }
 }
@@ -73,6 +82,22 @@ std::optional<std::size_t> BucketLayout::bucketIndexFor(const Node& param) const
 
 std::uint64_t BucketLayout::bucketBytes(std::size_t bucket_idx) const {
     return static_cast<std::uint64_t>(buckets_.at(bucket_idx).buffer.size() * sizeof(double));
+}
+
+std::string BucketLayout::serializedDescriptor() const {
+    std::ostringstream out;
+    out << "bucket_count=" << buckets_.size() << "\n";
+    for (const auto& entry : descriptor_entries_) {
+        out << entry.global_param_ordinal
+            << "|" << entry.logical_param_key
+            << "|" << entry.numel
+            << "|" << entry.dtype
+            << "|" << entry.bucket_id
+            << "|" << entry.offset
+            << "|" << entry.length
+            << "\n";
+    }
+    return out.str();
 }
 
 void BucketLayout::packBucket(std::size_t bucket_idx,

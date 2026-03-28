@@ -46,7 +46,7 @@ std::string formatGradSyncWarning(const runtime::GradSyncModeInfo& mode_info) {
     }
     if (mode_info.parsed_mode == runtime::GradSyncMode::BucketedOverlap) {
         return "[WARNING] overlap_bucketed is correctness-only at this stage. "
-               "Do not interpret its timing or sync_effective_overlap as overlap evidence until new multi-rank proof exists.";
+               "Do not interpret its timing, effective_overlap, or sync_effective_overlap as proof of qualified overlap until Stage C revalidation exists.";
     }
     return "";
 }
@@ -71,6 +71,7 @@ std::string formatEpochSummary(int epoch,
         << ", sync_launch = " << train_metrics.profile.sync_launch_time_s << "s"
         << ", sync_unpack = " << train_metrics.profile.sync_unpack_time_s << "s"
         << ", effective_overlap = " << train_metrics.profile.sync_effective_overlap
+        << " (trace only; not qualification)"
         << ", opt = " << train_metrics.profile.opt_time_s << "s"
         << ", avg_step = " << derived_stats.avg_step_time_ms << "ms"
         << ", samples/s = " << derived_stats.samples_per_s;
@@ -87,6 +88,7 @@ std::string formatProfileRunTotalSummary(const RunProfileSummary& summary, doubl
         << ", sync_total_s=" << summary.sync_total_s
         << ", sync_wait_s=" << summary.sync_wait_s
         << ", sync_effective_overlap=" << summary.sync_effective_overlap
+        << ", sync_effective_overlap_note=trace_only_not_qualification"
         << ", opt_s=" << summary.opt_s
         << ", profiled_total_us=" << summary.profiled_total_us
         << ", uncovered_us=" << std::fixed << std::setprecision(0) << uncovered_us;

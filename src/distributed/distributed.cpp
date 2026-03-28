@@ -1,7 +1,9 @@
 #include "distributed/distributed.hpp"
 
 #include <limits>
+#include <string>
 #include <stdexcept>
+#include <vector>
 
 #ifdef USE_MPI
 #include <mpi.h>
@@ -146,5 +148,49 @@ bool DistributedContext::isNullRequest(const DistributedRequest& req) const {
     return req.request == MPI_REQUEST_NULL;
 #else
     return req.completed;
+#endif
+}
+
+std::vector<std::string> DistributedContext::allGatherStrings(const std::string& local) const {
+#ifdef USE_MPI
+    if (world_size_ <= 1) {
+        return {local};
+    }
+
+    const int local_size = static_cast<int>(local.size());
+    std::vector<int> sizes(static_cast<std::size_t>(world_size_), 0);
+    if (MPI_Allgather(&local_size, 1, MPI_INT, sizes.data(), 1, MPI_INT, MPI_COMM_WORLD) != MPI_SUCCESS) {
+        throw std::runtime_error("MPI_Allgather failed for string sizes.");
+    }
+
+    std::vector<int> displs(static_cast<std::size_t>(world_size_), 0);
+    int total_size = 0;
+    for (int i = 0; i < world_size_; ++i) {
+        displs[static_cast<std::size_t>(i)] = total_size;
+        total_size += sizes[static_cast<std::size_t>(i)];
+    }
+
+    std::vector<char> all_chars(static_cast<std::size_t>(total_size), '\0');
+    if (MPI_Allgatherv(local.data(),
+                       local_size,
+                       MPI_CHAR,
+                       all_chars.data(),
+                       sizes.data(),
+                       displs.data(),
+                       MPI_CHAR,
+                       MPI_COMM_WORLD) != MPI_SUCCESS) {
+        throw std::runtime_error("MPI_Allgatherv failed for string payload.");
+    }
+
+    std::vector<std::string> out(static_cast<std::size_t>(world_size_));
+    for (int i = 0; i < world_size_; ++i) {
+        const int size = sizes[static_cast<std::size_t>(i)];
+        const int disp = displs[static_cast<std::size_t>(i)];
+        out[static_cast<std::size_t>(i)] =
+            std::string(all_chars.data() + disp, all_chars.data() + disp + size);
+    }
+    return out;
+#else
+    return {local};
 #endif
 }
