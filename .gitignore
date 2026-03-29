@@ -74,3 +74,5 @@ ProjetRapportlatex/*.nav
 
 # Heavy experiment data
 output/ExperienceHPO/hpo_runs/
+
+*.codex

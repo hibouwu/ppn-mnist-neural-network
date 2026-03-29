@@ -20,6 +20,8 @@
 
 namespace {
 
+constexpr std::size_t kBucketElemBytes = sizeof(Scalar);
+
 bool almostEqual(double a, double b, double eps = 1e-9) {
     return std::abs(a - b) <= eps;
 }
@@ -112,7 +114,7 @@ void test_bucket_layout_mapping_and_zero_fill() {
     auto p2 = makeParam(1, 3, 10.0);
     auto p3 = makeParam(1, 5, 20.0);
     ParamRegistry registry({p1, p2, p3});
-    BucketLayout layout(registry, 5 * sizeof(double));
+    BucketLayout layout(registry, 5 * kBucketElemBytes);
 
     assert(layout.bucketCount() == 2);
     assert(layout.bucketIndexFor(*p1).has_value());
@@ -120,6 +122,10 @@ void test_bucket_layout_mapping_and_zero_fill() {
     assert(layout.bucketIndexFor(*p3).has_value());
     assert(*layout.bucketIndexFor(*p1) == *layout.bucketIndexFor(*p2));
     assert(*layout.bucketIndexFor(*p3) != *layout.bucketIndexFor(*p1));
+    assert(layout.bucketBytes(*layout.bucketIndexFor(*p1)) == 5 * kBucketElemBytes);
+    const std::string descriptor = layout.serializedDescriptor();
+    assert(descriptor.find("|float32|") != std::string::npos);
+    assert(descriptor.find("|double|") == std::string::npos);
 
     seedGrad(p1, 1.0);
     seedGrad(p2, 2.0);
@@ -153,14 +159,14 @@ void test_step_boundary_bucketed_sync_world_size_one() {
     seedGrad(p1, 1.0);
     seedGrad(p2, 2.0);
 
-    StepBoundaryBucketedSync sync(dist, {p1, p2}, 4 * sizeof(double));
+    StepBoundaryBucketedSync sync(dist, {p1, p2}, 4 * kBucketElemBytes);
     const std::uint64_t global_batch = sync.sync(7);
     assert(global_batch == 7);
 
     const auto profile = sync.lastStepProfile();
     assert(profile.bucket_count == 2);
     assert(profile.launched_bucket_count == 2);
-    assert(profile.bucket_bytes >= static_cast<std::uint64_t>(5 * sizeof(double)));
+    assert(profile.bucket_bytes >= static_cast<std::uint64_t>(5 * kBucketElemBytes));
     assert(!profile.effective_overlap);
     assert(almostEqual(p1->grad().data[0], 1.0));
     assert(almostEqual(p2->grad().data[2], 6.0));
@@ -176,7 +182,7 @@ void test_bucketed_runtime_planned_overlap_and_shared_bucket() {
     auto p3 = makeParam(1, 1, 4.0);
     auto loss = MathOps::sum(p1);
 
-    BucketedOverlapRuntime runtime(dist, {p1, p2, p3}, 2 * sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1, p2, p3}, 2 * kBucketElemBytes);
     runtime.beginStep(4);
     runBackwardWithRuntime(runtime, loss);
 
@@ -200,7 +206,7 @@ void test_bucketed_runtime_rejects_unknown_parameter_event() {
 
     auto p1 = makeParam(1, 1, 2.0);
     auto outsider = makeParam(1, 1, 5.0);
-    BucketedOverlapRuntime runtime(dist, {p1}, sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1}, kBucketElemBytes);
     runtime.beginStep(1);
 
     bool threw = false;
@@ -219,7 +225,7 @@ void test_bucketed_runtime_plan_must_precede_ready() {
 
     auto p1 = makeParam(1, 1, 2.0);
     seedGrad(p1, 1.0);
-    BucketedOverlapRuntime runtime(dist, {p1}, sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1}, kBucketElemBytes);
     runtime.beginStep(1);
 
     bool threw = false;
@@ -237,7 +243,7 @@ void test_bucketed_runtime_empty_step_is_legal() {
     DistributedContext dist(argc, argv);
 
     auto p1 = makeParam(1, 1, 2.0);
-    BucketedOverlapRuntime runtime(dist, {p1}, sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1}, kBucketElemBytes);
     runtime.beginStep(9);
     runtime.planStep({});
     runtime.onBackwardComplete();
@@ -259,7 +265,7 @@ void test_bucketed_runtime_detects_missing_ready_in_planned_mode() {
 
     auto p1 = makeParam(1, 1, 2.0);
     auto p2 = makeParam(1, 1, 3.0);
-    BucketedOverlapRuntime runtime(dist, {p1, p2}, 2 * sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1, p2}, 2 * kBucketElemBytes);
     runtime.beginStep(3);
     runtime.planStep({p1, p2});
     seedGrad(p1, 1.0);
@@ -283,7 +289,7 @@ void test_bucketed_runtime_emits_separate_simulated_and_real_traces() {
     auto p2 = makeParam(1, 1, 3.0);
     auto loss = MathOps::sum(p1);
 
-    BucketedOverlapRuntime runtime(dist, {p1, p2}, sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1, p2}, kBucketElemBytes);
     runtime.beginStep(4);
     runBackwardWithRuntime(runtime, loss);
     const std::uint64_t global_batch = runtime.finalizeAndGetGlobalBatch();
@@ -310,7 +316,7 @@ void test_bucketed_runtime_pack_reads_final_ready_value() {
     auto c2 = constant(Matrix(1, 1, 5.0));
     auto loss = MathOps::add(MathOps::mul(p, c1), MathOps::mul(p, c2));
 
-    BucketedOverlapRuntime runtime(dist, {p}, sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p}, kBucketElemBytes);
     runtime.beginStep(1);
     runBackwardWithRuntime(runtime, loss);
     const auto global_batch = runtime.finalizeAndGetGlobalBatch();
@@ -330,7 +336,7 @@ void test_bucketed_runtime_later_bucket_ready_but_blocked_by_cursor() {
 
     auto p1 = makeParam(1, 1, 2.0);
     auto p2 = makeParam(1, 1, 3.0);
-    BucketedOverlapRuntime runtime(dist, {p1, p2}, sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1, p2}, kBucketElemBytes);
     runtime.beginStep(1);
     runtime.planStep({p1, p2});
 
@@ -360,7 +366,7 @@ void test_bucketed_runtime_finalize_negative_paths() {
     auto p2 = makeParam(1, 1, 3.0);
 
     {
-        BucketedOverlapRuntime runtime(dist, {p1}, sizeof(double));
+        BucketedOverlapRuntime runtime(dist, {p1}, kBucketElemBytes);
         runtime.beginStep(1);
         runtime.planStep({p1});
 
@@ -374,7 +380,7 @@ void test_bucketed_runtime_finalize_negative_paths() {
     }
 
     {
-        BucketedOverlapRuntime runtime(dist, {p1}, sizeof(double));
+        BucketedOverlapRuntime runtime(dist, {p1}, kBucketElemBytes);
         runtime.beginStep(1);
         runtime.planStep({p1});
         seedGrad(p1, 1.0);
@@ -392,7 +398,7 @@ void test_bucketed_runtime_finalize_negative_paths() {
     }
 
     {
-        BucketedOverlapRuntime runtime(dist, {p1, p2}, sizeof(double));
+        BucketedOverlapRuntime runtime(dist, {p1, p2}, kBucketElemBytes);
         runtime.beginStep(1);
         runtime.planStep({p1, p2});
         seedGrad(p2, 1.0);
@@ -430,7 +436,7 @@ void test_bucketed_runtime_shared_bucket_pack_safe_multiple_parameters() {
         MathOps::add(MathOps::mul(p1, c3), MathOps::mul(p1, c5)),
         MathOps::mul(p2, c7));
 
-    BucketedOverlapRuntime runtime(dist, {p1, p2}, 2 * sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1, p2}, 2 * kBucketElemBytes);
     runtime.beginStep(1);
     runBackwardWithRuntime(runtime, loss);
     const auto global_batch = runtime.finalizeAndGetGlobalBatch();
@@ -460,14 +466,14 @@ void test_bucketed_baseline_and_overlap_match_parameter_grads() {
         MathOps::mul(baseline_p2, c7));
     baseline_loss->backward();
 
-    StepBoundaryBucketedSync baseline_sync(dist, {baseline_p1, baseline_p2}, 2 * sizeof(double));
+    StepBoundaryBucketedSync baseline_sync(dist, {baseline_p1, baseline_p2}, 2 * kBucketElemBytes);
     const auto baseline_global_batch = baseline_sync.sync(1);
     assert(baseline_global_batch == 1);
 
     auto overlap_loss = MathOps::add(
         MathOps::add(MathOps::mul(overlap_p1, c3), MathOps::mul(overlap_p1, c5)),
         MathOps::mul(overlap_p2, c7));
-    BucketedOverlapRuntime overlap_runtime(dist, {overlap_p1, overlap_p2}, 2 * sizeof(double));
+    BucketedOverlapRuntime overlap_runtime(dist, {overlap_p1, overlap_p2}, 2 * kBucketElemBytes);
     overlap_runtime.beginStep(1);
     runBackwardWithRuntime(overlap_runtime, overlap_loss);
     const auto overlap_global_batch = overlap_runtime.finalizeAndGetGlobalBatch();
@@ -488,10 +494,10 @@ void test_bucketed_runtime_layout_mismatch_fails_fast(DistributedContext& dist) 
     bool threw = false;
     try {
         if (dist.rank() == 0) {
-            BucketedOverlapRuntime runtime(dist, {p1, p2}, sizeof(double));
+            BucketedOverlapRuntime runtime(dist, {p1, p2}, kBucketElemBytes);
             (void)runtime;
         } else {
-            BucketedOverlapRuntime runtime(dist, {p2, p1}, sizeof(double));
+            BucketedOverlapRuntime runtime(dist, {p2, p1}, kBucketElemBytes);
             (void)runtime;
         }
     } catch (const std::logic_error&) {
@@ -512,7 +518,7 @@ void test_bucketed_runtime_real_launch_sequence_rank_consistent(DistributedConte
         ? MathOps::add(MathOps::sum(p1), MathOps::sum(p3))
         : MathOps::add(MathOps::sum(p2), MathOps::sum(p3));
 
-    BucketedOverlapRuntime runtime(dist, {p1, p2, p3}, 2 * sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1, p2, p3}, 2 * kBucketElemBytes);
     runtime.beginStep(1);
     runBackwardWithRuntime(runtime, loss);
     (void)runtime.finalizeAndGetGlobalBatch();
@@ -534,7 +540,7 @@ void test_bucketed_runtime_tail_flush_trace_reason(DistributedContext& dist) {
     auto p2 = makeParam(1, 1, 3.0);
     Node::Ptr loss = (dist.rank() == 0) ? MathOps::sum(p1) : MathOps::sum(p2);
 
-    BucketedOverlapRuntime runtime(dist, {p1, p2}, sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1, p2}, kBucketElemBytes);
     runtime.beginStep(1);
     runBackwardWithRuntime(runtime, loss);
     (void)runtime.finalizeAndGetGlobalBatch();
@@ -560,7 +566,7 @@ void test_step_boundary_bucketed_sync_rank_divergent_active_sets(DistributedCont
         seedGrad(p2, 1.0);
     }
 
-    StepBoundaryBucketedSync sync(dist, {p1, p2}, sizeof(double));
+    StepBoundaryBucketedSync sync(dist, {p1, p2}, kBucketElemBytes);
     const std::uint64_t global_batch = sync.sync(1);
 
     assert(global_batch == 2);
@@ -592,7 +598,7 @@ void test_step_boundary_bucketed_sync_shared_bucket_partial_reachable(Distribute
         seedGrad(p3, 1.0);
     }
 
-    StepBoundaryBucketedSync sync(dist, {p1, p2, p3}, 2 * sizeof(double));
+    StepBoundaryBucketedSync sync(dist, {p1, p2, p3}, 2 * kBucketElemBytes);
     const std::uint64_t global_batch = sync.sync(1);
 
     assert(global_batch == 2);
@@ -628,7 +634,7 @@ void test_step_boundary_bucketed_sync_filters_frozen_and_non_parameter_leaves(
         sync_param->zeroGrad();
     }
 
-    StepBoundaryBucketedSync sync(dist, filtered, sizeof(double));
+    StepBoundaryBucketedSync sync(dist, filtered, kBucketElemBytes);
     const std::uint64_t global_batch = sync.sync(1);
 
     assert(global_batch == 2);
@@ -650,7 +656,7 @@ void test_bucketed_runtime_rank_divergent_active_sets_planned(DistributedContext
     auto p2 = makeParam(1, 1, 3.0);
     auto loss = (dist.rank() == 0) ? MathOps::sum(p1) : MathOps::sum(p2);
 
-    BucketedOverlapRuntime runtime(dist, {p1, p2}, sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1, p2}, kBucketElemBytes);
     runtime.beginStep(1);
     runBackwardWithRuntime(runtime, loss);
 
@@ -677,7 +683,7 @@ void test_bucketed_runtime_shared_bucket_partial_reachable(DistributedContext& d
         ? MathOps::add(MathOps::sum(p1), MathOps::sum(p3))
         : MathOps::add(MathOps::sum(p2), MathOps::sum(p3));
 
-    BucketedOverlapRuntime runtime(dist, {p1, p2, p3}, 2 * sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1, p2, p3}, 2 * kBucketElemBytes);
     runtime.beginStep(1);
     runBackwardWithRuntime(runtime, loss);
 
@@ -699,7 +705,7 @@ void test_bucketed_runtime_no_cross_step_leak(DistributedContext& dist) {
 
     auto p1 = makeParam(1, 1, 2.0);
     auto p2 = makeParam(1, 1, 3.0);
-    BucketedOverlapRuntime runtime(dist, {p1, p2}, 2 * sizeof(double));
+    BucketedOverlapRuntime runtime(dist, {p1, p2}, 2 * kBucketElemBytes);
 
     runtime.beginStep(1);
     runBackwardWithRuntime(
@@ -743,7 +749,7 @@ void test_bucketed_runtime_filters_frozen_and_non_parameter_leaves(DistributedCo
     assert(filtered[0].get() == sync_param.get());
 
     auto loss = MathOps::add(MathOps::sum(sync_param), MathOps::sum(non_param_leaf));
-    BucketedOverlapRuntime runtime(dist, filtered, sizeof(double));
+    BucketedOverlapRuntime runtime(dist, filtered, kBucketElemBytes);
     runtime.beginStep(1);
     runBackwardWithRuntime(runtime, loss);
 

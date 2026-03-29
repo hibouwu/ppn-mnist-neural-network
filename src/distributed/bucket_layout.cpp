@@ -10,7 +10,7 @@ std::size_t checkedBucketSizeElems(std::size_t bucket_size_bytes) {
     if (bucket_size_bytes == 0) {
         throw std::invalid_argument("BucketLayout: bucket_size_bytes must be > 0.");
     }
-    const std::size_t elems = bucket_size_bytes / sizeof(double);
+    const std::size_t elems = bucket_size_bytes / sizeof(Scalar);
     return elems > 0 ? elems : 1;
 }
 
@@ -64,7 +64,7 @@ BucketLayout::BucketLayout(const ParamRegistry& registry, std::size_t bucket_siz
                 registry.ordinalFor(*ref.param),
                 registry.logicalKeyFor(*ref.param),
                 ref.param->value().data.size(),
-                "double",
+                "float32",
                 bucket_idx,
                 ref.offset_elems,
                 ref.length_elems});
@@ -81,7 +81,7 @@ std::optional<std::size_t> BucketLayout::bucketIndexFor(const Node& param) const
 }
 
 std::uint64_t BucketLayout::bucketBytes(std::size_t bucket_idx) const {
-    return static_cast<std::uint64_t>(buckets_.at(bucket_idx).buffer.size() * sizeof(double));
+    return static_cast<std::uint64_t>(buckets_.at(bucket_idx).buffer.size() * sizeof(Scalar));
 }
 
 std::string BucketLayout::serializedDescriptor() const {

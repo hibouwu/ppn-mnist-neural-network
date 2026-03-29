@@ -31,12 +31,15 @@ public:
     int worldSize() const { return world_size_; }
     bool isMaster() const { return rank_ == 0; }
 
+    // Main training synchronization path: parameter/gradient buckets in Scalar.
     void allReduceSum(Scalar* data, std::size_t n) const;
-    void allReduceSum(double* data, std::size_t n) const;
     void allReduceMax(Scalar* data, std::size_t n) const;
-    void allReduceMax(double* data, std::size_t n) const;
     std::uint64_t allReduceSumU64(std::uint64_t value) const;
     DistributedRequest iallReduceSum(Scalar* data, std::size_t n) const;
+
+    // Legacy / metrics path: aggregate statistics without changing their precision.
+    void allReduceSum(double* data, std::size_t n) const;
+    void allReduceMax(double* data, std::size_t n) const;
     void wait(DistributedRequest& req) const;
     void waitAll(std::vector<DistributedRequest>& reqs) const;
     bool isNullRequest(const DistributedRequest& req) const;
