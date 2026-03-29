@@ -171,7 +171,8 @@ CNNNetwork::CNNNetwork(const CNNConfig& cfg,
             c.conv_kernels[i],
             c.conv_kernels[i],
             c.conv_strides[i],
-            c.conv_paddings[i]
+            c.conv_paddings[i],
+            c.conv_backend
         );
 
         pools_.emplace_back(

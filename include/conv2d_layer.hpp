@@ -5,12 +5,21 @@
 #pragma once
 
 #include "node.hpp"
+#include <string>
 #include <vector>
 #include <cstddef>
+#include <memory>
 #include <utility>
+
+enum class ConvBackend {
+    Reference,
+    OneDnn,
+};
 
 class Conv2DLayer {
 public:
+    class Backend;
+
     /**
      * @brief Create a Conv2D layer.
      * @param in_ch   Input channels.
@@ -22,7 +31,8 @@ public:
      */
     Conv2DLayer(size_t in_ch, size_t out_ch,
                 size_t kH, size_t kW,
-                size_t stride = 1, size_t padding = 0);
+                size_t stride = 1, size_t padding = 0,
+                ConvBackend backend = ConvBackend::Reference);
 
     /**
      * @brief Forward pass.
@@ -56,6 +66,7 @@ public:
     std::vector<Node::Ptr> parameters() const;
 
     size_t outChannels() const { return out_channels_; }
+    ConvBackend backendKind() const { return backend_kind_; }
 
 private:
     size_t in_channels_;
@@ -67,24 +78,9 @@ private:
 
     Node::Ptr kernels_;  // Shape: (out_ch, in_ch * kH * kW)
     Node::Ptr bias_;     // Shape: (1, out_ch)
-
-    /**
-     * @brief Transform input into column matrix for matmul-based convolution.
-     *
-     * Input:  Matrix(N, C*H*W), interpreted as (N, C, H, W).
-     * Output: Matrix(N*H_out*W_out, C*kH*kW).
-     */
-    Matrix im2col(const Matrix& input,
-                  size_t N, size_t C, size_t H, size_t W,
-                  size_t H_out, size_t W_out) const;
-
-    /**
-     * @brief Inverse of im2col: scatter column gradients back to input shape.
-     *
-     * Input:  Matrix(N*H_out*W_out, C*kH*kW).
-     * Output: Matrix(N, C*H*W).
-     */
-    Matrix col2im(const Matrix& cols,
-                  size_t N, size_t C, size_t H, size_t W,
-                  size_t H_out, size_t W_out) const;
+    ConvBackend backend_kind_;
+    std::shared_ptr<const Backend> backend_;
 };
+
+std::string toString(ConvBackend backend);
+ConvBackend parseConvBackend(const std::string& backend_name);

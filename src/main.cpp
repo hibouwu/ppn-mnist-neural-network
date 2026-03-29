@@ -387,6 +387,7 @@ struct Config {
     std::string cnn_pool_kernels = "";    // Optional. E.g. "2,2,2". Empty -> stage defaults.
     std::string cnn_pool_strides = "";    // Optional. E.g. "2,2,2". Empty -> stage defaults.
     std::string cnn_fc_hidden_sizes = ""; // Optional FC hidden dims after conv stack. Empty -> default FC layout.
+    std::string conv_backend = "reference"; // Conv backend: reference / onednn.
 
     std::string out_dir = "output";       // Output directory for metrics/log artifacts.
     std::string grad_sync_mode = "per_param"; // per_param / bucketed / overlap_bucketed
@@ -497,6 +498,8 @@ int main(int argc, char** argv) {
                 cfg.cnn_pool_strides = requireValue(arg);
             } else if (arg == "--cnn_fc_hidden_sizes") {
                 cfg.cnn_fc_hidden_sizes = requireValue(arg);
+            } else if (arg == "--conv_backend") {
+                cfg.conv_backend = requireValue(arg);
             } else if (arg == "--out_dir") {
                 cfg.out_dir = requireValue(arg);
             } else if (arg == "--grad_sync_mode") {
@@ -644,6 +647,7 @@ int main(int argc, char** argv) {
                 cnnCfg.input_height = datasetInfo.input_height;
                 cnnCfg.input_width = datasetInfo.input_width;
                 cnnCfg.num_classes = datasetInfo.num_classes;
+                cnnCfg.conv_backend = parseConvBackend(cfg.conv_backend);
             } catch (const std::exception& e) {
                 std::cerr << "Error parsing CNN arguments: " << e.what() << std::endl;
                 return 1;
@@ -658,6 +662,12 @@ int main(int argc, char** argv) {
             cnnCfg.input_height = datasetInfo.input_height;
             cnnCfg.input_width = datasetInfo.input_width;
             cnnCfg.num_classes = datasetInfo.num_classes;
+            try {
+                cnnCfg.conv_backend = parseConvBackend(cfg.conv_backend);
+            } catch (const std::exception& e) {
+                std::cerr << "Error parsing CNN arguments: " << e.what() << std::endl;
+                return 1;
+            }
             if (isMaster) {
                 std::cout << "Building LeNet-5 CNN (default)..." << std::endl;
             }

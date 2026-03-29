@@ -9,6 +9,8 @@ option(ENABLE_GPROF "Enable gprof instrumentation (-pg) for profiling builds" OF
 option(ENABLE_PROFILE_MATMUL "Print timing for matmul (PROFILE_MATMUL)" OFF)
 option(ENABLE_PROFILE_OPS "Print timing for selected forward/backward ops (PROFILE_OPS)" OFF)
 option(ENABLE_MPI "Enable MPI distributed data parallel" OFF)
+option(ENABLE_ONEDNN_PARITY_PROBE "Enable isolated oneDNN conv parity probe target" ON)
+option(ENABLE_ONEDNN_CONV_BACKEND "Enable optional oneDNN Conv2D backend in selected targets" OFF)
 set(MATMUL_BLOCK_SIZE "" CACHE STRING "Block size for blocked matmul (e.g. 64,128). Empty = default in code")
 
 if(ENABLE_GPROF)
@@ -46,6 +48,74 @@ if(NOT OPENBLAS_INCLUDE_DIR OR NOT OPENBLAS_LIB)
 endif()
 if(NOT JPEG_LIB)
     message(FATAL_ERROR "libjpeg not found")
+endif()
+
+if(ENABLE_ONEDNN_PARITY_PROBE OR ENABLE_ONEDNN_CONV_BACKEND)
+    set(DNNL_SEARCH_HINTS
+        ${DNNL_ROOT}
+        $ENV{DNNL_ROOT}
+        ${CMAKE_PREFIX_PATH}
+        /opt/onednn-cpu
+        /opt/intel/oneapi/dnnl/2025.3
+        /opt/intel/oneapi/dnnl/2025.2
+        /opt/intel/oneapi/2025.3
+        /opt/intel/oneapi/2025.2
+    )
+    find_path(DNNL_INCLUDE_DIR
+        NAMES dnnl.hpp
+        HINTS
+            ${DNNL_SEARCH_HINTS}
+        PATH_SUFFIXES
+            include
+    )
+    find_library(DNNL_LIB
+        NAMES dnnl
+        HINTS
+            ${DNNL_SEARCH_HINTS}
+        PATH_SUFFIXES
+            lib
+            lib64
+    )
+    find_library(SYCL_LIB
+        NAMES sycl
+        HINTS
+            /opt/intel/oneapi/compiler/2025.3/lib
+            /opt/intel/oneapi/compiler/2025.2/lib
+            /opt/intel/oneapi/2025.3/lib
+            /opt/intel/oneapi/2025.2/lib
+    )
+    find_library(SVML_LIB
+        NAMES svml
+        HINTS
+            /opt/intel/oneapi/compiler/2025.3/lib
+            /opt/intel/oneapi/compiler/2025.2/lib
+            /opt/intel/oneapi/2025.3/lib
+            /opt/intel/oneapi/2025.2/lib
+    )
+    find_library(IMF_LIB
+        NAMES imf
+        HINTS
+            /opt/intel/oneapi/compiler/2025.3/lib
+            /opt/intel/oneapi/compiler/2025.2/lib
+            /opt/intel/oneapi/2025.3/lib
+            /opt/intel/oneapi/2025.2/lib
+    )
+    find_library(INTLC_LIB
+        NAMES intlc intlc.so.5
+        HINTS
+            /opt/intel/oneapi/compiler/2025.3/lib
+            /opt/intel/oneapi/compiler/2025.2/lib
+            /opt/intel/oneapi/2025.3/lib
+            /opt/intel/oneapi/2025.2/lib
+    )
+    find_library(TBB_LIB
+        NAMES tbb
+        HINTS
+            /opt/intel/oneapi/tbb/2022.2/lib/intel64/gcc4.8
+            /opt/intel/oneapi/tbb/latest/lib/intel64/gcc4.8
+            /opt/intel/oneapi/tbb/2022.2/lib
+            /opt/intel/oneapi/tbb/latest/lib
+    )
 endif()
 
 find_package(OpenMP)
@@ -166,6 +236,72 @@ add_executable(test_cnn_configurable tests/test_cnn_configurable.cpp ${SOURCES})
 target_link_libraries(test_cnn_configurable PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
 add_test(NAME CNNConfigurableTest COMMAND test_cnn_configurable)
 
+add_executable(test_conv2d_onednn_backend tests/test_conv2d_onednn_backend.cpp ${SOURCES})
+target_link_libraries(test_conv2d_onednn_backend PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
+add_test(NAME Conv2DOneDnnBackendTest COMMAND test_conv2d_onednn_backend)
+
+add_executable(test_conv2d_backend_benchmark tests/test_conv2d_backend_benchmark.cpp ${SOURCES})
+target_link_libraries(test_conv2d_backend_benchmark PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
+
+function(configure_onednn_conv_backend_target target_name)
+    if(ENABLE_ONEDNN_CONV_BACKEND AND DNNL_INCLUDE_DIR AND DNNL_LIB)
+        target_compile_definitions(${target_name} PRIVATE PPN_HAVE_ONEDNN_CONV_BACKEND=1)
+        target_include_directories(${target_name} PRIVATE ${DNNL_INCLUDE_DIR})
+        target_link_libraries(${target_name} PRIVATE ${DNNL_LIB})
+        get_filename_component(DNNL_LIB_DIR ${DNNL_LIB} DIRECTORY)
+        set(ONEDNN_TARGET_RPATHS ${DNNL_LIB_DIR})
+        foreach(optional_lib SYCL_LIB SVML_LIB IMF_LIB INTLC_LIB TBB_LIB)
+            if(${optional_lib})
+                target_link_libraries(${target_name} PRIVATE ${${optional_lib}})
+                get_filename_component(optional_lib_dir ${${optional_lib}} DIRECTORY)
+                list(APPEND ONEDNN_TARGET_RPATHS ${optional_lib_dir})
+            endif()
+        endforeach()
+        list(REMOVE_DUPLICATES ONEDNN_TARGET_RPATHS)
+        set_target_properties(${target_name} PROPERTIES BUILD_RPATH "${ONEDNN_TARGET_RPATHS}")
+    else()
+        target_compile_definitions(${target_name} PRIVATE PPN_HAVE_ONEDNN_CONV_BACKEND=0)
+    endif()
+endfunction()
+
+configure_onednn_conv_backend_target(ppn_train)
+configure_onednn_conv_backend_target(test_cnn_autograd)
+configure_onednn_conv_backend_target(test_cnn_configurable)
+configure_onednn_conv_backend_target(test_conv2d_onednn_backend)
+configure_onednn_conv_backend_target(test_conv2d_backend_benchmark)
+
+if(ENABLE_ONEDNN_PARITY_PROBE)
+    add_executable(test_onednn_conv_parity_probe tests/test_onednn_conv_parity_probe.cpp ${SOURCES})
+    target_link_libraries(test_onednn_conv_parity_probe PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
+
+    if(DNNL_INCLUDE_DIR AND DNNL_LIB)
+        target_compile_definitions(test_onednn_conv_parity_probe PRIVATE ONEDNN_PARITY_PROBE_HAVE_DNNL=1)
+        target_include_directories(test_onednn_conv_parity_probe PRIVATE ${DNNL_INCLUDE_DIR})
+        target_link_libraries(test_onednn_conv_parity_probe PRIVATE ${DNNL_LIB})
+        get_filename_component(DNNL_LIB_DIR ${DNNL_LIB} DIRECTORY)
+        set(ONEDNN_PROBE_RPATHS ${DNNL_LIB_DIR})
+        set(ONEDNN_PROBE_OPTIONAL_RUNTIME_LIBS "")
+        foreach(optional_lib SYCL_LIB SVML_LIB IMF_LIB INTLC_LIB TBB_LIB)
+            if(${optional_lib})
+                list(APPEND ONEDNN_PROBE_OPTIONAL_RUNTIME_LIBS ${${optional_lib}})
+                get_filename_component(optional_lib_dir ${${optional_lib}} DIRECTORY)
+                list(APPEND ONEDNN_PROBE_RPATHS ${optional_lib_dir})
+            endif()
+        endforeach()
+        if(ONEDNN_PROBE_OPTIONAL_RUNTIME_LIBS)
+            target_link_libraries(test_onednn_conv_parity_probe PRIVATE ${ONEDNN_PROBE_OPTIONAL_RUNTIME_LIBS})
+        endif()
+        list(REMOVE_DUPLICATES ONEDNN_PROBE_RPATHS)
+        set_target_properties(test_onednn_conv_parity_probe PROPERTIES
+            BUILD_RPATH "${ONEDNN_PROBE_RPATHS}"
+        )
+        message(STATUS "oneDNN parity probe enabled with dnnl.hpp + libdnnl. Optional oneAPI runtime libs are linked only when found.")
+    else()
+        target_compile_definitions(test_onednn_conv_parity_probe PRIVATE ONEDNN_PARITY_PROBE_HAVE_DNNL=0)
+        message(STATUS "oneDNN parity probe target built without oneDNN linkage; runtime will report SKIP-COMPILE-NO-ONEDNN.")
+    endif()
+endif()
+
 # CLI regression tests for argument validation (must fail fast before data loading).
 add_test(NAME CLIInvalidModelTest
     COMMAND ppn_train --model not_a_model --epochs 0)
@@ -180,6 +316,16 @@ set_tests_properties(CLIUnknownArgumentTest PROPERTIES
 add_test(NAME CLICNNBoolParseTest
     COMMAND ppn_train --model cnn --cnn_conv_channels 8 --cnn_pool_after 2 --epochs 0)
 set_tests_properties(CLICNNBoolParseTest PROPERTIES
+    WILL_FAIL TRUE)
+
+add_test(NAME CLIInvalidConvBackendTest
+    COMMAND ppn_train --model cnn --conv_backend not_a_backend --epochs 0)
+set_tests_properties(CLIInvalidConvBackendTest PROPERTIES
+    WILL_FAIL TRUE)
+
+add_test(NAME CLIOneDnnBackendUnavailableTest
+    COMMAND ppn_train --model cnn --conv_backend onednn --epochs 0)
+set_tests_properties(CLIOneDnnBackendUnavailableTest PROPERTIES
     WILL_FAIL TRUE)
 
 add_test(NAME CLINonIntegerEpochTest

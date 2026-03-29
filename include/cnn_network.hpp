@@ -30,6 +30,7 @@ struct CNNConfig {
     std::vector<size_t> pool_strides;     // Pool stride                [default 2]
     std::vector<size_t> fc_hidden_sizes;  // FC hidden dimensions       [default {120,84}]
     size_t num_classes = 10;
+    ConvBackend conv_backend = ConvBackend::Reference;
 
     /** Number of conv stages. */
     size_t stages() const { return conv_channels.size(); }

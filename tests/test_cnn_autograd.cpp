@@ -107,6 +107,30 @@ void test_conv_metadata() {
     assert(!x->hasAllocatedGrad());
 }
 
+void test_conv_parameter_contract() {
+    Conv2DLayer conv(2, 3, 2, 2, 1, 0);
+    auto params = conv.parameters();
+
+    assert(params.size() == 2);
+
+    const auto& kernels = params[0];
+    const auto& bias = params[1];
+
+    assert(kernels->value().rows == 3);
+    assert(kernels->value().cols == 2 * 2 * 2);
+    assert(bias->value().rows == 1);
+    assert(bias->value().cols == 3);
+
+    assert(kernels->isParameter());
+    assert(bias->isParameter());
+    assert(kernels->isLeaf());
+    assert(bias->isLeaf());
+    assert(kernels->inputs().empty());
+    assert(bias->inputs().empty());
+    assert(kernels->requiresGrad());
+    assert(bias->requiresGrad());
+}
+
 void test_conv_backward_shapes_and_finite_grads() {
     Conv2DLayer conv(1, 1, 2, 2, 1, 0);
     Matrix input(1, 16);
@@ -245,6 +269,7 @@ int main() {
     test_maxpool_metadata();
     test_maxpool_numerical_gradient();
     test_conv_metadata();
+    test_conv_parameter_contract();
     test_conv_backward_shapes_and_finite_grads();
     test_conv_numerical_gradient();
     test_cnn_main_path_and_parameter_ready();
