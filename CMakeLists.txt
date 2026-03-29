@@ -11,6 +11,7 @@ option(ENABLE_PROFILE_OPS "Print timing for selected forward/backward ops (PROFI
 option(ENABLE_MPI "Enable MPI distributed data parallel" OFF)
 option(ENABLE_ONEDNN_PARITY_PROBE "Enable isolated oneDNN conv parity probe target" ON)
 option(ENABLE_ONEDNN_CONV_BACKEND "Enable optional oneDNN Conv2D backend in selected targets" OFF)
+option(ENABLE_GPU_SMOKE_TESTS "Enable standalone CUDA runtime smoke test targets" OFF)
 set(MATMUL_BLOCK_SIZE "" CACHE STRING "Block size for blocked matmul (e.g. 64,128). Empty = default in code")
 
 if(ENABLE_GPROF)
@@ -148,6 +149,8 @@ file(GLOB IO_SOURCES "src/io/*.cpp")
 file(GLOB RUNTIME_SOURCES "src/runtime/*.cpp")
 list(APPEND SOURCES ${AUTOGRAD_SOURCES} ${DISTRIBUTED_SOURCES} ${IO_SOURCES} ${RUNTIME_SOURCES})
 list(FILTER SOURCES EXCLUDE REGEX "src/main.cpp$")
+list(FILTER SOURCES EXCLUDE REGEX "src/gpu/cudnn_conv_forward.cpp$")
+list(FILTER SOURCES EXCLUDE REGEX "src/gpu/cudnn_conv_backward.cpp$")
 
 # Exécutables
 add_executable(test_matrix tests/test_matrix.cpp ${SOURCES})
@@ -227,6 +230,79 @@ target_link_libraries(test_benchmark_large PUBLIC ${OPENBLAS_LIB} mnist_reader_l
 add_executable(test_autograd_runtime_benchmark tests/test_autograd_runtime_benchmark.cpp ${SOURCES})
 target_link_libraries(test_autograd_runtime_benchmark PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
 
+if(ENABLE_GPU_SMOKE_TESTS)
+    find_package(CUDAToolkit REQUIRED)
+    add_executable(cuda_runtime_smoke_test tests/gpu/cuda_runtime_smoke_test.cpp)
+    target_link_libraries(cuda_runtime_smoke_test PRIVATE CUDA::cudart)
+
+    find_path(CUDNN_INCLUDE_DIR
+        NAMES cudnn.h
+        HINTS
+            /usr/local/cuda-13.0/targets/x86_64-linux/include
+            /usr/local/cuda/include
+            /usr/include
+            /usr/local/include
+    )
+    find_library(CUDNN_LIBRARY
+        NAMES cudnn
+        HINTS
+            /usr/local/cuda-13.0/targets/x86_64-linux/lib
+            /usr/local/cuda/lib64
+            /usr/lib64
+            /usr/local/lib64
+            /usr/local/lib
+    )
+
+    if(CUDNN_INCLUDE_DIR AND CUDNN_LIBRARY)
+        add_executable(cudnn_smoke_test tests/gpu/cudnn_smoke_test.cpp)
+        target_include_directories(cudnn_smoke_test PRIVATE ${CUDNN_INCLUDE_DIR})
+        target_link_libraries(cudnn_smoke_test PRIVATE ${CUDNN_LIBRARY} CUDA::cudart)
+
+        add_executable(cudnn_direct_conv_forward_probe tests/gpu/cudnn_direct_conv_forward_probe.cpp)
+        target_include_directories(cudnn_direct_conv_forward_probe PRIVATE ${CUDNN_INCLUDE_DIR})
+        target_link_libraries(cudnn_direct_conv_forward_probe PRIVATE ${CUDNN_LIBRARY} CUDA::cudart)
+
+        add_executable(cudnn_conv_forward_probe
+            tests/gpu/cudnn_conv_forward_probe.cpp
+            src/gpu/cudnn_conv_forward.cpp)
+        target_include_directories(cudnn_conv_forward_probe PRIVATE ${CUDNN_INCLUDE_DIR})
+        target_link_libraries(cudnn_conv_forward_probe PRIVATE ${CUDNN_LIBRARY} CUDA::cudart)
+
+        add_executable(cudnn_conv_backward_probe
+            tests/gpu/cudnn_conv_backward_probe.cpp
+            ${SOURCES}
+            src/gpu/cudnn_conv_backward.cpp)
+        target_include_directories(cudnn_conv_backward_probe PRIVATE ${CUDNN_INCLUDE_DIR})
+        target_link_libraries(cudnn_conv_backward_probe PRIVATE
+            ${OPENBLAS_LIB}
+            mnist_reader_lib
+            ${JPEG_LIB}
+            ${CUDNN_LIBRARY}
+            CUDA::cudart)
+
+        add_executable(test_conv2d_cudnn_forward_experimental
+            tests/gpu/test_conv2d_cudnn_forward_experimental.cpp
+            ${SOURCES}
+            src/gpu/cudnn_conv_forward.cpp)
+        target_include_directories(test_conv2d_cudnn_forward_experimental PRIVATE ${CUDNN_INCLUDE_DIR})
+        target_compile_definitions(test_conv2d_cudnn_forward_experimental PRIVATE
+            PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_FORWARD=1)
+        target_link_libraries(test_conv2d_cudnn_forward_experimental PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ${CUDNN_LIBRARY} CUDA::cudart)
+
+        add_executable(test_conv2d_cudnn_backward_experimental
+            tests/gpu/test_conv2d_cudnn_backward_experimental.cpp
+            ${SOURCES}
+            src/gpu/cudnn_conv_forward.cpp
+            src/gpu/cudnn_conv_backward.cpp)
+        target_include_directories(test_conv2d_cudnn_backward_experimental PRIVATE ${CUDNN_INCLUDE_DIR})
+        target_compile_definitions(test_conv2d_cudnn_backward_experimental PRIVATE
+            PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_FORWARD=1
+            PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_BACKWARD=1)
+        target_link_libraries(test_conv2d_cudnn_backward_experimental PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ${CUDNN_LIBRARY} CUDA::cudart)
+    else()
+        message(STATUS "cuDNN not found; skipping cudnn_smoke_test target")
+    endif()
+endif()
 
 add_executable(test_init tests/test_init.cpp ${SOURCES})
 target_link_libraries(test_init PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})

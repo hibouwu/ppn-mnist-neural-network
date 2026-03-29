@@ -18,6 +18,14 @@
 #include <cstring>
 #include <chrono>
 
+#if PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_FORWARD
+#include "gpu/cudnn_conv_forward.hpp"
+#endif
+
+#if PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_BACKWARD
+#include "gpu/cudnn_conv_backward.hpp"
+#endif
+
 #if PPN_HAVE_ONEDNN_CONV_BACKEND
 #include <dnnl.hpp>
 #endif
@@ -62,6 +70,9 @@ public:
 };
 
 namespace {
+constexpr std::uint8_t kExperimentalGpuForwardMarker = 0xC7;
+constexpr std::uint8_t kExperimentalGpuBackwardUsedMarker = 0xC8;
+
 bool cnn_parallel_enabled() {
     static int mode = -1; // -1: uninit, 0: naive, 1: parallel
     if (mode == -1) {
@@ -77,6 +88,214 @@ bool inferRequiresGrad(const Node::Ptr& input,
     return (input && input->requiresGrad()) ||
            (kernels && kernels->requiresGrad()) ||
            (bias && bias->requiresGrad());
+}
+
+#if PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_FORWARD || PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_BACKWARD
+bool fitsInt(std::size_t value) {
+    return value <= static_cast<std::size_t>(std::numeric_limits<int>::max());
+}
+
+std::vector<float> toHostFloatBuffer(const Matrix& matrix) {
+    std::vector<float> buffer(matrix.data.size());
+    for (std::size_t i = 0; i < matrix.data.size(); ++i) {
+        buffer[i] = static_cast<float>(matrix.data[i]);
+    }
+    return buffer;
+}
+#endif
+
+#if PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_FORWARD
+
+bool experimentalGpuForwardRequested() {
+    const char* value = std::getenv("PPN_EXPERIMENTAL_CUDNN_CONV_FORWARD");
+    return value && std::strcmp(value, "1") == 0;
+}
+
+bool canUseExperimentalGpuForwardValue(const ConvBackend backend_kind,
+                                       const Conv2DLayer::Backend::InputShape& shape,
+                                       const Conv2DLayer::Backend::Config& config) {
+    return backend_kind == ConvBackend::Reference &&
+           experimentalGpuForwardRequested() &&
+           fitsInt(shape.N) &&
+           fitsInt(shape.C) &&
+           fitsInt(shape.H) &&
+           fitsInt(shape.W) &&
+           fitsInt(config.out_channels) &&
+           fitsInt(config.kernel_h) &&
+           fitsInt(config.kernel_w) &&
+           fitsInt(config.padding) &&
+           fitsInt(config.stride);
+}
+
+Matrix experimentalGpuForwardValue(const Matrix& input,
+                                   const Matrix& kernels,
+                                   const Matrix& bias,
+                                   const Conv2DLayer::Backend::InputShape& shape,
+                                   const Conv2DLayer::Backend::Config& config) {
+    const GpuConv2dProblem problem{
+        static_cast<int>(shape.N),
+        static_cast<int>(shape.C),
+        static_cast<int>(shape.H),
+        static_cast<int>(shape.W),
+        static_cast<int>(config.out_channels),
+        static_cast<int>(config.kernel_h),
+        static_cast<int>(config.kernel_w),
+        static_cast<int>(config.padding),
+        static_cast<int>(config.padding),
+        static_cast<int>(config.stride),
+        static_cast<int>(config.stride),
+        1,
+        1,
+    };
+
+    const GpuConv2dForwardResult gpu_result =
+        gpuConv2dForwardNchw(toHostFloatBuffer(input), toHostFloatBuffer(kernels), problem);
+    if (gpu_result.out_n != static_cast<int>(shape.N) ||
+        gpu_result.out_c != static_cast<int>(config.out_channels) ||
+        gpu_result.out_h != static_cast<int>(shape.H_out) ||
+        gpu_result.out_w != static_cast<int>(shape.W_out)) {
+        throw std::runtime_error("Conv2DLayer experimental cuDNN forward returned an unexpected output shape.");
+    }
+
+    Matrix result(shape.N, config.out_channels * shape.H_out * shape.W_out);
+    for (std::size_t n = 0; n < shape.N; ++n) {
+        const std::size_t dst_n_base = n * result.cols;
+        for (std::size_t oc = 0; oc < config.out_channels; ++oc) {
+            const std::size_t dst_oc_base = oc * shape.H_out * shape.W_out;
+            const double b = bias(0, oc);
+            for (std::size_t oh = 0; oh < shape.H_out; ++oh) {
+                for (std::size_t ow = 0; ow < shape.W_out; ++ow) {
+                    const std::size_t hw = oh * shape.W_out + ow;
+                    const std::size_t idx =
+                        ((n * config.out_channels + oc) * shape.H_out + oh) * shape.W_out + ow;
+                    result.data[dst_n_base + dst_oc_base + hw] =
+                        static_cast<double>(gpu_result.output[idx]) + b;
+                }
+            }
+        }
+    }
+    return result;
+}
+
+#endif
+
+#if PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_BACKWARD
+
+bool experimentalGpuBackwardRequested() {
+    const char* value = std::getenv("PPN_EXPERIMENTAL_CUDNN_CONV_BACKWARD");
+    return value && std::strcmp(value, "1") == 0;
+}
+
+bool experimentalGpuBackwardForceFailRequested() {
+    const char* value = std::getenv("PPN_EXPERIMENTAL_CUDNN_CONV_BACKWARD_FORCE_FAIL");
+    return value && std::strcmp(value, "1") == 0;
+}
+
+bool hasMarkerFlag(const BackwardContext& ctx, std::uint8_t marker) {
+    return std::find(ctx.flags.begin(), ctx.flags.end(), marker) != ctx.flags.end();
+}
+
+bool canUseExperimentalGpuBackward(const BackwardContext& ctx) {
+    return experimentalGpuBackwardRequested() &&
+           hasMarkerFlag(ctx, kExperimentalGpuForwardMarker) &&
+           ctx.sizes.size() >= 12 &&
+           fitsInt(ctx.sizes[0]) &&
+           fitsInt(ctx.sizes[1]) &&
+           fitsInt(ctx.sizes[2]) &&
+           fitsInt(ctx.sizes[3]) &&
+           fitsInt(ctx.sizes[6]) &&
+           fitsInt(ctx.sizes[8]) &&
+           fitsInt(ctx.sizes[9]) &&
+           fitsInt(ctx.sizes[10]) &&
+           fitsInt(ctx.sizes[11]);
+}
+
+GpuConv2dProblem makeExperimentalGpuProblem(const BackwardContext& ctx) {
+    return GpuConv2dProblem{
+        static_cast<int>(ctx.sizes[0]),
+        static_cast<int>(ctx.sizes[1]),
+        static_cast<int>(ctx.sizes[2]),
+        static_cast<int>(ctx.sizes[3]),
+        static_cast<int>(ctx.sizes[6]),
+        static_cast<int>(ctx.sizes[10]),
+        static_cast<int>(ctx.sizes[11]),
+        static_cast<int>(ctx.sizes[9]),
+        static_cast<int>(ctx.sizes[9]),
+        static_cast<int>(ctx.sizes[8]),
+        static_cast<int>(ctx.sizes[8]),
+        1,
+        1,
+    };
+}
+
+void markExperimentalGpuBackwardUsed(BackwardContext& ctx) {
+    if (!hasMarkerFlag(ctx, kExperimentalGpuBackwardUsedMarker)) {
+        ctx.flags.push_back(kExperimentalGpuBackwardUsedMarker);
+    }
+}
+
+Matrix matrixFromFloatBuffer(const std::vector<float>& values,
+                             std::size_t rows,
+                             std::size_t cols,
+                             const char* what) {
+    if (values.size() != rows * cols) {
+        throw std::runtime_error(std::string(what) + " size does not match Matrix shape.");
+    }
+    Matrix result(rows, cols);
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        result.data[i] = static_cast<double>(values[i]);
+    }
+    return result;
+}
+
+#endif
+
+void appendCpuBiasGradContribution(ContributionList& contributions,
+                                   const Node::Ptr& bias,
+                                   const std::vector<Node::Ptr>& inputs,
+                                   const Matrix& dout,
+                                   std::size_t dout_stride,
+                                   std::size_t out_channels,
+                                   InputIndexView input_indices) {
+    if (!(bias && bias->requiresGrad() && inputs.size() >= 3 && input_indices[2] != kInvalidNodeIndex)) {
+        return;
+    }
+
+    Matrix db(1, out_channels, 0.0);
+    const double* dout_const_data = dout.data.data();
+    double* db_data = db.data.data();
+    for (std::size_t i = 0; i < dout.rows; ++i) {
+        const double* row_ptr = dout_const_data + i * dout_stride;
+        for (std::size_t j = 0; j < out_channels; ++j) {
+            db_data[j] += row_ptr[j];
+        }
+    }
+    contributions.push_back({input_indices[2], std::move(db)});
+}
+
+std::shared_ptr<BackwardContext> makeReferenceBackwardContext(
+    const Matrix& cols,
+    const Conv2DLayer::Backend::InputShape& shape,
+    const Conv2DLayer::Backend::Config& config,
+    bool mark_experimental_gpu_forward) {
+    auto context = std::make_shared<BackwardContext>();
+    context->matrices.push_back(cols);
+    context->sizes = {
+        shape.N, shape.C, shape.H, shape.W,
+        shape.H_out, shape.W_out,
+        config.out_channels, config.in_channels,
+        config.stride, config.padding,
+        config.kernel_h, config.kernel_w
+    };
+    context->flags.push_back(1);
+#if PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_FORWARD
+    if (mark_experimental_gpu_forward) {
+        context->flags.push_back(kExperimentalGpuForwardMarker);
+    }
+#else
+    (void)mark_experimental_gpu_forward;
+#endif
+    return context;
 }
 
 Matrix col2imFromContext(const Matrix& cols,
@@ -746,6 +965,61 @@ public:
         const std::size_t col_w = cols.cols;
         ContributionList contributions;
 
+#if PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_BACKWARD
+        const bool need_diff_weights =
+            kernels && kernels->requiresGrad() && input_indices[1] != kInvalidNodeIndex;
+        const bool need_diff_input =
+            input && input->requiresGrad() && input_indices[0] != kInvalidNodeIndex;
+
+        if (canUseExperimentalGpuBackward(*ctx) && (need_diff_input || need_diff_weights)) {
+            try {
+                if (experimentalGpuBackwardForceFailRequested()) {
+                    throw std::runtime_error("experimental cuDNN backward forced to fail for testing.");
+                }
+                const GpuConv2dProblem problem = makeExperimentalGpuProblem(*ctx);
+
+                if (need_diff_weights) {
+                    const GpuConv2dBackwardFilterResult gpu_diff_weights =
+                        gpuConv2dBackwardFilterNchw(
+                            toHostFloatBuffer(input->value()),
+                            toHostFloatBuffer(grad_output),
+                            problem);
+                    contributions.push_back({
+                        input_indices[1],
+                        matrixFromFloatBuffer(gpu_diff_weights.diff_filter,
+                                              out_channels,
+                                              col_w,
+                                              "experimental cuDNN diff_weights")
+                    });
+                }
+
+                appendCpuBiasGradContribution(
+                    contributions, bias, inputs, dout, dout_stride, out_channels, input_indices);
+
+                if (need_diff_input) {
+                    const GpuConv2dBackwardDataResult gpu_diff_input =
+                        gpuConv2dBackwardDataNchw(
+                            toHostFloatBuffer(kernels->value()),
+                            toHostFloatBuffer(grad_output),
+                            problem);
+                    contributions.push_back({
+                        input_indices[0],
+                        matrixFromFloatBuffer(gpu_diff_input.diff_input,
+                                              N,
+                                              in_channels * H * W,
+                                              "experimental cuDNN diff_input")
+                    });
+                }
+
+                markExperimentalGpuBackwardUsed(*ctx);
+                return contributions;
+            } catch (const std::exception&) {
+                contributions = ContributionList{};
+                // Fallback keeps CPU path authoritative for the whole backward.
+            }
+        }
+#endif
+
         if (kernels && kernels->requiresGrad() && input_indices[1] != kInvalidNodeIndex) {
             Matrix dW(out_channels, col_w);
 #ifdef PROFILE_OPS
@@ -760,26 +1034,8 @@ public:
             contributions.push_back({input_indices[1], std::move(dW)});
         }
 
-        if (bias && bias->requiresGrad() && inputs.size() >= 3 && input_indices[2] != kInvalidNodeIndex) {
-            Matrix db(1, out_channels, 0.0);
-#ifdef PROFILE_OPS
-            auto db_start = Clock::now();
-#endif
-            const double* dout_const_data = dout.data.data();
-            double* db_data = db.data.data();
-            for (std::size_t i = 0; i < dout.rows; ++i) {
-                const double* row_ptr = dout_const_data + i * dout_stride;
-                for (std::size_t j = 0; j < out_channels; ++j) {
-                    db_data[j] += row_ptr[j];
-                }
-            }
-#ifdef PROFILE_OPS
-            opProfileRecord(
-                "conv2d_backward_db_reduce",
-                std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - db_start).count());
-#endif
-            contributions.push_back({input_indices[2], std::move(db)});
-        }
+        appendCpuBiasGradContribution(
+            contributions, bias, inputs, dout, dout_stride, out_channels, input_indices);
 
         if (input && input->requiresGrad() && input_indices[0] != kInvalidNodeIndex) {
             Matrix dcols(N * H_out * W_out, col_w);
@@ -874,20 +1130,9 @@ public:
             std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - post_start).count());
 #endif
 
-        auto context = std::make_shared<BackwardContext>();
-        context->matrices.push_back(*cols_ptr);
-        context->sizes = {
-            shape.N, shape.C, shape.H, shape.W,
-            shape.H_out, shape.W_out,
-            config.out_channels, config.in_channels,
-            config.stride, config.padding,
-            config.kernel_h, config.kernel_w
-        };
-        context->flags.push_back(1);
-
         return ForwardResult{
             std::move(result),
-            std::move(context),
+            makeReferenceBackwardContext(*cols_ptr, shape, config, false),
             std::make_shared<ReferenceConv2DGradFn>()
         };
     }
@@ -1028,9 +1273,37 @@ Node::Ptr Conv2DLayer::forward(const Node::Ptr& input,
     };
     Backend::InputShape shape{N, C, H, W, H_out, W_out};
     Backend::Parameters params{kernels_, bias_};
+    const bool requires_grad = inferRequiresGrad(input, kernels_, bias_);
+
+#if PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_FORWARD
+    if (canUseExperimentalGpuForwardValue(backend_kind_, shape, config)) {
+        try {
+            Matrix experimental_output = experimentalGpuForwardValue(
+                x, kernels_->value(), bias_->value(), shape, config);
+
+            if (!requires_grad) {
+                auto node = std::make_shared<Node>(experimental_output, false);
+                auto context = std::make_shared<BackwardContext>();
+                context->flags.push_back(kExperimentalGpuForwardMarker);
+                node->setBackwardContext(std::move(context));
+                return node;
+            }
+
+            auto context = makeReferenceBackwardContext(
+                referenceIm2col(x, shape, config), shape, config, true);
+            auto node = std::make_shared<Node>(experimental_output, true);
+            node->setInputs({input, kernels_, bias_});
+            node->setBackwardContext(std::move(context));
+            node->setGradFn(std::make_shared<ReferenceConv2DGradFn>());
+            return node;
+        } catch (const std::exception&) {
+            // Experimental forward is opportunistic; fallback keeps CPU path authoritative.
+        }
+    }
+#endif
+
     auto backend_result = backend_->forward(x, shape, config, params);
 
-    const bool requires_grad = inferRequiresGrad(input, kernels_, bias_);
     auto node = std::make_shared<Node>(backend_result.output, requires_grad);
     if (!requires_grad) {
         return node;

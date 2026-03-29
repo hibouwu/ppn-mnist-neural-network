@@ -10,6 +10,30 @@ Pour les expériences sur la multiplication matricielle (thread scaling, optimis
 python3 scripts/Utils/encode_plantuml.py output/thread_scaling.csv
 ```
 
+## Qualification Stage C
+
+Le script Stage C pré-enregistre un groupe de runs baseline/overlap, exécute les répétitions MPI,
+archive les manifests de run, compare les snapshots de paramètres step par step, puis produit
+une décision `Pass` / `Partial` / `Fail`.
+
+```bash
+python3 scripts/Performance/stage_c_qualification.py \
+  --binary ./build-mpi/ppn_train \
+  --out-root /tmp/stage_c_ws2 \
+  --world-size 2 \
+  --repeats 3 \
+  -- \
+  --dataset mnist \
+  --data_dir mnist \
+  --model mlp \
+  --epochs 1 \
+  --batch_size 10000 \
+  --optimizer sgd \
+  --learning_rate 0.01 \
+  --seed 42 \
+  --bucket_size_bytes 1048576
+```
+
 ## Autre script
 
 ```bash

@@ -77,6 +77,30 @@ cmake --build build-gprof -j$(nproc)
 
 This keeps normal training runs free from profiling overhead.
 
+### 1.3 Optional oneDNN Conv Backend
+
+The project now supports an optional oneDNN backend for `Conv2DLayer`. This backend is integrated for correctness first: the external `Matrix<double>` contract stays unchanged, while the internal oneDNN path currently uses an `f32` bridge and writes results back to `double`.
+
+It is not enabled by default and it does not make oneDNN a required project dependency.
+
+Build with oneDNN Conv support:
+
+```bash
+cmake -S . -B build-onednn -DCMAKE_BUILD_TYPE=Release -DENABLE_ONEDNN_CONV_BACKEND=ON
+cmake --build build-onednn -j$(nproc)
+```
+
+Select the Conv backend at runtime:
+
+```bash
+./build-onednn/ppn_train --model cnn --conv_backend reference
+./build-onednn/ppn_train --model cnn --conv_backend onednn
+```
+
+If `--conv_backend onednn` is requested from a binary that was not built with oneDNN Conv support, model construction fails fast instead of silently falling back.
+
+This backend should currently be treated as a correctness-first path, not as a finalized performance path. Primitive caching, weight reorder caching, and cross-layer layout propagation are intentionally not implemented yet. For oneDNN correctness validation, prefer the isolated pure CPU oneDNN container flow rather than changing the default developer environment.
+
 ### 2. Dataset Preparation
 
 A script is provided to download the MNIST dataset:
@@ -121,6 +145,7 @@ The application supports the following command-line arguments:
 | `--eps` | 1e-8 | AdamW epsilon |
 | `--init` | he | Weight initialization strategy (he/xavier/manual) |
 | `--seed` | 0 | Random seed (0 = random) |
+| `--conv_backend` | reference | CNN Conv backend (reference/onednn). `onednn` requires a binary built with `ENABLE_ONEDNN_CONV_BACKEND=ON`. |
 
 ## Helper Scripts
 
