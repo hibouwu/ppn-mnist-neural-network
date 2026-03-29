@@ -1,0 +1,18 @@
+Best trial: 29
+Best score (best test_acc): 0.9891
+
+Best params:
+  learning_rate: 0.011655851122618553
+  batch_size: 32
+  activation: gelu
+  init: he
+  optimizer: momentum_sgd
+  momentum: 0.866307725016896
+  nesterov: 1
+  weight_decay: 0.00013401801443833135
+
+Reproduce command:
+build/ppn_train --model cnn --epochs 3 --batch_size 32 --learning_rate 0.011655851122618553 --activation gelu --init he --optimizer momentum_sgd --seed 42 --data_dir mnist --out_dir output/ExperienceHPO/20260329_210252/trial_0029 --momentum 0.866307725016896 --nesterov 1 --weight_decay 0.00013401801443833135
+
+Suggested final confirmation command (20 epochs):
+build/ppn_train --model cnn --epochs 20 --batch_size 32 --learning_rate 0.011655851122618553 --activation gelu --init he --optimizer momentum_sgd --seed 42 --data_dir mnist --out_dir output/ExperienceHPO/20260329_210252/trial_0029 --momentum 0.866307725016896 --nesterov 1 --weight_decay 0.00013401801443833135
