@@ -122,7 +122,7 @@ public:
                     sample.first);
             }
 
-            double* dst = inputs.data.data() + row * input_dim_;
+            Scalar* dst = inputs.data.data() + row * input_dim_;
             for (std::size_t h = 0; h < 64; ++h) {
                 for (std::size_t w = 0; w < 64; ++w) {
                     for (std::size_t c = 0; c < 3; ++c) {
@@ -289,7 +289,7 @@ Matrix TinyImageNetDataset::loadSplitImages(
                 samples[row].first);
         }
 
-        double* dst = images.data.data() + row * info_.input_dim;
+        Scalar* dst = images.data.data() + row * info_.input_dim;
         for (std::size_t h = 0; h < info_.input_height; ++h) {
             for (std::size_t w = 0; w < info_.input_width; ++w) {
                 for (std::size_t c = 0; c < info_.input_channels; ++c) {

@@ -1,0 +1,19 @@
+{
+  "run_id": "20260329_145955",
+  "binary": "build/ppn_train",
+  "data_dir": "mnist",
+  "trials": 1,
+  "epochs": 1,
+  "seed": 42,
+  "n_jobs": 1,
+  "timeout": 0,
+  "study_name": "ppn_cnn_hpo_mpi",
+  "storage": "sqlite:///output/ExperienceHPO/hpo.db",
+  "metric": "best",
+  "model": "cnn",
+  "mpiexec": "mpiexec",
+  "mpi_world_size": 1,
+  "mpi_optuna_workers": false,
+  "mpi_worker_rank": 0,
+  "mpi_worker_world_size": 1
+}

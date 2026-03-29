@@ -1,4 +1,5 @@
 #include "network.hpp"
+#include "math_ops.hpp"
 #include "node.hpp"
 #include <iostream>
 
@@ -30,7 +31,7 @@ int main() {
     output->value().print();
 
     // Test Backward
-    output->backward();
+    MathOps::sum(output)->backward();
     std::cout << "Input Gradients:\n";
     input->grad().print();
 

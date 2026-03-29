@@ -1,0 +1,18 @@
+Best trial: 0
+Best score (best test_acc): 0.9092
+
+Best params:
+  learning_rate: 0.0007274917088027808
+  batch_size: 32
+  activation: tanh
+  init: xavier
+  optimizer: momentum_sgd
+  momentum: 0.8403444310288725
+  nesterov: 1
+  weight_decay: 8.179499475211674e-06
+
+Reproduce command:
+build/ppn_train --model cnn --epochs 1 --batch_size 32 --learning_rate 0.0007274917088027808 --activation tanh --init xavier --optimizer momentum_sgd --seed 42 --data_dir mnist --out_dir output/ExperienceHPO/20260329_145955/trial_0000 --momentum 0.8403444310288725 --nesterov 1 --weight_decay 8.179499475211674e-06
+
+Suggested final confirmation command (20 epochs):
+build/ppn_train --model cnn --epochs 20 --batch_size 32 --learning_rate 0.0007274917088027808 --activation tanh --init xavier --optimizer momentum_sgd --seed 42 --data_dir mnist --out_dir output/ExperienceHPO/20260329_145955/trial_0000 --momentum 0.8403444310288725 --nesterov 1 --weight_decay 8.179499475211674e-06

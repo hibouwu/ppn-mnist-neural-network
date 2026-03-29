@@ -30,10 +30,9 @@ std::string buildLogicalKey(const Node& param, std::size_t ordinal) {
     hash = fnv1aAppend(hash, static_cast<std::uint64_t>(value.rows));
     hash = fnv1aAppend(hash, static_cast<std::uint64_t>(value.cols));
     hash = fnv1aAppend(hash, static_cast<std::uint64_t>(value.data.size()));
-    for (double v : value.data) {
+    for (Scalar v : value.data) {
         std::uint64_t bits = 0;
-        static_assert(sizeof(bits) == sizeof(v), "double bit width mismatch");
-        std::memcpy(&bits, &v, sizeof(bits));
+        std::memcpy(&bits, &v, sizeof(v));
         hash = fnv1aAppend(hash, bits);
     }
 
@@ -41,7 +40,7 @@ std::string buildLogicalKey(const Node& param, std::size_t ordinal) {
     out << "ordinal=" << ordinal
         << ";shape=" << value.rows << "x" << value.cols
         << ";numel=" << value.data.size()
-        << ";dtype=double"
+        << ";dtype=float32"
         << ";value_hash=" << hash;
     return out.str();
 }

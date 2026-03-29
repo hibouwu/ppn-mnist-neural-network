@@ -212,10 +212,10 @@ CNNNetwork::CNNNetwork(const CNNConfig& cfg,
     // --- Build FC layers ---
     size_t prev = flatten_dim_;
     for (size_t h : c.fc_hidden_sizes) {
-        fcs_.emplace_back(prev, h);
+        fcs_.emplace_back(prev, h, false);
         prev = h;
     }
-    fcs_.emplace_back(prev, c.num_classes);
+    fcs_.emplace_back(prev, c.num_classes, false);
 
     // --- Initialize parameters ---
     unsigned int s = seed;
@@ -274,9 +274,11 @@ Node::Ptr CNNNetwork::forward(const Node::Ptr& input) const {
     // Flatten is implicit: Matrix(N, C*H*W) is already the layout
 
     // FC layers: hidden + ReLU, last without activation
+    const bool fuse_relu = dynamic_cast<const ReLU*>(activation_.get()) != nullptr;
     for (size_t i = 0; i < fcs_.size(); ++i) {
-        x = fcs_[i].forward(x);
-        if (i + 1 < fcs_.size()) {
+        const bool is_hidden = (i + 1 < fcs_.size());
+        x = (fuse_relu && is_hidden) ? fcs_[i].forwardReLU(x) : fcs_[i].forward(x);
+        if (is_hidden && !fuse_relu) {
             x = activation_->forward(x);
         }
     }

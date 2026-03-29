@@ -136,7 +136,7 @@ void test_bucket_layout_mapping_and_zero_fill() {
 
     auto& bucket1 = layout.bucket(*layout.bucketIndexFor(*p3));
     layout.packBucket(*layout.bucketIndexFor(*p3), touched);
-    for (double& v : bucket1.buffer) {
+    for (Scalar& v : bucket1.buffer) {
         v += 5.0;
     }
     layout.unpackBucket(*layout.bucketIndexFor(*p3), touched);

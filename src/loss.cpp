@@ -153,7 +153,7 @@ LossFunction::NodePtr CrossEntropyLoss::forward(const NodePtr& pred, const NodeP
 
     double total = 0.0;
     for (std::size_t i = 0; i < batch; ++i) {
-        double max_logit = logits.data[i * classes];
+        Scalar max_logit = logits.data[i * classes];
         for (std::size_t c = 1; c < classes; ++c) {
             max_logit = std::max(max_logit, logits.data[i * classes + c]);
         }

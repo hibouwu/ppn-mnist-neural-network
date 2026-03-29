@@ -3,8 +3,11 @@
 #include <stdexcept>
 #include <cmath>
 
-LinearLayer::LinearLayer(size_t in, size_t out) : in_dim(in), out_dim(out) {
-    randomInit();
+LinearLayer::LinearLayer(size_t in, size_t out, bool initialize)
+    : in_dim(in), out_dim(out) {
+    if (initialize) {
+        randomInit();
+    }
 }
 
 Node::Ptr LinearLayer::forward(const Node::Ptr& input) const {
@@ -18,6 +21,10 @@ Node::Ptr LinearLayer::forward(const Node::Ptr& input) const {
     Node::Ptr output = MathOps::add(z, bias_);
     
     return output;
+}
+
+Node::Ptr LinearLayer::forwardReLU(const Node::Ptr& input) const {
+    return MathOps::linear_relu(input, weights_, bias_);
 }
 
 void LinearLayer::randomInit(double min, double max, InitType initType, unsigned int seed) {

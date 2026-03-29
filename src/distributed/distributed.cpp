@@ -50,6 +50,24 @@ DistributedContext::~DistributedContext() {
 #endif
 }
 
+void DistributedContext::allReduceSum(Scalar* data, std::size_t n) const {
+    if (data == nullptr || n == 0) {
+        return;
+    }
+
+#ifdef USE_MPI
+    if (n > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        throw std::overflow_error("MPI allReduceSum count exceeds int range.");
+    }
+    if (MPI_Allreduce(MPI_IN_PLACE, data, static_cast<int>(n), MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD) != MPI_SUCCESS) {
+        throw std::runtime_error("MPI_Allreduce failed for float buffer.");
+    }
+#else
+    (void)data;
+    (void)n;
+#endif
+}
+
 void DistributedContext::allReduceSum(double* data, std::size_t n) const {
     if (data == nullptr || n == 0) {
         return;
@@ -61,6 +79,24 @@ void DistributedContext::allReduceSum(double* data, std::size_t n) const {
     }
     if (MPI_Allreduce(MPI_IN_PLACE, data, static_cast<int>(n), MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD) != MPI_SUCCESS) {
         throw std::runtime_error("MPI_Allreduce failed for double buffer.");
+    }
+#else
+    (void)data;
+    (void)n;
+#endif
+}
+
+void DistributedContext::allReduceMax(Scalar* data, std::size_t n) const {
+    if (data == nullptr || n == 0) {
+        return;
+    }
+
+#ifdef USE_MPI
+    if (n > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        throw std::overflow_error("MPI allReduceMax count exceeds int range.");
+    }
+    if (MPI_Allreduce(MPI_IN_PLACE, data, static_cast<int>(n), MPI_FLOAT, MPI_MAX, MPI_COMM_WORLD) != MPI_SUCCESS) {
+        throw std::runtime_error("MPI_Allreduce failed for max-reduced float buffer.");
     }
 #else
     (void)data;
@@ -98,7 +134,7 @@ std::uint64_t DistributedContext::allReduceSumU64(std::uint64_t value) const {
 #endif
 }
 
-DistributedRequest DistributedContext::iallReduceSum(double* data, std::size_t n) const {
+DistributedRequest DistributedContext::iallReduceSum(Scalar* data, std::size_t n) const {
     DistributedRequest req;
     if (data == nullptr || n == 0 || world_size_ <= 1) {
         return req;
@@ -111,11 +147,11 @@ DistributedRequest DistributedContext::iallReduceSum(double* data, std::size_t n
     if (MPI_Iallreduce(MPI_IN_PLACE,
                        data,
                        static_cast<int>(n),
-                       MPI_DOUBLE,
+                       MPI_FLOAT,
                        MPI_SUM,
                        MPI_COMM_WORLD,
                        &req.request) != MPI_SUCCESS) {
-        throw std::runtime_error("MPI_Iallreduce failed for double buffer.");
+        throw std::runtime_error("MPI_Iallreduce failed for float buffer.");
     }
 #else
     (void)data;

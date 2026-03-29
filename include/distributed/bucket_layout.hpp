@@ -20,14 +20,14 @@ public:
 
     struct Bucket {
         std::vector<ParamRef> params;
-        std::vector<double> buffer;
+        std::vector<Scalar> buffer;
     };
 
     struct DescriptorEntry {
         std::size_t global_param_ordinal = 0;
         std::string logical_param_key;
         std::size_t numel = 0;
-        const char* dtype = "double";
+        const char* dtype = "float32";
         std::size_t bucket_id = 0;
         std::size_t offset = 0;
         std::size_t length = 0;

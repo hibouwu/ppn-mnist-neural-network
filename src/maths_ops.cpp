@@ -176,6 +176,82 @@ public:
     }
 };
 
+class LinearReLUGradFn final : public GradFn {
+public:
+    ContributionList apply(const Node& output,
+                           const Matrix& grad_output,
+                           InputIndexView input_indices) const override {
+#ifdef PROFILE_OPS
+        using Clock = std::chrono::steady_clock;
+#endif
+        const auto& inputs = output.inputs();
+        if (inputs.size() != 3 || input_indices.size() != inputs.size()) {
+            throw std::logic_error("LinearReLUGradFn: invalid node inputs.");
+        }
+
+        Matrix masked_grad = grad_output;
+#ifdef PROFILE_OPS
+        auto mask_start = Clock::now();
+#endif
+        const Matrix& relu_out = output.value();
+        for (size_t i = 0; i < relu_out.data.size(); ++i) {
+            if (relu_out.data[i] <= 0.0f) {
+                masked_grad.data[i] = 0.0f;
+            }
+        }
+#ifdef PROFILE_OPS
+        opProfileRecord(
+            "linear_relu_backward_mask",
+            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - mask_start).count());
+#endif
+
+        Matrix d_input(masked_grad.rows, inputs[1]->value().rows);
+#ifdef PROFILE_OPS
+        auto d_input_start = Clock::now();
+#endif
+        masked_grad.matmul_into(inputs[1]->value(), d_input, false, true);
+#ifdef PROFILE_OPS
+        opProfileRecord(
+            "linear_relu_backward_d_input",
+            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - d_input_start).count());
+#endif
+
+        Matrix d_weights(inputs[0]->value().cols, masked_grad.cols);
+#ifdef PROFILE_OPS
+        auto d_weights_start = Clock::now();
+#endif
+        inputs[0]->value().matmul_into(masked_grad, d_weights, true, false);
+#ifdef PROFILE_OPS
+        opProfileRecord(
+            "linear_relu_backward_d_weights",
+            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - d_weights_start).count());
+#endif
+
+        Matrix d_bias(1, masked_grad.cols, 0.0f);
+#ifdef PROFILE_OPS
+        auto d_bias_start = Clock::now();
+#endif
+        for (size_t j = 0; j < masked_grad.cols; ++j) {
+            Scalar sum = 0.0f;
+            for (size_t i = 0; i < masked_grad.rows; ++i) {
+                sum += masked_grad(i, j);
+            }
+            d_bias(0, j) = sum;
+        }
+#ifdef PROFILE_OPS
+        opProfileRecord(
+            "linear_relu_backward_d_bias",
+            std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - d_bias_start).count());
+#endif
+
+        ContributionList contributions;
+        pushIfValid(contributions, input_indices[0], std::move(d_input));
+        pushIfValid(contributions, input_indices[1], std::move(d_weights));
+        pushIfValid(contributions, input_indices[2], std::move(d_bias));
+        return contributions;
+    }
+};
+
 class SumGradFn final : public GradFn {
 public:
     ContributionList apply(const Node& output,
@@ -489,6 +565,48 @@ Node::Ptr matmul(const Node::Ptr& a, const Node::Ptr& b) {
     return node;
 }
 
+Node::Ptr linear_relu(const Node::Ptr& input, const Node::Ptr& weights, const Node::Ptr& bias) {
+#ifdef PROFILE_OPS
+    using Clock = std::chrono::steady_clock;
+    auto start = Clock::now();
+#endif
+    const Matrix& x = input->value();
+    const Matrix& w = weights->value();
+    const Matrix& b = bias->value();
+    if (b.rows != 1 || b.cols != w.cols) {
+        throw std::invalid_argument("linear_relu: bias must have shape (1, out_dim).");
+    }
+
+    Matrix out(x.rows, w.cols);
+    x.matmul_into(w, out);
+    for (size_t i = 0; i < out.rows; ++i) {
+        for (size_t j = 0; j < out.cols; ++j) {
+            Scalar v = out(i, j) + b(0, j);
+            out(i, j) = std::max<Scalar>(0.0f, v);
+        }
+    }
+#ifdef PROFILE_OPS
+    opProfileRecord(
+        "linear_relu_forward",
+        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start).count());
+#endif
+
+    const bool requires_grad = inferRequiresGrad({input, weights, bias});
+    auto node = std::make_shared<OperationNode>(
+        OpKind::RELU,
+        out,
+        std::vector<Node::Ptr>{input, weights, bias},
+        requires_grad);
+    if (!requires_grad) {
+        return node;
+    }
+
+    node->setInputs({input, weights, bias});
+    node->setGradFn(std::make_shared<LinearReLUGradFn>());
+    node->setBackwardContext(makeContext());
+    return node;
+}
+
 Node::Ptr sum(const Node::Ptr& x) {
 #ifdef PROFILE_OPS
     using Clock = std::chrono::steady_clock;
@@ -496,7 +614,7 @@ Node::Ptr sum(const Node::Ptr& x) {
 #endif
     const Matrix& xv = x->value();
     double s = 0.0;
-    for (double v : xv.data) {
+    for (Scalar v : xv.data) {
         s += v;
     }
 
@@ -528,7 +646,7 @@ Node::Ptr mean(const Node::Ptr& x) {
     const Matrix& xv = x->value();
     const std::size_t count = xv.data.size();
     double s = 0.0;
-    for (double v : xv.data) {
+    for (Scalar v : xv.data) {
         s += v;
     }
 
@@ -560,8 +678,8 @@ Node::Ptr relu(const Node::Ptr& x) {
     auto start = Clock::now();
 #endif
     Matrix out = x->value();
-    for (double& v : out.data) {
-        v = std::max(0.0, v);
+    for (Scalar& v : out.data) {
+        v = std::max<Scalar>(0.0f, v);
     }
 #ifdef PROFILE_OPS
     opProfileRecord(
@@ -580,8 +698,8 @@ Node::Ptr leaky_relu(const Node::Ptr& x, double alpha) {
 #endif
     Matrix in = x->value();
     Matrix out = in;
-    for (double& v : out.data) {
-        v = (v > 0.0) ? v : (alpha * v);
+    for (Scalar& v : out.data) {
+        v = (v > 0.0f) ? v : static_cast<Scalar>(alpha * v);
     }
 #ifdef PROFILE_OPS
     opProfileRecord(
@@ -601,7 +719,7 @@ Node::Ptr gelu(const Node::Ptr& x) {
 #endif
     Matrix in = x->value();
     Matrix out = in;
-    for (double& v : out.data) {
+    for (Scalar& v : out.data) {
         const double xi = v;
         const double u = kSqrt2OverPi * (xi + kGeluCubicCoeff * xi * xi * xi);
         v = 0.5 * xi * (1.0 + std::tanh(u));
@@ -622,7 +740,7 @@ Node::Ptr sigmoid(const Node::Ptr& x) {
     auto start = Clock::now();
 #endif
     Matrix out = x->value();
-    for (double& v : out.data) {
+    for (Scalar& v : out.data) {
         v = 1.0 / (1.0 + std::exp(-v));
     }
 #ifdef PROFILE_OPS
@@ -641,7 +759,7 @@ Node::Ptr tanh(const Node::Ptr& x) {
     auto start = Clock::now();
 #endif
     Matrix out = x->value();
-    for (double& v : out.data) {
+    for (Scalar& v : out.data) {
         v = std::tanh(v);
     }
 #ifdef PROFILE_OPS

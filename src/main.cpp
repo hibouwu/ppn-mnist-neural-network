@@ -285,12 +285,12 @@ static DatasetShard makeShard(const Matrix& inputs,
             throw std::out_of_range("makeShard: index out of range.");
         }
 
-        const double* src_x = inputs.data.data() + src_idx * inputs.cols;
-        double* dst_x = shard.inputs.data.data() + row * inputs.cols;
+        const Scalar* src_x = inputs.data.data() + src_idx * inputs.cols;
+        Scalar* dst_x = shard.inputs.data.data() + row * inputs.cols;
         std::copy_n(src_x, inputs.cols, dst_x);
 
-        const double* src_y = targets.data.data() + src_idx * targets.cols;
-        double* dst_y = shard.targets.data.data() + row * targets.cols;
+        const Scalar* src_y = targets.data.data() + src_idx * targets.cols;
+        Scalar* dst_y = shard.targets.data.data() + row * targets.cols;
         std::copy_n(src_y, targets.cols, dst_y);
     }
 
@@ -673,7 +673,11 @@ int main(int argc, char** argv) {
             }
         }
         try {
-            model = std::make_unique<CNNNetwork>(cnnCfg, cfg.seed);
+            model = std::make_unique<CNNNetwork>(
+                cnnCfg,
+                cfg.activation,
+                cfg.init,
+                cfg.seed);
         } catch (const std::exception& e) {
             std::cerr << "Error building CNN: " << e.what() << std::endl;
             return 1;

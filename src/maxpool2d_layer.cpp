@@ -57,8 +57,8 @@ public:
         const std::vector<std::size_t>& max_indices = ctx->index_vectors[0];
 
         Matrix dX(N, C * H * W, 0.0);
-        double* dX_data = dX.data.data();
-        const double* grad_data = grad_output.data.data();
+        Scalar* dX_data = dX.data.data();
+        const Scalar* grad_data = grad_output.data.data();
         const std::size_t dX_stride = dX.cols;
         const std::size_t grad_stride = grad_output.cols;
 
@@ -143,8 +143,8 @@ Node::Ptr MaxPool2DLayer::forward(const Node::Ptr& input,
     auto [H_out, W_out] = outputShape(H, W);
 
     Matrix out(N, C * H_out * W_out);
-    const double* in_data = x.data.data();
-    double* out_data = out.data.data();
+    const Scalar* in_data = x.data.data();
+    Scalar* out_data = out.data.data();
     const size_t in_stride = x.cols;
     const size_t out_stride = out.cols;
     std::vector<std::size_t> max_indices(N * C * H_out * W_out);

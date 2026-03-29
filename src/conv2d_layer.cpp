@@ -262,10 +262,10 @@ void appendCpuBiasGradContribution(ContributionList& contributions,
     }
 
     Matrix db(1, out_channels, 0.0);
-    const double* dout_const_data = dout.data.data();
-    double* db_data = db.data.data();
+    const Scalar* dout_const_data = dout.data.data();
+    Scalar* db_data = db.data.data();
     for (std::size_t i = 0; i < dout.rows; ++i) {
-        const double* row_ptr = dout_const_data + i * dout_stride;
+        const Scalar* row_ptr = dout_const_data + i * dout_stride;
         for (std::size_t j = 0; j < out_channels; ++j) {
             db_data[j] += row_ptr[j];
         }
@@ -310,8 +310,8 @@ Matrix col2imFromContext(const Matrix& cols,
                          std::size_t stride,
                          std::size_t padding) {
     Matrix input_grad(N, C * H * W, 0.0);
-    const double* cols_data = cols.data.data();
-    double* input_grad_data = input_grad.data.data();
+    const Scalar* cols_data = cols.data.data();
+    Scalar* input_grad_data = input_grad.data.data();
     const std::size_t cols_stride = cols.cols;
     const std::size_t input_grad_stride = input_grad.cols;
     const std::size_t HW = H * W;
@@ -353,8 +353,8 @@ Matrix referenceIm2col(const Matrix& input,
                        const Conv2DLayer::Backend::Config& config) {
     const std::size_t col_h = config.kernel_h * config.kernel_w * shape.C;
     Matrix cols(shape.N * shape.H_out * shape.W_out, col_h);
-    const double* input_data = input.data.data();
-    double* cols_data = cols.data.data();
+    const Scalar* input_data = input.data.data();
+    Scalar* cols_data = cols.data.data();
     const std::size_t input_stride = input.cols;
     const std::size_t HW = shape.H * shape.W;
     const std::size_t NHW_out = shape.H_out * shape.W_out;
@@ -933,8 +933,8 @@ public:
 #ifdef PROFILE_OPS
         auto grad_reshape_start = Clock::now();
 #endif
-        double* dout_data = dout.data.data();
-        const double* grad_data = grad_output.data.data();
+        Scalar* dout_data = dout.data.data();
+        const Scalar* grad_data = grad_output.data.data();
         const std::size_t grad_stride = grad_output.cols;
         const std::size_t dout_stride = dout.cols;
         const std::size_t HWW = H_out * W_out;
@@ -1098,8 +1098,8 @@ public:
         const Matrix& bv = params.bias->value();
         const std::size_t out_stride = out.cols;
         Matrix result(shape.N, config.out_channels * shape.H_out * shape.W_out);
-        double* result_data = result.data.data();
-        const double* out_const_data = out.data.data();
+        Scalar* result_data = result.data.data();
+        const Scalar* out_const_data = out.data.data();
         const std::size_t result_stride = result.cols;
         const std::size_t HWW = shape.H_out * shape.W_out;
 

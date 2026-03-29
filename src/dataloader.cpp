@@ -31,12 +31,12 @@ public:
 
         for (std::size_t i = 0; i < indices.size(); ++i) {
             const std::size_t idx = indices[i];
-            const double* src_x = inputs_.data.data() + idx * inputs_.cols;
-            double* dst_x = inputs.data.data() + i * inputs_.cols;
+            const Scalar* src_x = inputs_.data.data() + idx * inputs_.cols;
+            Scalar* dst_x = inputs.data.data() + i * inputs_.cols;
             std::copy_n(src_x, inputs_.cols, dst_x);
 
-            const double* src_y = targets_.data.data() + idx * targets_.cols;
-            double* dst_y = targets.data.data() + i * targets_.cols;
+            const Scalar* src_y = targets_.data.data() + idx * targets_.cols;
+            Scalar* dst_y = targets.data.data() + i * targets_.cols;
             std::copy_n(src_y, targets_.cols, dst_y);
         }
     }

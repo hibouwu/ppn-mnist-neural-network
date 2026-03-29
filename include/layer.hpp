@@ -14,7 +14,7 @@ public:
      * @param in  Input dimension.
      * @param out Output dimension.
      */
-    LinearLayer(size_t in, size_t out);
+    LinearLayer(size_t in, size_t out, bool initialize = true);
 
     /**
      * @brief Forward pass.
@@ -22,6 +22,7 @@ public:
      * @return Output node shaped (batch, out_dim).
      */
     Node::Ptr forward(const Node::Ptr& input) const;
+    Node::Ptr forwardReLU(const Node::Ptr& input) const;
 
     enum class InitType { Manual, He, Xavier };
     

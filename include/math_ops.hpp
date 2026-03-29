@@ -16,6 +16,9 @@ namespace MathOps {
 
     /** @brief Matrix multiplication. */
     Node::Ptr matmul(const Node::Ptr& a, const Node::Ptr& b);
+
+    /** @brief Fused linear + bias + ReLU. */
+    Node::Ptr linear_relu(const Node::Ptr& input, const Node::Ptr& weights, const Node::Ptr& bias);
     
     /** @brief Sum all elements to a scalar node. */
     Node::Ptr sum(const Node::Ptr& x); 

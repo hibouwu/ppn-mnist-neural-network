@@ -4,10 +4,12 @@
 #include <vector>
 #include <cstddef>  // size_t
 
+using Scalar = float;
+
 class Matrix {
 public:
     // Ordre : data, rows, cols (dans le même ordre que dans les constructeurs)
-    std::vector<double> data;  // 1er
+    std::vector<Scalar> data;  // 1er
     size_t rows;               // 2ème
     size_t cols;               // 3ème
 
@@ -25,8 +27,8 @@ public:
     ~Matrix() = default;
 
     // Accès à un élément (ligne, colonne)
-    double& operator()(size_t r, size_t c);
-    const double& operator()(size_t r, size_t c) const;
+    Scalar& operator()(size_t r, size_t c);
+    const Scalar& operator()(size_t r, size_t c) const;
 
     // Opérations de base
     Matrix add(const Matrix& other) const;

@@ -24,7 +24,10 @@ static std::unique_ptr<LinearLayer> makeLinear(
     const std::string& init_name,
     unsigned int seed
 ) {
-    auto layer = std::make_unique<LinearLayer>(static_cast<size_t>(in_dim), static_cast<size_t>(out_dim));
+    auto layer = std::make_unique<LinearLayer>(
+        static_cast<size_t>(in_dim),
+        static_cast<size_t>(out_dim),
+        false);
     LinearLayer::InitType initType = parseInit(init_name);
 
     // Keep same convention as your main.cpp: [-0.1, 0.1] for Manual
@@ -41,8 +44,11 @@ void MLPNetwork::addLayer(std::unique_ptr<LinearLayer> linear,
 Node::Ptr MLPNetwork::forward(const Node::Ptr& input) const {
     Node::Ptr current = input;
     for (const auto& layer : layers) {
-        current = layer.linear->forward(current);
-        if (layer.activation) {
+        const bool fuse_relu = layer.activation &&
+            dynamic_cast<const ReLU*>(layer.activation.get()) != nullptr;
+        current = fuse_relu ? layer.linear->forwardReLU(current)
+                            : layer.linear->forward(current);
+        if (layer.activation && !fuse_relu) {
             current = layer.activation->forward(current);
         }
     }

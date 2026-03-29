@@ -39,7 +39,7 @@ Matrix compute_numerical_gradient(std::function<Node::Ptr(Node::Ptr)> f, Node::P
     return grad_num;
 }
 
-bool check_gradient(const Matrix& grad_auto, const Matrix& grad_num, double tol = 1e-3) {
+bool check_gradient(const Matrix& grad_auto, const Matrix& grad_num, double tol = 2e-3) {
     for (size_t i = 0; i < grad_auto.data.size(); ++i) {
         double diff = std::abs(grad_auto.data[i] - grad_num.data[i]);
         double max_val = std::max(std::abs(grad_auto.data[i]), std::abs(grad_num.data[i]));

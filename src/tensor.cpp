@@ -57,11 +57,11 @@ static inline size_t minz(size_t a, size_t b) { return a < b ? a : b; }
 // La matrice C est entièrement écrite (initialisée à zéro ici)
 
 // Version naïve (ordre i-j-k)
-static void dgemm_ijk(const double* A, const double* B, double* C,
+static void sgemm_ijk(const Scalar* A, const Scalar* B, Scalar* C,
                       size_t M, size_t N, size_t K) {
     for (size_t i = 0; i < M; ++i) {
         for (size_t j = 0; j < N; ++j) {
-            double acc = 0.0;
+            Scalar acc = 0.0f;
             for (size_t k = 0; k < K; ++k) {
                 acc += A[i*K + k] * B[k*N + j];
             }
@@ -71,29 +71,29 @@ static void dgemm_ijk(const double* A, const double* B, double* C,
 }
 
 // Version cache-friendly (ordre i-k-j)
-static void dgemm_ikj(
+static void sgemm_ikj(
 #if defined(__GNUC__) || defined(__clang__)
-    const double* __restrict A,
-    const double* __restrict B,
+    const Scalar* __restrict A,
+    const Scalar* __restrict B,
 #else
-    const double* A,
-    const double* B,
+    const Scalar* A,
+    const Scalar* B,
 #endif
-    double* C,
+    Scalar* C,
     size_t M, size_t N, size_t K) {
 
     // Initialisation de C à zéro
     for (size_t i = 0; i < M; ++i) {
-        double* Ci = C + i*N;
-        for (size_t j = 0; j < N; ++j) Ci[j] = 0.0;
+        Scalar* Ci = C + i*N;
+        for (size_t j = 0; j < N; ++j) Ci[j] = 0.0f;
     }
 
     for (size_t i = 0; i < M; ++i) {
-        const double* Ai = A + i*K;
-        double* Ci = C + i*N;
+        const Scalar* Ai = A + i*K;
+        Scalar* Ci = C + i*N;
         for (size_t k = 0; k < K; ++k) {
-            const double aik = Ai[k];
-            const double* Bk = B + k*N;
+            const Scalar aik = Ai[k];
+            const Scalar* Bk = B + k*N;
             for (size_t j = 0; j < N; ++j) {
                 Ci[j] += aik * Bk[j];
             }
@@ -106,13 +106,13 @@ static void dgemm_ikj(
 #define BLOCK_SIZE 64
 #endif
 
-static void dgemm_blocked(const double* A, const double* B, double* C,
+static void sgemm_blocked(const Scalar* A, const Scalar* B, Scalar* C,
                           size_t M, size_t N, size_t K) {
 
     // Initialisation de C à zéro
     for (size_t i = 0; i < M; ++i) {
-        double* Ci = C + i*N;
-        for (size_t j = 0; j < N; ++j) Ci[j] = 0.0;
+        Scalar* Ci = C + i*N;
+        for (size_t j = 0; j < N; ++j) Ci[j] = 0.0f;
     }
 
     const size_t BS = static_cast<size_t>(BLOCK_SIZE);
@@ -127,9 +127,9 @@ static void dgemm_blocked(const double* A, const double* B, double* C,
 
                 for (size_t i = ii; i < i_max; ++i) {
                     for (size_t k = kk; k < k_max; ++k) {
-                        const double aik = A[i*K + k];
-                        const double* Bk = B + k*N + jj; 
-                        double* Ci = C + i*N + jj;       
+                        const Scalar aik = A[i*K + k];
+                        const Scalar* Bk = B + k*N + jj;
+                        Scalar* Ci = C + i*N + jj;
 
                         for (size_t x = 0; x < len; ++x) {
                             Ci[x] += aik * Bk[x];
@@ -143,26 +143,26 @@ static void dgemm_blocked(const double* A, const double* B, double* C,
 
 // Version OpenMP (parallélisation de la boucle externe i)
 // Basée sur dgemm_ikj pour l'efficacité mémoire
-static void dgemm_omp(const double* A, const double* B, double* C,
+static void sgemm_omp(const Scalar* A, const Scalar* B, Scalar* C,
                       size_t M, size_t N, size_t K) {
     
     // Initialisation de C à zéro (parallèle)
     #pragma omp parallel for
     for (size_t i = 0; i < M; ++i) {
-        double* Ci = C + i*N;
+        Scalar* Ci = C + i*N;
         for (size_t j = 0; j < N; ++j) {
-            Ci[j] = 0.0;
+            Ci[j] = 0.0f;
         }
     }
 
     // Multiplication (parallèle)
     #pragma omp parallel for
     for (size_t i = 0; i < M; ++i) {
-        const double* Ai = A + i*K;
-        double* Ci = C + i*N;
+        const Scalar* Ai = A + i*K;
+        Scalar* Ci = C + i*N;
         for (size_t k = 0; k < K; ++k) {
-            const double aik = Ai[k];
-            const double* Bk = B + k*N;
+            const Scalar aik = Ai[k];
+            const Scalar* Bk = B + k*N;
             for (size_t j = 0; j < N; ++j) {
                 Ci[j] += aik * Bk[j];
             }
@@ -190,13 +190,13 @@ Matrix& Matrix::operator=(const Matrix& other) {
     return *this;
 }
 
-double& Matrix::operator()(size_t r, size_t c) {
+Scalar& Matrix::operator()(size_t r, size_t c) {
     if (r >= rows || c >= cols)
         throw std::out_of_range("Index hors limites");
     return data[r * cols + c];
 }
 
-const double& Matrix::operator()(size_t r, size_t c) const {
+const Scalar& Matrix::operator()(size_t r, size_t c) const {
     if (r >= rows || c >= cols)
         throw std::out_of_range("Index hors limites");
     return data[r * cols + c];
@@ -272,19 +272,19 @@ void Matrix::matmul_into(const Matrix& other, Matrix& out, bool transA, bool tra
 
     if (impl == MatmulImpl::Blas) {
         // Appel BLAS (row-major) avec flags de transposition.
-        cblas_dgemm(
+        cblas_sgemm(
             CblasRowMajor,
             transA ? CblasTrans : CblasNoTrans,
             transB ? CblasTrans : CblasNoTrans,
             static_cast<int>(M),
             static_cast<int>(N),
             static_cast<int>(K),
-            1.0,
+            1.0f,
             data.data(),
             static_cast<int>(cols),
             other.data.data(),
             static_cast<int>(other.cols),
-            0.0,
+            0.0f,
             out.data.data(),
             static_cast<int>(N)
         );
@@ -292,16 +292,16 @@ void Matrix::matmul_into(const Matrix& other, Matrix& out, bool transA, bool tra
         // Chemins optimisés existants pour A*B sans transposition logique.
         switch (impl) {
             case MatmulImpl::Ijk:
-                dgemm_ijk(data.data(), other.data.data(), out.data.data(), M, N, K);
+                sgemm_ijk(data.data(), other.data.data(), out.data.data(), M, N, K);
                 break;
             case MatmulImpl::Ikj:
-                dgemm_ikj(data.data(), other.data.data(), out.data.data(), M, N, K);
+                sgemm_ikj(data.data(), other.data.data(), out.data.data(), M, N, K);
                 break;
             case MatmulImpl::Blocked:
-                dgemm_blocked(data.data(), other.data.data(), out.data.data(), M, N, K);
+                sgemm_blocked(data.data(), other.data.data(), out.data.data(), M, N, K);
                 break;
             case MatmulImpl::Omp:
-                dgemm_omp(data.data(), other.data.data(), out.data.data(), M, N, K);
+                sgemm_omp(data.data(), other.data.data(), out.data.data(), M, N, K);
                 break;
             case MatmulImpl::Blas:
                 break;
@@ -309,14 +309,14 @@ void Matrix::matmul_into(const Matrix& other, Matrix& out, bool transA, bool tra
     } else {
         // Chemin générique pour supporter transA/transB sans copies intermédiaires.
         for (size_t i = 0; i < M; ++i) {
-            double* out_row = out.data.data() + i * N;
+            Scalar* out_row = out.data.data() + i * N;
             for (size_t j = 0; j < N; ++j) {
-                double acc = 0.0;
+                Scalar acc = 0.0f;
                 for (size_t k = 0; k < K; ++k) {
-                    const double a = transA
+                    const Scalar a = transA
                         ? data[k * cols + i]
                         : data[i * cols + k];
-                    const double b = transB
+                    const Scalar b = transB
                         ? other.data[j * other.cols + k]
                         : other.data[k * other.cols + j];
                     acc += a * b;
