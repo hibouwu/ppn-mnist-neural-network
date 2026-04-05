@@ -1,0 +1,32 @@
+# AMPLXE_PERF_STAT
+# hostname : fedora
+# os release : 6.18.8-1.surface.fc42.x86_64
+# arch : x86_64
+# cpuid : GenuineIntel,6,126,5
+# cpudesc : Intel(R) Core(TM) i7-1065G7 CPU @ 1.30GHz
+# total memory : 15948904 kB
+# nrcpus online : 8
+# nrcpus avail : 8
+# sibling cores : 0-7
+# sibling threads : 0,4
+# sibling threads : 1,5
+# sibling threads : 2,6
+# sibling threads : 3,7
+# process id : 14259
+;;93182774703;0
+;;39987236679;1
+;;55163216176;2
+;;47736895458;3
+;;54958019;4
+;;142157;5
+;;234276;6
+;;241028186;7
+;;9;8
+;;0;9
+;;3;10
+;;54084716768;11
+;;20931041073;12
+;;0;13
+;;2444473631;14
+;;213115471965;15
+;;212176926484;16

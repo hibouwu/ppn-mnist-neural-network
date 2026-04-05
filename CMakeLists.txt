@@ -8,6 +8,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
 option(ENABLE_GPROF "Enable gprof instrumentation (-pg) for profiling builds" OFF)
 option(ENABLE_PROFILE_MATMUL "Print timing for matmul (PROFILE_MATMUL)" OFF)
 option(ENABLE_PROFILE_OPS "Print timing for selected forward/backward ops (PROFILE_OPS)" OFF)
+option(ENABLE_VTUNE_MARKERS "Enable Intel VTune ITT API markers when available" ON)
 option(ENABLE_MPI "Enable MPI distributed data parallel" OFF)
 option(ENABLE_ONEDNN_PARITY_PROBE "Enable isolated oneDNN conv parity probe target" ON)
 option(ENABLE_ONEDNN_CONV_BACKEND "Enable optional oneDNN Conv2D backend in selected targets" OFF)
@@ -49,6 +50,47 @@ if(NOT OPENBLAS_INCLUDE_DIR OR NOT OPENBLAS_LIB)
 endif()
 if(NOT JPEG_LIB)
     message(FATAL_ERROR "libjpeg not found")
+endif()
+
+set(PPN_HAVE_VTUNE 0)
+if(ENABLE_VTUNE_MARKERS)
+    set(VTUNE_SEARCH_HINTS
+        ${VTUNE_PROFILER_DIR}
+        $ENV{VTUNE_PROFILER_DIR}
+        ${ONEAPI_ROOT}
+        $ENV{ONEAPI_ROOT}
+        /opt/intel/oneapi/vtune/latest
+        /opt/intel/oneapi/vtune
+        /opt/intel/oneapi
+        /usr/local
+        /usr
+    )
+    find_path(ITTNOTIFY_INCLUDE_DIR
+        NAMES ittnotify.h
+        HINTS ${VTUNE_SEARCH_HINTS}
+        PATH_SUFFIXES
+            include
+            include/ittnotify
+            sdk/include
+    )
+    find_library(ITTNOTIFY_LIB
+        NAMES ittnotify libittnotify
+        HINTS ${VTUNE_SEARCH_HINTS}
+        PATH_SUFFIXES
+            lib
+            lib64
+            sdk/lib
+            sdk/lib64
+    )
+
+    if(ITTNOTIFY_INCLUDE_DIR AND ITTNOTIFY_LIB)
+        set(PPN_HAVE_VTUNE 1)
+        message(STATUS "Intel VTune ITT API found; task markers enabled")
+    else()
+        message(STATUS "Intel VTune ITT API not found; building without VTune markers")
+    endif()
+else()
+    message(STATUS "Intel VTune markers explicitly disabled")
 endif()
 
 if(ENABLE_ONEDNN_PARITY_PROBE OR ENABLE_ONEDNN_CONV_BACKEND)
@@ -140,6 +182,16 @@ include_directories(mnist_reader)
 
 # MNIST Reader Library
 add_library(mnist_reader_lib STATIC mnist_reader/mnist_reader.c)
+add_library(ppn_vtune INTERFACE)
+target_compile_definitions(ppn_vtune INTERFACE PPN_HAVE_VTUNE=${PPN_HAVE_VTUNE})
+if(ENABLE_VTUNE_MARKERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(ppn_vtune INTERFACE -fno-omit-frame-pointer)
+    target_link_options(ppn_vtune INTERFACE -fno-omit-frame-pointer)
+endif()
+if(PPN_HAVE_VTUNE)
+    target_include_directories(ppn_vtune INTERFACE ${ITTNOTIFY_INCLUDE_DIR})
+    target_link_libraries(ppn_vtune INTERFACE ${ITTNOTIFY_LIB})
+endif()
 
 # Sources
 file(GLOB SOURCES "src/*.cpp")
@@ -174,7 +226,7 @@ add_executable(test_tiny_imagenet_dataset tests/test_tiny_imagenet_dataset.cpp $
 # Main Application
 add_executable(ppn_train src/main.cpp ${SOURCES})
 target_link_libraries(ppn_train PRIVATE ${OPENBLAS_LIB} mnist_reader_lib)
-target_link_libraries(ppn_train PRIVATE ${JPEG_LIB})
+target_link_libraries(ppn_train PRIVATE ${JPEG_LIB} ppn_vtune)
 if(ENABLE_MPI)
     target_compile_definitions(ppn_train PRIVATE USE_MPI)
     target_link_libraries(ppn_train PRIVATE MPI::MPI_CXX)
@@ -197,7 +249,7 @@ set(TEST_TARGETS
 )
 
 foreach(target ${TEST_TARGETS})
-    target_link_libraries(${target} PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
+    target_link_libraries(${target} PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ppn_vtune)
 endforeach()
 
 if(ENABLE_MPI)
@@ -225,10 +277,10 @@ add_test(NAME OptimizerTest COMMAND test_optimizer)
 add_test(NAME TinyImageNetDatasetTest COMMAND test_tiny_imagenet_dataset)
 
 add_executable(test_benchmark_large tests/test_benchmark_large.cpp ${SOURCES})
-target_link_libraries(test_benchmark_large PUBLIC ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
+target_link_libraries(test_benchmark_large PUBLIC ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ppn_vtune)
 
 add_executable(test_autograd_runtime_benchmark tests/test_autograd_runtime_benchmark.cpp ${SOURCES})
-target_link_libraries(test_autograd_runtime_benchmark PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
+target_link_libraries(test_autograd_runtime_benchmark PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ppn_vtune)
 
 if(ENABLE_GPU_SMOKE_TESTS)
     find_package(CUDAToolkit REQUIRED)
@@ -305,19 +357,19 @@ if(ENABLE_GPU_SMOKE_TESTS)
 endif()
 
 add_executable(test_init tests/test_init.cpp ${SOURCES})
-target_link_libraries(test_init PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
+target_link_libraries(test_init PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ppn_vtune)
 add_test(NAME InitTest COMMAND test_init)
 
 add_executable(test_cnn_configurable tests/test_cnn_configurable.cpp ${SOURCES})
-target_link_libraries(test_cnn_configurable PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
+target_link_libraries(test_cnn_configurable PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ppn_vtune)
 add_test(NAME CNNConfigurableTest COMMAND test_cnn_configurable)
 
 add_executable(test_conv2d_onednn_backend tests/test_conv2d_onednn_backend.cpp ${SOURCES})
-target_link_libraries(test_conv2d_onednn_backend PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
+target_link_libraries(test_conv2d_onednn_backend PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ppn_vtune)
 add_test(NAME Conv2DOneDnnBackendTest COMMAND test_conv2d_onednn_backend)
 
 add_executable(test_conv2d_backend_benchmark tests/test_conv2d_backend_benchmark.cpp ${SOURCES})
-target_link_libraries(test_conv2d_backend_benchmark PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
+target_link_libraries(test_conv2d_backend_benchmark PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ppn_vtune)
 
 function(configure_onednn_conv_backend_target target_name)
     if(ENABLE_ONEDNN_CONV_BACKEND AND DNNL_INCLUDE_DIR AND DNNL_LIB)
@@ -348,7 +400,7 @@ configure_onednn_conv_backend_target(test_conv2d_backend_benchmark)
 
 if(ENABLE_ONEDNN_PARITY_PROBE)
     add_executable(test_onednn_conv_parity_probe tests/test_onednn_conv_parity_probe.cpp ${SOURCES})
-    target_link_libraries(test_onednn_conv_parity_probe PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB})
+    target_link_libraries(test_onednn_conv_parity_probe PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ppn_vtune)
 
     if(DNNL_INCLUDE_DIR AND DNNL_LIB)
         target_compile_definitions(test_onednn_conv_parity_probe PRIVATE ONEDNN_PARITY_PROBE_HAVE_DNNL=1)

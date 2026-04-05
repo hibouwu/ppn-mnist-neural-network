@@ -28,3 +28,19 @@ struct OpTimingStat {
 void opProfileEpochReset();
 void opProfileRecord(const char* name, long long us);
 std::vector<OpTimingStat> opProfileEpochSnapshot();
+
+bool vtuneMarkersEnabled();
+void vtuneTaskBegin(const char* name);
+void vtuneTaskEnd();
+
+class ScopedProfileTask {
+public:
+    explicit ScopedProfileTask(const char* name);
+    ~ScopedProfileTask();
+
+    ScopedProfileTask(const ScopedProfileTask&) = delete;
+    ScopedProfileTask& operator=(const ScopedProfileTask&) = delete;
+
+private:
+    bool active_ = false;
+};

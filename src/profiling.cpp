@@ -3,6 +3,10 @@
 #include <string>
 #include <unordered_map>
 
+#if defined(PPN_HAVE_VTUNE) && PPN_HAVE_VTUNE
+#include <ittnotify.h>
+#endif
+
 namespace {
 MatmulEpochStats g_stats;
 std::unordered_map<std::string, OpTimingStat> g_op_stats;
@@ -23,6 +27,13 @@ void initNames() {
     g_stats.per_impl[3].name = "blocked";
     g_stats.per_impl[4].name = "omp";
 }
+
+#if defined(PPN_HAVE_VTUNE) && PPN_HAVE_VTUNE
+__itt_domain* vtuneDomain() {
+    static __itt_domain* domain = __itt_domain_create("ppn");
+    return domain;
+}
+#endif
 }
 
 void matmulProfileEpochReset() {
@@ -65,4 +76,42 @@ std::vector<OpTimingStat> opProfileEpochSnapshot() {
         out.push_back(stat);
     }
     return out;
+}
+
+bool vtuneMarkersEnabled() {
+#if defined(PPN_HAVE_VTUNE) && PPN_HAVE_VTUNE
+    return true;
+#else
+    return false;
+#endif
+}
+
+void vtuneTaskBegin(const char* name) {
+#if defined(PPN_HAVE_VTUNE) && PPN_HAVE_VTUNE
+    __itt_task_begin(vtuneDomain(),
+                     __itt_null,
+                     __itt_null,
+                     __itt_string_handle_create(name));
+#else
+    (void)name;
+#endif
+}
+
+void vtuneTaskEnd() {
+#if defined(PPN_HAVE_VTUNE) && PPN_HAVE_VTUNE
+    __itt_task_end(vtuneDomain());
+#endif
+}
+
+ScopedProfileTask::ScopedProfileTask(const char* name)
+    : active_(vtuneMarkersEnabled()) {
+    if (active_) {
+        vtuneTaskBegin(name);
+    }
+}
+
+ScopedProfileTask::~ScopedProfileTask() {
+    if (active_) {
+        vtuneTaskEnd();
+    }
 }

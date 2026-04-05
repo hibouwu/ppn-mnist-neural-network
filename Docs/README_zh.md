@@ -67,6 +67,19 @@ cmake --build build-mpi -j$(nproc)
 
 建议使用 `build` 和 `build-mpi` 这样的两个不同目录并存保存两套配置。`ENABLE_MPI` 只能在 CMake 配置阶段切换，不能在单独执行 `cmake --build` 时切换。
 
+### 1.2 使用 VTune 构建与打点
+
+如果机器上安装了 Intel VTune Profiler，并且能找到 ITT API 的头文件和库，当前工程会自动启用 VTune task 标记。训练阶段里已经切好了 `train_epoch`、`train_batch`、`data_loader`、`forward_loss`、`backward`、`gradient_sync`、`optimizer_step` 这些区段，直接在 VTune 时间线上就能看到。
+
+推荐构建方式：
+
+```bash
+cmake -S . -B build-vtune -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_VTUNE_MARKERS=ON
+cmake --build build-vtune -j$(nproc)
+```
+
+如果没有安装 VTune/ITT API，也不会影响正常编译，只是自动关闭这些标记。
+
 ### 2. 数据集准备
 
 我们提供了一个脚本来下载 MNIST 数据集：
@@ -124,6 +137,15 @@ mpiexec -n 4 ./build-mpi/ppn_train --epochs 20 --learning_rate 0.01 --batch_size
   * `exp_init_comparison.sh`: 比较不同的权重初始化策略。
 * **可视化 (Visualization)**：
   * Python 脚本 (如 `scripts/Utils/plot_metrics.py`) 被 Shell 脚本调用以生成性能对比图。
+
+如果已经安装 VTune，也可以直接用辅助脚本采集热点：
+
+```bash
+source /opt/intel/oneapi/setvars.sh
+./scripts/Performance/run_vtune_hotspots.sh --epochs 1 --batch_size 256 --data_dir mnist
+```
+
+结果会输出到 `output/vtune/`。
 
 ## 架构
 

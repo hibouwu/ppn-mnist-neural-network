@@ -77,7 +77,20 @@ cmake --build build-gprof -j$(nproc)
 
 This keeps normal training runs free from profiling overhead.
 
-### 1.3 Optional oneDNN Conv Backend
+### 1.3 VTune Build With ITT Markers
+
+If Intel VTune Profiler and the ITT API development files are available on your machine, the build now auto-detects them and enables task markers for the main training phases (`train_epoch`, `train_batch`, `data_loader`, `forward_loss`, `backward`, `gradient_sync`, `optimizer_step`).
+
+Recommended build:
+
+```bash
+cmake -S . -B build-vtune -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_VTUNE_MARKERS=ON
+cmake --build build-vtune -j$(nproc)
+```
+
+If the ITT headers or library are not found, the project still builds normally and simply disables VTune markers.
+
+### 1.4 Optional oneDNN Conv Backend
 
 The project now supports an optional oneDNN backend for `Conv2DLayer`. This backend is integrated for correctness first: the external `Matrix<double>` contract stays unchanged, while the internal oneDNN path currently uses an `f32` bridge and writes results back to `double`.
 
@@ -177,6 +190,15 @@ This generates logs and a CSV summary at `output/gprof_compare/compare_cnn_mlp.c
 ```
 
 This generates `gmon.*`, `gprof_flat.txt`, and `gprof_callgraph.txt` in `output/gprof/`.
+
+* Run a VTune hotspots collection with the helper script:
+
+```bash
+source /opt/intel/oneapi/setvars.sh
+./scripts/Performance/run_vtune_hotspots.sh --epochs 1 --batch_size 256 --data_dir mnist
+```
+
+The script configures a `RelWithDebInfo` build in `build-vtune/`, runs `vtune -collect hotspots`, and stores the result under `output/vtune/`.
 
 ## Architecture
 

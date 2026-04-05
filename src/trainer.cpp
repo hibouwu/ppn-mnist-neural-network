@@ -2,6 +2,7 @@
 #include "autograd/engine.hpp"
 #include "distributed/gradient_sync_runtime.hpp"
 #include "node.hpp"      // Node::constant
+#include "profiling.hpp"
 #include <chrono>
 #include <algorithm>
 #include <limits>
@@ -72,6 +73,7 @@ Metrics Trainer::evaluate() {
 Metrics Trainer::runEpoch(bool training) {
     using Clock = std::chrono::steady_clock;
     const auto epoch_start = Clock::now();
+    const ScopedProfileTask epoch_scope(training ? "train_epoch" : "eval_epoch");
 
     double total_loss = 0.0;
     std::uint64_t total_samples = 0;
@@ -91,10 +93,15 @@ Metrics Trainer::runEpoch(bool training) {
     Matrix batch_y(dataLoader_.batchSize(), dataLoader_.targetCols());
 
     while (dataLoader_.hasNext()) {
+        const ScopedProfileTask batch_scope(training ? "train_batch" : "eval_batch");
         const auto step_start = Clock::now();
 
         const auto data_start = Clock::now();
-        size_t actual = dataLoader_.nextBatchInto(batch_x, batch_y);
+        size_t actual = 0;
+        {
+            const ScopedProfileTask data_scope("data_loader");
+            actual = dataLoader_.nextBatchInto(batch_x, batch_y);
+        }
         const auto data_end = Clock::now();
         profile.data_time_s += std::chrono::duration<double>(data_end - data_start).count();
         if (actual == 0) break;
@@ -112,10 +119,15 @@ Metrics Trainer::runEpoch(bool training) {
 
         // Forward pass through the model.
         const auto fwd_bwd_start = Clock::now();
-        auto preds = model_.forward(x);
+        Node::Ptr preds;
+        Node::Ptr loss_node;
+        {
+            const ScopedProfileTask forward_scope(training ? "forward_loss" : "eval_forward_loss");
+            preds = model_.forward(x);
 
-        // Loss node (usually a scalar).
-        auto loss_node = lossFn_.forward(preds, y);
+            // Loss node (usually a scalar).
+            loss_node = lossFn_.forward(preds, y);
+        }
 
         // Accumulate loss value (assume 1x1 matrix).
         const Matrix& loss_val = loss_node->value();
@@ -126,31 +138,37 @@ Metrics Trainer::runEpoch(bool training) {
 
         // Backward + parameter update only in training mode.
         if (training) {
-            optimizer_.zeroGrad();
             std::uint64_t global_batch_size = batch_size;
             std::optional<SyncStepProfile> step_sync_profile;
-            if (gradient_sync_runtime_) {
-                gradient_sync_runtime_->beginStep(batch_size);
-                AutogradEngine engine;
-                engine.setReachableLeafHook([this](const std::vector<Node::Ptr>& reachable_leaf_params) {
-                    gradient_sync_runtime_->planStep(reachable_leaf_params);
-                });
-                engine.setParameterReadyHook([this](Node& param) {
-                    gradient_sync_runtime_->onParameterGradReady(param);
-                });
-                engine.setBackwardCompleteHook([this]() {
-                    gradient_sync_runtime_->onBackwardComplete();
-                });
-                engine.backward(loss_node);
-            } else {
-                loss_node->backward();
+            {
+                const ScopedProfileTask backward_scope("backward");
+                optimizer_.zeroGrad();
+                if (gradient_sync_runtime_) {
+                    gradient_sync_runtime_->beginStep(batch_size);
+                    AutogradEngine engine;
+                    engine.setReachableLeafHook([this](const std::vector<Node::Ptr>& reachable_leaf_params) {
+                        gradient_sync_runtime_->planStep(reachable_leaf_params);
+                    });
+                    engine.setParameterReadyHook([this](Node& param) {
+                        gradient_sync_runtime_->onParameterGradReady(param);
+                    });
+                    engine.setBackwardCompleteHook([this]() {
+                        gradient_sync_runtime_->onBackwardComplete();
+                    });
+                    engine.backward(loss_node);
+                } else {
+                    loss_node->backward();
+                }
             }
             const auto fwd_bwd_end = Clock::now();
             profile.fwd_bwd_time_s += std::chrono::duration<double>(fwd_bwd_end - fwd_bwd_start).count();
 
             if (gradient_sync_runtime_) {
                 const auto sync_start = Clock::now();
-                global_batch_size = gradient_sync_runtime_->finalizeAndGetGlobalBatch();
+                {
+                    const ScopedProfileTask sync_scope("gradient_sync");
+                    global_batch_size = gradient_sync_runtime_->finalizeAndGetGlobalBatch();
+                }
                 const auto sync_end = Clock::now();
                 profile.sync_wait_time_s += std::chrono::duration<double>(sync_end - sync_start).count();
                 if (sync_profile_provider_) {
@@ -159,7 +177,10 @@ Metrics Trainer::runEpoch(bool training) {
                 }
             } else if (grad_sync_fn_) {
                 const auto sync_start = Clock::now();
-                global_batch_size = grad_sync_fn_(trainable_params_, batch_size);
+                {
+                    const ScopedProfileTask sync_scope("gradient_sync");
+                    global_batch_size = grad_sync_fn_(trainable_params_, batch_size);
+                }
                 const auto sync_end = Clock::now();
                 const double sync_time_s =
                     std::chrono::duration<double>(sync_end - sync_start).count();
@@ -172,7 +193,10 @@ Metrics Trainer::runEpoch(bool training) {
             }
             if (global_batch_size > 0) {
                 const auto opt_start = Clock::now();
-                optimizer_.step(1.0 / static_cast<double>(global_batch_size));
+                {
+                    const ScopedProfileTask optimizer_scope("optimizer_step");
+                    optimizer_.step(1.0 / static_cast<double>(global_batch_size));
+                }
                 const auto opt_end = Clock::now();
                 profile.opt_time_s += std::chrono::duration<double>(opt_end - opt_start).count();
             }
