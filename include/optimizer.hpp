@@ -2,6 +2,8 @@
 #include "node.hpp"
 #include <vector>
 #include <cstddef>
+#include <iosfwd>
+#include <string>
 
 class Optimizer {
 public:
@@ -10,6 +12,10 @@ public:
     
     // Updates parameters based on gradients
     virtual void step(double gradScale = 1.0) = 0;
+
+    virtual std::string typeName() const = 0;
+    virtual void saveState(std::ostream& os) const;
+    virtual void loadState(std::istream& is);
     
     // Clears gradients
     virtual void zeroGrad();
@@ -24,6 +30,7 @@ public:
     SGDOptimizer(std::vector<Node::Ptr> params, double lr);
     
     void step(double gradScale = 1.0) override;
+    std::string typeName() const override;
 };
 
 class MomentumSGDOptimizer : public Optimizer {
@@ -35,6 +42,9 @@ public:
                          double weightDecay = 0.0);
 
     void step(double gradScale = 1.0) override;
+    std::string typeName() const override;
+    void saveState(std::ostream& os) const override;
+    void loadState(std::istream& is) override;
 
 private:
     double momentum_;
@@ -53,6 +63,9 @@ public:
                    double weightDecay = 0.0);
 
     void step(double gradScale = 1.0) override;
+    std::string typeName() const override;
+    void saveState(std::ostream& os) const override;
+    void loadState(std::istream& is) override;
 
 private:
     double beta1_;

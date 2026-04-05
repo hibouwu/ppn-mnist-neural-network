@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
@@ -25,6 +26,7 @@ namespace fs = std::filesystem;
 #include "distributed/distributed.hpp"
 #include "network.hpp"
 #include "cnn_network.hpp"
+#include "checkpoint.hpp"
 #include "loss.hpp"
 #include "optimizer.hpp"
 #include "runtime/grad_sync_mode_info.hpp"
@@ -398,13 +400,85 @@ struct Config {
     double grad_topk_ratio = 0.1;
     bool grad_error_feedback = false;
     int grad_compress_interval = 1;
-
+    std::string save_checkpoint;
+    std::string resume;
+    int save_every = 0;
 };
+
+static std::string normalizeOptimizerName(const std::string& optimizer_name) {
+    if (optimizer_name == "momentum") {
+        return "momentum_sgd";
+    }
+    return optimizer_name;
+}
+
+static checkpoint::Metadata makeCheckpointMetadata(const Config& cfg) {
+    checkpoint::Metadata metadata;
+    metadata.batch_size = cfg.batch_size;
+    metadata.learning_rate = cfg.learning_rate;
+    metadata.seed = cfg.seed;
+    metadata.dataset = cfg.dataset;
+    metadata.data_dir = cfg.data_dir;
+    metadata.model = cfg.model;
+    metadata.activation = cfg.activation;
+    metadata.init = cfg.init;
+    metadata.optimizer = normalizeOptimizerName(cfg.optimizer);
+    metadata.hidden_sizes =
+        cfg.hidden_sizes.empty() ? std::to_string(cfg.hidden_size) : cfg.hidden_sizes;
+    metadata.momentum = cfg.momentum;
+    metadata.nesterov = cfg.nesterov;
+    metadata.weight_decay = cfg.weight_decay;
+    metadata.beta1 = cfg.beta1;
+    metadata.beta2 = cfg.beta2;
+    metadata.eps = cfg.eps;
+    metadata.cnn_conv_channels = cfg.cnn_conv_channels;
+    metadata.cnn_conv_kernels = cfg.cnn_conv_kernels;
+    metadata.cnn_conv_strides = cfg.cnn_conv_strides;
+    metadata.cnn_conv_paddings = cfg.cnn_conv_paddings;
+    metadata.cnn_pool_after = cfg.cnn_pool_after;
+    metadata.cnn_pool_kernels = cfg.cnn_pool_kernels;
+    metadata.cnn_pool_strides = cfg.cnn_pool_strides;
+    metadata.cnn_fc_hidden_sizes = cfg.cnn_fc_hidden_sizes;
+    metadata.conv_backend = cfg.conv_backend;
+    return metadata;
+}
+
+static Config configFromCheckpointMetadata(const checkpoint::Metadata& metadata) {
+    Config cfg;
+    cfg.batch_size = metadata.batch_size;
+    cfg.learning_rate = metadata.learning_rate;
+    cfg.hidden_size = 128;
+    cfg.hidden_sizes = metadata.hidden_sizes;
+    cfg.dataset = metadata.dataset;
+    cfg.data_dir = metadata.data_dir;
+    cfg.seed = metadata.seed;
+    cfg.activation = metadata.activation;
+    cfg.init = metadata.init;
+    cfg.model = metadata.model;
+    cfg.optimizer = normalizeOptimizerName(metadata.optimizer);
+    cfg.momentum = metadata.momentum;
+    cfg.nesterov = metadata.nesterov;
+    cfg.weight_decay = metadata.weight_decay;
+    cfg.beta1 = metadata.beta1;
+    cfg.beta2 = metadata.beta2;
+    cfg.eps = metadata.eps;
+    cfg.cnn_conv_channels = metadata.cnn_conv_channels;
+    cfg.cnn_conv_kernels = metadata.cnn_conv_kernels;
+    cfg.cnn_conv_strides = metadata.cnn_conv_strides;
+    cfg.cnn_conv_paddings = metadata.cnn_conv_paddings;
+    cfg.cnn_pool_after = metadata.cnn_pool_after;
+    cfg.cnn_pool_kernels = metadata.cnn_pool_kernels;
+    cfg.cnn_pool_strides = metadata.cnn_pool_strides;
+    cfg.cnn_fc_hidden_sizes = metadata.cnn_fc_hidden_sizes;
+    cfg.conv_backend = metadata.conv_backend;
+    return cfg;
+}
 
 int main(int argc, char** argv) {
     DistributedContext dist(argc, argv);
     const bool isMaster = dist.isMaster();
     Config cfg;
+    std::unordered_set<std::string> explicit_flags;
 
     try {
         bool seen_naive = false;
@@ -432,85 +506,115 @@ int main(int argc, char** argv) {
             };
 
             if (arg == "--epochs") {
+                explicit_flags.insert(arg);
                 cfg.epochs = parseIntInRange(
                     requireValue(arg), arg, 0, std::numeric_limits<int>::max());
             } else if (arg == "--batch_size") {
+                explicit_flags.insert(arg);
                 cfg.batch_size = parseIntInRange(
                     requireValue(arg), arg, 1, std::numeric_limits<int>::max());
             } else if (arg == "--learning_rate") {
+                explicit_flags.insert(arg);
                 cfg.learning_rate = parseDoubleStrict(requireValue(arg), arg);
                 if (cfg.learning_rate <= 0.0) {
                     throw std::invalid_argument(arg + ": expected > 0.");
                 }
             } else if (arg == "--hidden_size") {
+                explicit_flags.insert(arg);
                 cfg.hidden_size = parseIntInRange(
                     requireValue(arg), arg, 1, std::numeric_limits<int>::max());
             } else if (arg == "--hidden_sizes") {
+                explicit_flags.insert(arg);
                 cfg.hidden_sizes = requireValue(arg);
             } else if (arg == "--data_dir") {
+                explicit_flags.insert(arg);
                 cfg.data_dir = requireValue(arg);
             } else if (arg == "--dataset") {
+                explicit_flags.insert(arg);
                 cfg.dataset = requireValue(arg);
             } else if (arg == "--seed") {
+                explicit_flags.insert(arg);
                 cfg.seed = parseUnsignedIntStrict(requireValue(arg), arg);
             } else if (arg == "--activation") {
+                explicit_flags.insert(arg);
                 cfg.activation = requireValue(arg);
             } else if (arg == "--optimizer") {
+                explicit_flags.insert(arg);
                 cfg.optimizer = requireValue(arg);
             } else if (arg == "--momentum") {
+                explicit_flags.insert(arg);
                 cfg.momentum = parseDoubleStrict(requireValue(arg), arg);
                 if (cfg.momentum < 0.0 || cfg.momentum >= 1.0) {
                     throw std::invalid_argument(arg + ": expected value in [0, 1).");
                 }
             } else if (arg == "--nesterov") {
+                explicit_flags.insert(arg);
                 cfg.nesterov = (parseIntInRange(requireValue(arg), arg, 0, 1) != 0);
             } else if (arg == "--weight_decay") {
+                explicit_flags.insert(arg);
                 cfg.weight_decay = parseDoubleStrict(requireValue(arg), arg);
                 if (cfg.weight_decay < 0.0) {
                     throw std::invalid_argument(arg + ": expected >= 0.");
                 }
             } else if (arg == "--beta1") {
+                explicit_flags.insert(arg);
                 cfg.beta1 = parseDoubleStrict(requireValue(arg), arg);
                 if (cfg.beta1 < 0.0 || cfg.beta1 >= 1.0) {
                     throw std::invalid_argument(arg + ": expected value in [0, 1).");
                 }
             } else if (arg == "--beta2") {
+                explicit_flags.insert(arg);
                 cfg.beta2 = parseDoubleStrict(requireValue(arg), arg);
                 if (cfg.beta2 < 0.0 || cfg.beta2 >= 1.0) {
                     throw std::invalid_argument(arg + ": expected value in [0, 1).");
                 }
             } else if (arg == "--eps") {
+                explicit_flags.insert(arg);
                 cfg.eps = parseDoubleStrict(requireValue(arg), arg);
                 if (cfg.eps <= 0.0) {
                     throw std::invalid_argument(arg + ": expected > 0.");
                 }
             } else if (arg == "--init") {
+                explicit_flags.insert(arg);
                 cfg.init = requireValue(arg);
             } else if (arg == "--model") {
+                explicit_flags.insert(arg);
                 cfg.model = requireValue(arg);
             } else if (arg == "--cnn_conv_channels") {
+                explicit_flags.insert(arg);
                 cfg.cnn_conv_channels = requireValue(arg);
             } else if (arg == "--cnn_conv_kernels") {
+                explicit_flags.insert(arg);
                 cfg.cnn_conv_kernels = requireValue(arg);
             } else if (arg == "--cnn_conv_strides") {
+                explicit_flags.insert(arg);
                 cfg.cnn_conv_strides = requireValue(arg);
             } else if (arg == "--cnn_conv_paddings") {
+                explicit_flags.insert(arg);
                 cfg.cnn_conv_paddings = requireValue(arg);
             } else if (arg == "--cnn_pool_after") {
+                explicit_flags.insert(arg);
                 cfg.cnn_pool_after = requireValue(arg);
             } else if (arg == "--cnn_pool_kernels") {
+                explicit_flags.insert(arg);
                 cfg.cnn_pool_kernels = requireValue(arg);
             } else if (arg == "--cnn_pool_strides") {
+                explicit_flags.insert(arg);
                 cfg.cnn_pool_strides = requireValue(arg);
             } else if (arg == "--cnn_fc_hidden_sizes") {
+                explicit_flags.insert(arg);
                 cfg.cnn_fc_hidden_sizes = requireValue(arg);
             } else if (arg == "--conv_backend") {
+                explicit_flags.insert(arg);
                 cfg.conv_backend = requireValue(arg);
             } else if (arg == "--out_dir") {
+                explicit_flags.insert(arg);
                 cfg.out_dir = requireValue(arg);
             } else if (arg == "--grad_sync_mode") {
+                explicit_flags.insert(arg);
                 cfg.grad_sync_mode = requireValue(arg);
             } else if (arg == "--bucket_size_bytes") {
+                explicit_flags.insert(arg);
                 cfg.bucket_size_bytes = parseSizeTStrict(requireValue(arg), arg);
             } else if (arg == "--grad_compress") {
                 cfg.grad_compress = parseIntInRange(requireValue(arg), arg, 0, 1) != 0;
@@ -527,7 +631,18 @@ int main(int argc, char** argv) {
                 cfg.grad_compress_interval = parseIntInRange(
                     requireValue(arg), arg, 1, std::numeric_limits<int>::max());
             } else if (arg == "--qualification_artifacts") {
+                explicit_flags.insert(arg);
                 cfg.qualification_artifacts = parseIntInRange(requireValue(arg), arg, 0, 1) != 0;
+            } else if (arg == "--save_checkpoint") {
+                explicit_flags.insert(arg);
+                cfg.save_checkpoint = requireValue(arg);
+            } else if (arg == "--resume") {
+                explicit_flags.insert(arg);
+                cfg.resume = requireValue(arg);
+            } else if (arg == "--save_every") {
+                explicit_flags.insert(arg);
+                cfg.save_every = parseIntInRange(
+                    requireValue(arg), arg, 1, std::numeric_limits<int>::max());
             } else {
                 throw std::invalid_argument("unknown argument '" + arg + "'");
             }
@@ -540,6 +655,95 @@ int main(int argc, char** argv) {
 
     } catch (const std::exception& e) {
         std::cerr << "Error parsing arguments: " << e.what() << std::endl;
+        return 1;
+    }
+
+    checkpoint::Metadata resume_metadata;
+    std::uint64_t resume_epoch = 0;
+    if (!cfg.resume.empty()) {
+        try {
+            resume_metadata = checkpoint::loadMetadata(cfg.resume);
+            resume_epoch = resume_metadata.epoch;
+        } catch (const std::exception& e) {
+            std::cerr << "Error loading checkpoint metadata: " << e.what() << std::endl;
+            return 1;
+        }
+
+        const Config checkpoint_cfg = configFromCheckpointMetadata(resume_metadata);
+        auto failIfConflicting = [&](const std::string& flag,
+                                     const auto& cli_value,
+                                     const auto& checkpoint_value) {
+            if (explicit_flags.count(flag) > 0 && cli_value != checkpoint_value) {
+                throw std::invalid_argument(
+                    flag + ": value conflicts with checkpoint. Remove the flag or use a matching value.");
+            }
+        };
+
+        try {
+            failIfConflicting("--batch_size", cfg.batch_size, checkpoint_cfg.batch_size);
+            failIfConflicting("--learning_rate", cfg.learning_rate, checkpoint_cfg.learning_rate);
+            failIfConflicting("--hidden_sizes", cfg.hidden_sizes, checkpoint_cfg.hidden_sizes);
+            if (explicit_flags.count("--hidden_size") > 0 &&
+                explicit_flags.count("--hidden_sizes") == 0 &&
+                checkpoint_cfg.hidden_sizes != std::to_string(cfg.hidden_size)) {
+                throw std::invalid_argument(
+                    "--hidden_size: value conflicts with checkpoint. Remove the flag or use a matching value.");
+            }
+            failIfConflicting("--dataset", cfg.dataset, checkpoint_cfg.dataset);
+            failIfConflicting("--seed", cfg.seed, checkpoint_cfg.seed);
+            failIfConflicting("--activation", cfg.activation, checkpoint_cfg.activation);
+            failIfConflicting("--optimizer",
+                              normalizeOptimizerName(cfg.optimizer),
+                              normalizeOptimizerName(checkpoint_cfg.optimizer));
+            failIfConflicting("--momentum", cfg.momentum, checkpoint_cfg.momentum);
+            failIfConflicting("--nesterov", cfg.nesterov, checkpoint_cfg.nesterov);
+            failIfConflicting("--weight_decay", cfg.weight_decay, checkpoint_cfg.weight_decay);
+            failIfConflicting("--beta1", cfg.beta1, checkpoint_cfg.beta1);
+            failIfConflicting("--beta2", cfg.beta2, checkpoint_cfg.beta2);
+            failIfConflicting("--eps", cfg.eps, checkpoint_cfg.eps);
+            failIfConflicting("--init", cfg.init, checkpoint_cfg.init);
+            failIfConflicting("--model", cfg.model, checkpoint_cfg.model);
+            failIfConflicting("--cnn_conv_channels", cfg.cnn_conv_channels, checkpoint_cfg.cnn_conv_channels);
+            failIfConflicting("--cnn_conv_kernels", cfg.cnn_conv_kernels, checkpoint_cfg.cnn_conv_kernels);
+            failIfConflicting("--cnn_conv_strides", cfg.cnn_conv_strides, checkpoint_cfg.cnn_conv_strides);
+            failIfConflicting("--cnn_conv_paddings", cfg.cnn_conv_paddings, checkpoint_cfg.cnn_conv_paddings);
+            failIfConflicting("--cnn_pool_after", cfg.cnn_pool_after, checkpoint_cfg.cnn_pool_after);
+            failIfConflicting("--cnn_pool_kernels", cfg.cnn_pool_kernels, checkpoint_cfg.cnn_pool_kernels);
+            failIfConflicting("--cnn_pool_strides", cfg.cnn_pool_strides, checkpoint_cfg.cnn_pool_strides);
+            failIfConflicting("--cnn_fc_hidden_sizes", cfg.cnn_fc_hidden_sizes, checkpoint_cfg.cnn_fc_hidden_sizes);
+            failIfConflicting("--conv_backend", cfg.conv_backend, checkpoint_cfg.conv_backend);
+        } catch (const std::exception& e) {
+            std::cerr << "Error parsing arguments: " << e.what() << std::endl;
+            return 1;
+        }
+
+        const int requested_additional_epochs = cfg.epochs;
+        const std::string requested_save_checkpoint = cfg.save_checkpoint;
+        const std::string requested_resume = cfg.resume;
+        const std::string requested_out_dir = cfg.out_dir;
+        const std::string requested_grad_sync_mode = cfg.grad_sync_mode;
+        const std::size_t requested_bucket_size_bytes = cfg.bucket_size_bytes;
+        const bool requested_qualification_artifacts = cfg.qualification_artifacts;
+        const bool keep_data_dir_override = (explicit_flags.count("--data_dir") > 0);
+        const std::string requested_data_dir = cfg.data_dir;
+        const int requested_save_every = cfg.save_every;
+
+        cfg = checkpoint_cfg;
+        cfg.epochs = requested_additional_epochs;
+        cfg.save_checkpoint = requested_save_checkpoint;
+        cfg.resume = requested_resume;
+        cfg.out_dir = requested_out_dir;
+        cfg.grad_sync_mode = requested_grad_sync_mode;
+        cfg.bucket_size_bytes = requested_bucket_size_bytes;
+        cfg.qualification_artifacts = requested_qualification_artifacts;
+        cfg.save_every = requested_save_every;
+        if (keep_data_dir_override) {
+            cfg.data_dir = requested_data_dir;
+        }
+    }
+
+    if (cfg.save_every > 0 && cfg.save_checkpoint.empty()) {
+        std::cerr << "Error: --save_every requires --save_checkpoint." << std::endl;
         return 1;
     }
 
@@ -837,6 +1041,20 @@ int main(int argc, char** argv) {
             );
         }
 
+        if (!cfg.resume.empty()) {
+            checkpoint::Metadata loaded_metadata =
+                checkpoint::loadCheckpoint(cfg.resume, model->getParameters(), *optimizer);
+            resume_epoch = loaded_metadata.epoch;
+            if (isMaster) {
+                std::cout << "Loaded checkpoint from epoch " << resume_epoch
+                          << " (" << cfg.resume << ")" << std::endl;
+                if (cfg.epochs > 0) {
+                    std::cout << "Resuming training for " << cfg.epochs
+                              << " additional epochs" << std::endl;
+                }
+            }
+        }
+
         runtime::GradSyncSetup grad_sync_setup = runtime::buildGradSyncSetup(
             dist,
             model->getParameters(),
@@ -929,7 +1147,25 @@ int main(int argc, char** argv) {
         Metrics lastTestMetrics;
         bool hasLastTestMetrics = false;
 
-        for (int epoch = 1; epoch <= cfg.epochs; ++epoch) {
+        const std::uint64_t first_epoch_to_run = resume_epoch + 1;
+        const std::uint64_t final_epoch_to_run = resume_epoch + static_cast<std::uint64_t>(cfg.epochs);
+
+        auto saveCheckpointAtEpoch = [&](std::uint64_t completed_epoch) {
+            if (!isMaster || cfg.save_checkpoint.empty()) {
+                return;
+            }
+            checkpoint::Metadata metadata = makeCheckpointMetadata(cfg);
+            metadata.epoch = completed_epoch;
+            checkpoint::saveCheckpoint(
+                cfg.save_checkpoint,
+                metadata,
+                model->getParameters(),
+                *optimizer);
+            std::cout << "Saved checkpoint to " << cfg.save_checkpoint
+                      << " at epoch " << completed_epoch << std::endl;
+        };
+
+        for (std::uint64_t epoch = first_epoch_to_run; epoch <= final_epoch_to_run; ++epoch) {
             current_epoch_for_artifacts = epoch;
             #ifdef PROFILE_MATMUL
             matmulProfileEpochReset();
@@ -952,8 +1188,8 @@ int main(int argc, char** argv) {
 
             if (isMaster) {
                 std::cout << io::formatEpochSummary(
-                    epoch,
-                    cfg.epochs,
+                    static_cast<int>(epoch),
+                    static_cast<int>(final_epoch_to_run),
                     trainMetrics,
                     testMetrics,
                     derived_stats)
@@ -1045,14 +1281,21 @@ int main(int argc, char** argv) {
             #endif
 
             artifacts_writer.appendMetricsRow(
-                epoch,
+                static_cast<int>(epoch),
                 trainMetrics,
                 testMetrics,
                 derived_stats,
                 grad_sync_mode_info,
                 dist.worldSize(),
                 cfg.batch_size);
+
+            if (cfg.save_every > 0 &&
+                (epoch % static_cast<std::uint64_t>(cfg.save_every)) == 0) {
+                saveCheckpointAtEpoch(epoch);
+            }
         }
+
+        saveCheckpointAtEpoch(final_epoch_to_run);
 
         if (isMaster) {
             artifacts_writer.writeRunSummary(runProfileSummary);
