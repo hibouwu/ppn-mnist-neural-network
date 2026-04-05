@@ -7,8 +7,104 @@
 #include <algorithm>
 #include <limits>
 #include <optional>
+#include <cmath>
 
 namespace {
+
+Scalar quantizeToFp16Like(Scalar x) {
+    if (!std::isfinite(x) || x == 0.0f) {
+        return x;
+    }
+
+    int exp = 0;
+    const float mantissa = std::frexp(x, &exp);
+
+    // Half precision exponent range (approx): [-14, 15] for normal numbers.
+    if (exp > 16) {
+        return std::copysign(std::numeric_limits<Scalar>::infinity(), x);
+    }
+    if (exp < -24) {
+        return std::copysign(0.0f, x);
+    }
+
+    // Keep about 10 mantissa bits to mimic fp16 rounding.
+    const float rounded_mantissa =
+        std::ldexp(std::nearbyint(std::ldexp(mantissa, 10)), -10);
+
+    return std::ldexp(rounded_mantissa, exp);
+}
+
+void keepTopKAbsInPlace(Matrix& g, double ratio) {
+    const std::size_t n = g.data.size();
+    if (n == 0) {
+        return;
+    }
+    if (ratio >= 1.0) {
+        return;
+    }
+    if (ratio <= 0.0) {
+        std::fill(g.data.begin(), g.data.end(), 0.0f);
+        return;
+    }
+
+    const std::size_t k = std::max<std::size_t>(
+        1, static_cast<std::size_t>(std::ceil(ratio * static_cast<double>(n))));
+    const std::size_t split = n - k;
+
+    std::vector<Scalar> mags(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        mags[i] = std::fabs(g.data[i]);
+    }
+
+    std::nth_element(mags.begin(), mags.begin() + split, mags.end());
+    const Scalar threshold = mags[split];
+
+    for (Scalar& v : g.data) {
+        if (std::fabs(v) < threshold) {
+            v = 0.0f;
+        }
+    }
+}
+
+void compressGradientsIfEnabled(const std::vector<Node::Ptr>& params,
+                                const GradCompressionConfig& cfg) {
+    if (!cfg.enabled) {
+        return;
+    }
+
+    if (cfg.mode == "fp16") {
+        for (const auto& p : params) {
+            if (!p || !p->hasAllocatedGrad()) {
+                continue;
+            }
+            Matrix& g = p->grad();
+            for (Scalar& v : g.data) {
+                v = quantizeToFp16Like(v);
+            }
+        }
+        return;
+    }
+
+    if (cfg.mode == "topk") {
+        for (const auto& p : params) {
+            if (!p || !p->hasAllocatedGrad()) {
+                continue;
+            }
+            Matrix& g = p->grad();
+            keepTopKAbsInPlace(g, cfg.topk_ratio);
+        }
+        return;
+    }
+}
+
+void updateResidualIfEnabled(const std::vector<Node::Ptr>& params,
+                             const GradCompressionConfig& cfg) {
+    // Placeholder for future error-feedback residual update.
+    (void)params;
+    (void)cfg;
+}
+
+
 
 void accumulateSyncProfile(EpochProfile& profile,
                            const SyncStepProfile& sync_profile,
@@ -47,7 +143,8 @@ Trainer::Trainer(NeuralNetwork& model,
                  ProgressFn progressFn,
                  GradientSyncRuntime* gradientSyncRuntime,
                  SyncProfileProviderFn syncProfileProvider,
-                 StepObserverFn stepObserver)
+                 StepObserverFn stepObserver,
+                 GradCompressionConfig grad_compression_cfg)
     : model_(model),
       lossFn_(lossFn),
       optimizer_(optimizer),
@@ -57,7 +154,9 @@ Trainer::Trainer(NeuralNetwork& model,
       progress_fn_(std::move(progressFn)),
       gradient_sync_runtime_(gradientSyncRuntime),
       sync_profile_provider_(std::move(syncProfileProvider)),
-      step_observer_(std::move(stepObserver)) {}
+      step_observer_(std::move(stepObserver)),
+      grad_compression_cfg_(std::move(grad_compression_cfg)) {}
+
 
 Metrics Trainer::trainEpoch() {
     Metrics m = runEpoch(/*training=*/true);
@@ -192,6 +291,12 @@ Metrics Trainer::runEpoch(bool training) {
                 }
             }
             if (global_batch_size > 0) {
+                const int interval = std::max(1, grad_compression_cfg_.interval);
+                const bool do_compress_this_step =
+                    (processed_batches % static_cast<std::uint64_t>(interval) == 0);
+                if (do_compress_this_step) {
+                    compressGradientsIfEnabled(trainable_params_, grad_compression_cfg_);
+                }
                 const auto opt_start = Clock::now();
                 {
                     const ScopedProfileTask optimizer_scope("optimizer_step");
@@ -199,6 +304,7 @@ Metrics Trainer::runEpoch(bool training) {
                 }
                 const auto opt_end = Clock::now();
                 profile.opt_time_s += std::chrono::duration<double>(opt_end - opt_start).count();
+                updateResidualIfEnabled(trainable_params_, grad_compression_cfg_);
             }
             if (step_observer_) {
                 step_observer_(processed_batches + 1,

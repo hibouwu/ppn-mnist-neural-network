@@ -9,8 +9,18 @@
 #include "loss.hpp"       // LossFunction
 #include "optimizer.hpp"  // Optimizer
 #include "dataloader.hpp" // DataLoader
+#include <string>
 
 class GradientSyncRuntime;
+
+struct GradCompressionConfig {
+    bool enabled = false;
+    std::string mode = "none";
+    double topk_ratio = 0.1;
+    bool error_feedback = false;
+    int interval = 1;
+};
+
 
 struct EpochProfile {
     double epoch_time_s = 0.0;
@@ -68,7 +78,8 @@ public:
             ProgressFn progressFn = nullptr,
             GradientSyncRuntime* gradientSyncRuntime = nullptr,
             SyncProfileProviderFn syncProfileProvider = nullptr,
-            StepObserverFn stepObserver = nullptr);
+            StepObserverFn stepObserver = nullptr,
+            GradCompressionConfig grad_compression_cfg = {});
 
     // One training epoch (with backward + parameter updates)
     Metrics trainEpoch();
@@ -87,6 +98,8 @@ private:
     GradientSyncRuntime* gradient_sync_runtime_ = nullptr;
     SyncProfileProviderFn sync_profile_provider_;
     StepObserverFn step_observer_;
+    GradCompressionConfig grad_compression_cfg_;
+
 
     // Shared implementation used by trainEpoch() and evaluate()
     Metrics runEpoch(bool training);

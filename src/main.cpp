@@ -393,6 +393,12 @@ struct Config {
     std::string grad_sync_mode = "per_param"; // per_param / bucketed / overlap_bucketed
     std::size_t bucket_size_bytes = 1024 * 1024;
     bool qualification_artifacts = false;
+    bool grad_compress = false;
+    std::string grad_compress_mode = "none";
+    double grad_topk_ratio = 0.1;
+    bool grad_error_feedback = false;
+    int grad_compress_interval = 1;
+
 };
 
 int main(int argc, char** argv) {
@@ -506,6 +512,20 @@ int main(int argc, char** argv) {
                 cfg.grad_sync_mode = requireValue(arg);
             } else if (arg == "--bucket_size_bytes") {
                 cfg.bucket_size_bytes = parseSizeTStrict(requireValue(arg), arg);
+            } else if (arg == "--grad_compress") {
+                cfg.grad_compress = parseIntInRange(requireValue(arg), arg, 0, 1) != 0;
+            } else if (arg == "--grad_compress_mode") {
+                cfg.grad_compress_mode = requireValue(arg);
+            } else if (arg == "--grad_topk_ratio") {
+                cfg.grad_topk_ratio = parseDoubleStrict(requireValue(arg), arg);
+                if (cfg.grad_topk_ratio <= 0.0 || cfg.grad_topk_ratio > 1.0) {
+                    throw std::invalid_argument(arg + ": expected value in (0, 1].");
+                }
+            } else if (arg == "--grad_error_feedback") {
+                cfg.grad_error_feedback = parseIntInRange(requireValue(arg), arg, 0, 1) != 0;
+            } else if (arg == "--grad_compress_interval") {
+                cfg.grad_compress_interval = parseIntInRange(
+                    requireValue(arg), arg, 1, std::numeric_limits<int>::max());
             } else if (arg == "--qualification_artifacts") {
                 cfg.qualification_artifacts = parseIntInRange(requireValue(arg), arg, 0, 1) != 0;
             } else {
@@ -867,6 +887,14 @@ int main(int argc, char** argv) {
         artifacts_writer.initialize();
         artifacts_writer.initializeQualificationArtifacts(synchronizable_params);
 
+
+        GradCompressionConfig grad_compression_cfg;
+        grad_compression_cfg.enabled = cfg.grad_compress;
+        grad_compression_cfg.mode = cfg.grad_compress_mode;
+        grad_compression_cfg.topk_ratio = cfg.grad_topk_ratio;
+        grad_compression_cfg.error_feedback = cfg.grad_error_feedback;
+        grad_compression_cfg.interval = cfg.grad_compress_interval;
+
         Trainer trainer(*model,
                         lossFn,
                         *optimizer,
@@ -891,7 +919,8 @@ int main(int argc, char** argv) {
                                     step_index,
                                     synchronizable_params);
                             }
-                        });
+                        },
+                        grad_compression_cfg);
 
         io::RunProfileSummary runProfileSummary;
         runProfileSummary.grad_sync_mode = grad_sync_mode_info;

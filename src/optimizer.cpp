@@ -1,6 +1,10 @@
 #include "optimizer.hpp"
 #include <cmath>
 
+namespace {
+constexpr float kSparseEps = 1e-12f;
+}
+
 Optimizer::Optimizer(std::vector<Node::Ptr> params, double lr)
     : parameters_(std::move(params)), lr_(lr) {}
 
@@ -20,8 +24,12 @@ void SGDOptimizer::step(double gradScale) {
         const Matrix& grad = p->grad();
 
         size_t n = val.data.size();
-        for(size_t i=0; i<n; ++i) {
-            val.data[i] -= lr_ * gradScale * grad.data[i];
+        for (size_t i = 0; i < n; ++i) {
+            const float gi = grad.data[i];
+            if (std::fabs(gi) <= kSparseEps) {
+                continue;
+            }
+            val.data[i] -= lr_ * gradScale * gi;
         }
     }
 }
