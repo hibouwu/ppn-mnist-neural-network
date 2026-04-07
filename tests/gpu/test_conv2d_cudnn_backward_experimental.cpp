@@ -336,6 +336,33 @@ void test_partial_grad_input_only() {
     assertGradState(gpu_run, cpu_run, true, true, false, false);
 }
 
+void test_partial_grad_input_only_helper_failure_falls_back_to_cpu() {
+    const Matrix input = makeInput();
+    const Matrix weights = makeWeights();
+    const Matrix bias = makeBias();
+
+    ScopedExperimentalGpuForward cpu_forward_guard(false);
+    ScopedExperimentalGpuBackward cpu_backward_guard(false);
+    ScopedExperimentalGpuBackwardForceFail cpu_fail_guard(false);
+    auto cpu_run = runConvSum(input, weights, bias, true, false, false);
+
+#if PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_FORWARD
+    if (!gpuRuntimeAvailable()) {
+        return;
+    }
+#endif
+
+    ScopedExperimentalGpuForward gpu_forward_guard(true);
+    ScopedExperimentalGpuBackward gpu_backward_guard(true);
+    ScopedExperimentalGpuBackwardForceFail gpu_fail_guard(true);
+    auto gpu_run = runConvSum(input, weights, bias, true, false, false);
+    cpu_run.loss->backward();
+    gpu_run.loss->backward();
+
+    assert(hasExperimentalForwardMarker(gpu_run.out));
+    assertGradState(gpu_run, cpu_run, false, true, false, false);
+}
+
 void test_partial_grad_weight_only() {
     const Matrix input = makeInput();
     const Matrix weights = makeWeights();
@@ -401,6 +428,7 @@ int main() {
     test_non_experimental_forward_keeps_cpu_backward();
     test_helper_failure_falls_back_to_cpu();
     test_partial_grad_input_only();
+    test_partial_grad_input_only_helper_failure_falls_back_to_cpu();
     test_partial_grad_weight_only();
     test_partial_grad_bias_only_keeps_cpu_backward();
     std::cout << "Experimental cuDNN Conv2D backward tests passed!" << std::endl;

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cassert>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <cstdlib>
 #include <cstring>
@@ -195,6 +196,14 @@ bool hasMarkerFlag(const BackwardContext& ctx, std::uint8_t marker) {
     return std::find(ctx.flags.begin(), ctx.flags.end(), marker) != ctx.flags.end();
 }
 
+struct ExperimentalGpuBackwardPlan {
+    GpuConv2dProblem problem;
+    std::size_t input_cols = 0;
+    std::size_t weight_cols = 0;
+    bool need_diff_input = false;
+    bool need_diff_weights = false;
+};
+
 bool canUseExperimentalGpuBackward(const BackwardContext& ctx) {
     return experimentalGpuBackwardRequested() &&
            hasMarkerFlag(ctx, kExperimentalGpuForwardMarker) &&
@@ -208,6 +217,33 @@ bool canUseExperimentalGpuBackward(const BackwardContext& ctx) {
            fitsInt(ctx.sizes[9]) &&
            fitsInt(ctx.sizes[10]) &&
            fitsInt(ctx.sizes[11]);
+}
+
+GpuConv2dProblem makeExperimentalGpuProblem(const BackwardContext& ctx);
+
+std::optional<ExperimentalGpuBackwardPlan> makeExperimentalGpuBackwardPlan(
+    const BackwardContext& ctx,
+    const std::vector<Node::Ptr>& inputs,
+    InputIndexView input_indices) {
+    if (!canUseExperimentalGpuBackward(ctx)) {
+        return std::nullopt;
+    }
+
+    ExperimentalGpuBackwardPlan plan;
+    plan.need_diff_weights =
+        inputs.size() >= 2 && inputs[1] && inputs[1]->requiresGrad() &&
+        input_indices.size() >= 2 && input_indices[1] != kInvalidNodeIndex;
+    plan.need_diff_input =
+        !inputs.empty() && inputs[0] && inputs[0]->requiresGrad() &&
+        input_indices.size() >= 1 && input_indices[0] != kInvalidNodeIndex;
+    if (!(plan.need_diff_input || plan.need_diff_weights)) {
+        return std::nullopt;
+    }
+
+    plan.problem = makeExperimentalGpuProblem(ctx);
+    plan.input_cols = ctx.sizes[1] * ctx.sizes[2] * ctx.sizes[3];
+    plan.weight_cols = ctx.sizes[7] * ctx.sizes[10] * ctx.sizes[11];
+    return plan;
 }
 
 GpuConv2dProblem makeExperimentalGpuProblem(const BackwardContext& ctx) {
@@ -966,29 +1002,23 @@ public:
         ContributionList contributions;
 
 #if PPN_HAVE_EXPERIMENTAL_CUDNN_CONV_BACKWARD
-        const bool need_diff_weights =
-            kernels && kernels->requiresGrad() && input_indices[1] != kInvalidNodeIndex;
-        const bool need_diff_input =
-            input && input->requiresGrad() && input_indices[0] != kInvalidNodeIndex;
-
-        if (canUseExperimentalGpuBackward(*ctx) && (need_diff_input || need_diff_weights)) {
+        if (const auto plan = makeExperimentalGpuBackwardPlan(*ctx, inputs, input_indices)) {
             try {
                 if (experimentalGpuBackwardForceFailRequested()) {
                     throw std::runtime_error("experimental cuDNN backward forced to fail for testing.");
                 }
-                const GpuConv2dProblem problem = makeExperimentalGpuProblem(*ctx);
 
-                if (need_diff_weights) {
+                if (plan->need_diff_weights) {
                     const GpuConv2dBackwardFilterResult gpu_diff_weights =
                         gpuConv2dBackwardFilterNchw(
                             toHostFloatBuffer(input->value()),
                             toHostFloatBuffer(grad_output),
-                            problem);
+                            plan->problem);
                     contributions.push_back({
                         input_indices[1],
                         matrixFromFloatBuffer(gpu_diff_weights.diff_filter,
                                               out_channels,
-                                              col_w,
+                                              plan->weight_cols,
                                               "experimental cuDNN diff_weights")
                     });
                 }
@@ -996,17 +1026,17 @@ public:
                 appendCpuBiasGradContribution(
                     contributions, bias, inputs, dout, dout_stride, out_channels, input_indices);
 
-                if (need_diff_input) {
+                if (plan->need_diff_input) {
                     const GpuConv2dBackwardDataResult gpu_diff_input =
                         gpuConv2dBackwardDataNchw(
                             toHostFloatBuffer(kernels->value()),
                             toHostFloatBuffer(grad_output),
-                            problem);
+                            plan->problem);
                     contributions.push_back({
                         input_indices[0],
                         matrixFromFloatBuffer(gpu_diff_input.diff_input,
                                               N,
-                                              in_channels * H * W,
+                                              plan->input_cols,
                                               "experimental cuDNN diff_input")
                     });
                 }
