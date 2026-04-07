@@ -49,6 +49,8 @@ tiny-imagenet/
 *-ubyte
 *.JPEG
 trancripts.txt
+__pycache__/
+*.pyc
 
 # latex
 *.toc
@@ -64,6 +66,7 @@ ProjetRapportlatex/*.lof
 ProjetRapportlatex/*.vrb
 ProjetRapportlatex/*.snm
 ProjetRapportlatex/*.nav
+ProjetRapportlatex/*.pdf
 
 # Experience 
 *.data
@@ -74,5 +77,16 @@ ProjetRapportlatex/*.nav
 
 # Heavy experiment data
 output/ExperienceHPO/hpo_runs/
+output/
+
+# CMake generated files under tests/
+tests/CMakeCache.txt
+tests/CMakeFiles/
+
+# Generated helper binary
+mnist_reader/example_use
+
+# Generated reports
+scripts/ExperienceGEMM/*.pdf
 
 *.codex
