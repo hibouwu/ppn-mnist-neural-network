@@ -195,11 +195,12 @@ endif()
 
 # Sources
 file(GLOB SOURCES "src/*.cpp")
+file(GLOB GEMM_SOURCES "src/gemm/*.cpp")
 file(GLOB AUTOGRAD_SOURCES "src/autograd/*.cpp")
 file(GLOB DISTRIBUTED_SOURCES "src/distributed/*.cpp")
 file(GLOB IO_SOURCES "src/io/*.cpp")
 file(GLOB RUNTIME_SOURCES "src/runtime/*.cpp")
-list(APPEND SOURCES ${AUTOGRAD_SOURCES} ${DISTRIBUTED_SOURCES} ${IO_SOURCES} ${RUNTIME_SOURCES})
+list(APPEND SOURCES ${GEMM_SOURCES} ${AUTOGRAD_SOURCES} ${DISTRIBUTED_SOURCES} ${IO_SOURCES} ${RUNTIME_SOURCES})
 list(FILTER SOURCES EXCLUDE REGEX "src/main.cpp$")
 list(FILTER SOURCES EXCLUDE REGEX "src/gpu/cudnn_conv_forward.cpp$")
 list(FILTER SOURCES EXCLUDE REGEX "src/gpu/cudnn_conv_backward.cpp$")
