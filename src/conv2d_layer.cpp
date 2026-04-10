@@ -277,7 +277,7 @@ Matrix matrixFromFloatBuffer(const std::vector<float>& values,
     if (values.size() != rows * cols) {
         throw std::runtime_error(std::string(what) + " size does not match Matrix shape.");
     }
-    Matrix result(rows, cols);
+    Matrix result(rows, cols, MatrixInit::Uninitialized);
     for (std::size_t i = 0; i < values.size(); ++i) {
         result.data[i] = static_cast<double>(values[i]);
     }
@@ -388,7 +388,7 @@ Matrix referenceIm2col(const Matrix& input,
                        const Conv2DLayer::Backend::InputShape& shape,
                        const Conv2DLayer::Backend::Config& config) {
     const std::size_t col_h = config.kernel_h * config.kernel_w * shape.C;
-    Matrix cols(shape.N * shape.H_out * shape.W_out, col_h);
+    Matrix cols(shape.N * shape.H_out * shape.W_out, col_h, MatrixInit::Uninitialized);
     const Scalar* input_data = input.data.data();
     Scalar* cols_data = cols.data.data();
     const std::size_t input_stride = input.cols;
@@ -965,7 +965,7 @@ public:
         const std::size_t kernel_h = ctx->sizes[10];
         const std::size_t kernel_w = ctx->sizes[11];
 
-        Matrix dout(N * H_out * W_out, out_channels);
+        Matrix dout(N * H_out * W_out, out_channels, MatrixInit::Uninitialized);
 #ifdef PROFILE_OPS
         auto grad_reshape_start = Clock::now();
 #endif
@@ -1051,7 +1051,7 @@ public:
 #endif
 
         if (kernels && kernels->requiresGrad() && input_indices[1] != kInvalidNodeIndex) {
-            Matrix dW(out_channels, col_w);
+            Matrix dW(out_channels, col_w, MatrixInit::Uninitialized);
 #ifdef PROFILE_OPS
             auto dw_start = Clock::now();
 #endif
@@ -1068,7 +1068,7 @@ public:
             contributions, bias, inputs, dout, dout_stride, out_channels, input_indices);
 
         if (input && input->requiresGrad() && input_indices[0] != kInvalidNodeIndex) {
-            Matrix dcols(N * H_out * W_out, col_w);
+            Matrix dcols(N * H_out * W_out, col_w, MatrixInit::Uninitialized);
 #ifdef PROFILE_OPS
             auto dx_gemm_start = Clock::now();
 #endif
@@ -1114,7 +1114,7 @@ public:
 #endif
 
         const Matrix& kv = params.kernels->value();
-        Matrix out(cols_ptr->rows, config.out_channels);
+        Matrix out(cols_ptr->rows, config.out_channels, MatrixInit::Uninitialized);
 #ifdef PROFILE_OPS
         auto gemm_start = Clock::now();
 #endif

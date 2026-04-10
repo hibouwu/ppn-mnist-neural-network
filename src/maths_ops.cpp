@@ -147,7 +147,7 @@ public:
             throw std::logic_error("MatMulGradFn: invalid node inputs.");
         }
 
-        Matrix dA(grad_output.rows, inputs[1]->value().rows);
+        Matrix dA(grad_output.rows, inputs[1]->value().rows, MatrixInit::Uninitialized);
 #ifdef PROFILE_OPS
         auto da_start = Clock::now();
 #endif
@@ -158,7 +158,7 @@ public:
             std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - da_start).count());
 #endif
 
-        Matrix dB(inputs[0]->value().cols, grad_output.cols);
+        Matrix dB(inputs[0]->value().cols, grad_output.cols, MatrixInit::Uninitialized);
 #ifdef PROFILE_OPS
         auto db_start = Clock::now();
 #endif
@@ -205,7 +205,7 @@ public:
             std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - mask_start).count());
 #endif
 
-        Matrix d_input(masked_grad.rows, inputs[1]->value().rows);
+        Matrix d_input(masked_grad.rows, inputs[1]->value().rows, MatrixInit::Uninitialized);
 #ifdef PROFILE_OPS
         auto d_input_start = Clock::now();
 #endif
@@ -216,7 +216,7 @@ public:
             std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - d_input_start).count());
 #endif
 
-        Matrix d_weights(inputs[0]->value().cols, masked_grad.cols);
+        Matrix d_weights(inputs[0]->value().cols, masked_grad.cols, MatrixInit::Uninitialized);
 #ifdef PROFILE_OPS
         auto d_weights_start = Clock::now();
 #endif
@@ -577,7 +577,7 @@ Node::Ptr linear_relu(const Node::Ptr& input, const Node::Ptr& weights, const No
         throw std::invalid_argument("linear_relu: bias must have shape (1, out_dim).");
     }
 
-    Matrix out(x.rows, w.cols);
+    Matrix out(x.rows, w.cols, MatrixInit::Uninitialized);
     x.matmul_into(w, out);
     for (size_t i = 0; i < out.rows; ++i) {
         for (size_t j = 0; j < out.cols; ++j) {

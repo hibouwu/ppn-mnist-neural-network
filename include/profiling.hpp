@@ -12,7 +12,7 @@ struct MatmulImplStats {
 struct MatmulEpochStats {
     std::size_t total_calls = 0;
     long long total_us = 0;
-    MatmulImplStats per_impl[5]; // blas, ijk, ikj, blocked, omp
+    MatmulImplStats per_impl[10]; // blas, ijk, ikj, blocked, omp, omp_blocked, omp_blocked_packb, omp_blocked_packab, omp_gotoblas_avx2, omp_gotoblas_avx512
 };
 
 void matmulProfileEpochReset();

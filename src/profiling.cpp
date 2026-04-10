@@ -17,6 +17,11 @@ int implIndex(const char* impl) {
     if (std::strcmp(impl, "ikj") == 0) return 2;
     if (std::strcmp(impl, "blocked") == 0) return 3;
     if (std::strcmp(impl, "omp") == 0) return 4;
+    if (std::strcmp(impl, "omp_blocked") == 0) return 5;
+    if (std::strcmp(impl, "omp_blocked_packb") == 0) return 6;
+    if (std::strcmp(impl, "omp_blocked_packab") == 0) return 7;
+    if (std::strcmp(impl, "omp_gotoblas_avx2") == 0) return 8;
+    if (std::strcmp(impl, "omp_gotoblas_avx512") == 0) return 9;
     return -1;
 }
 
@@ -26,6 +31,11 @@ void initNames() {
     g_stats.per_impl[2].name = "ikj";
     g_stats.per_impl[3].name = "blocked";
     g_stats.per_impl[4].name = "omp";
+    g_stats.per_impl[5].name = "omp_blocked";
+    g_stats.per_impl[6].name = "omp_blocked_packb";
+    g_stats.per_impl[7].name = "omp_blocked_packab";
+    g_stats.per_impl[8].name = "omp_gotoblas_avx2";
+    g_stats.per_impl[9].name = "omp_gotoblas_avx512";
 }
 
 #if defined(PPN_HAVE_VTUNE) && PPN_HAVE_VTUNE
