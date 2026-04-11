@@ -17,6 +17,41 @@
 
 namespace gemm {
 
+namespace {
+
+size_t parse_positive_size_env(const char* name, size_t fallback) {
+    const char* v = std::getenv(name);
+    if (!v || !*v) {
+        return fallback;
+    }
+
+    char* end = nullptr;
+    const unsigned long parsed = std::strtoul(v, &end, 10);
+    if (end == v || (end && *end != '\0') || parsed == 0) {
+        static bool warned_pack_m = false;
+        static bool warned_pack_n = false;
+        static bool warned_pack_k = false;
+        static bool warned_generic = false;
+
+        bool* warned = &warned_generic;
+        if (std::strcmp(name, "MATMUL_PACK_M") == 0) warned = &warned_pack_m;
+        if (std::strcmp(name, "MATMUL_PACK_N") == 0) warned = &warned_pack_n;
+        if (std::strcmp(name, "MATMUL_PACK_K") == 0) warned = &warned_pack_k;
+
+        if (!*warned) {
+            *warned = true;
+            std::cerr << "[WARN] " << name << " invalide ('" << v
+                      << "'). Utilisation de la valeur par defaut "
+                      << fallback << ".\n";
+        }
+        return fallback;
+    }
+
+    return static_cast<size_t>(parsed);
+}
+
+}  // namespace
+
 size_t minz(size_t a, size_t b) {
     return a < b ? a : b;
 }
@@ -83,6 +118,21 @@ size_t parse_block_size_env() {
 
 size_t current_block_size() {
     static const size_t bs = parse_block_size_env();
+    return bs;
+}
+
+size_t current_pack_m_block_size() {
+    static const size_t bs = parse_positive_size_env("MATMUL_PACK_M", current_block_size());
+    return bs;
+}
+
+size_t current_pack_n_block_size() {
+    static const size_t bs = parse_positive_size_env("MATMUL_PACK_N", current_block_size());
+    return bs;
+}
+
+size_t current_pack_k_block_size() {
+    static const size_t bs = parse_positive_size_env("MATMUL_PACK_K", current_block_size());
     return bs;
 }
 

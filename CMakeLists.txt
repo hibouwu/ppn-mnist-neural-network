@@ -207,6 +207,7 @@ list(FILTER SOURCES EXCLUDE REGEX "src/gpu/cudnn_conv_backward.cpp$")
 
 # Exécutables
 add_executable(test_matrix tests/test_matrix.cpp ${SOURCES})
+add_executable(test_gemm_microkernels tests/test_gemm_microkernels.cpp ${SOURCES})
 add_executable(test_activations tests/test_activations.cpp ${SOURCES})
 add_executable(test_linear tests/test_linear.cpp ${SOURCES})
 add_executable(test_mlp tests/test_mlp.cpp ${SOURCES})
@@ -235,6 +236,7 @@ endif()
 
 set(TEST_TARGETS
     test_matrix
+    test_gemm_microkernels
     test_activations
     test_linear
     test_mlp
@@ -261,6 +263,7 @@ if(ENABLE_MPI)
 endif()
 
 add_test(NAME MatrixTest COMMAND test_matrix)
+add_test(NAME GemmMicrokernelsTest COMMAND test_gemm_microkernels)
 add_test(NAME ActivationsTest COMMAND test_activations)
 add_test(NAME LinearTest COMMAND test_linear)
 add_test(NAME MLPTest COMMAND test_mlp)
@@ -279,6 +282,9 @@ add_test(NAME TinyImageNetDatasetTest COMMAND test_tiny_imagenet_dataset)
 
 add_executable(test_benchmark_large tests/test_benchmark_large.cpp ${SOURCES})
 target_link_libraries(test_benchmark_large PUBLIC ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ppn_vtune)
+
+add_executable(test_gemm_microkernel_benchmark tests/test_gemm_microkernel_benchmark.cpp ${SOURCES})
+target_link_libraries(test_gemm_microkernel_benchmark PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ppn_vtune)
 
 add_executable(test_autograd_runtime_benchmark tests/test_autograd_runtime_benchmark.cpp ${SOURCES})
 target_link_libraries(test_autograd_runtime_benchmark PRIVATE ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ppn_vtune)
