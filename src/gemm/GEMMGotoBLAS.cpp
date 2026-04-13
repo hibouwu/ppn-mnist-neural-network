@@ -3,6 +3,7 @@
 #include <immintrin.h>
 #include <omp.h>
 
+#include <atomic>
 #include <cstring>
 #include <iostream>
 #include <vector>
@@ -246,6 +247,7 @@ constexpr KernelSpec kKernelAvx2_6x8{"avx2_6x8", 6, 8, KernelIsa::Avx2, microker
 constexpr KernelSpec kKernelAvx2_8x8{"avx2_8x8", 8, 8, KernelIsa::Avx2, microkernel_avx2_8x8};
 constexpr KernelSpec kKernelAvx2_4x16{"avx2_4x16", 4, 16, KernelIsa::Avx2, microkernel_avx2_4x16};
 constexpr KernelSpec kKernelAvx512_8x16{"avx512_8x16", 8, 16, KernelIsa::Avx512, microkernel_avx512_8x16};
+std::atomic<size_t> g_gotoblas_pack_bc_call_count{0};
 
 const KernelSpec* find_kernel_by_name(const char* name) {
     static constexpr const KernelSpec* kAll[] = {
@@ -287,7 +289,117 @@ const KernelSpec& current_kernel_for_isa(KernelIsa isa) {
     return *selected;
 }
 
+void reset_gotoblas_debug_counters() {
+    g_gotoblas_pack_bc_call_count.store(0, std::memory_order_relaxed);
+}
+
+size_t gotoblas_pack_bc_call_count() {
+    return g_gotoblas_pack_bc_call_count.load(std::memory_order_relaxed);
+}
+
 namespace {
+
+void run_micro_kernel(const KernelSpec& kernel,
+                      const Scalar* packed_Ac_panel,
+                      const Scalar* packed_Bc_panel,
+                      Scalar* Ctile,
+                      size_t ldc,
+                      size_t Kc,
+                      size_t rows,
+                      size_t cols) {
+    if (rows == kernel.mr && cols == kernel.nr) {
+        kernel.fn(packed_Ac_panel, packed_Bc_panel, Ctile, ldc, Kc);
+        return;
+    }
+
+    sgemm_tile_scalar_packed(
+        packed_Ac_panel,
+        packed_Bc_panel,
+        Ctile,
+        ldc,
+        Kc,
+        rows,
+        cols,
+        kernel.mr,
+        kernel.nr);
+}
+
+void pack_Bc(const KernelSpec& kernel,
+             const Scalar* B_block,
+             Scalar* packed_Bc,
+             size_t ldb,
+             size_t Kc,
+             size_t Nc) {
+    const size_t nr_panels = (Nc + kernel.nr - 1) / kernel.nr;
+
+    for (size_t jr = 0; jr < nr_panels; ++jr) {
+        const size_t jc_inner = jr * kernel.nr;
+        const size_t cols = minz(kernel.nr, Nc - jc_inner);
+        pack_b_micro_panel(
+            B_block + jc_inner,
+            packed_Bc + jr * Kc * kernel.nr,
+            ldb,
+            Kc,
+            cols,
+            kernel.nr);
+    }
+}
+
+void pack_Ac(const KernelSpec& kernel,
+             const Scalar* A_block,
+             Scalar* packed_Ac,
+             size_t lda,
+             size_t Mc,
+             size_t Kc) {
+    const size_t mr_panels = (Mc + kernel.mr - 1) / kernel.mr;
+
+    for (size_t ir = 0; ir < mr_panels; ++ir) {
+        const size_t ic_inner = ir * kernel.mr;
+        const size_t rows = minz(kernel.mr, Mc - ic_inner);
+        pack_a_micro_panel(
+            A_block + ic_inner * lda,
+            packed_Ac + ir * Kc * kernel.mr,
+            lda,
+            Kc,
+            rows,
+            kernel.mr);
+    }
+}
+
+void run_macro_kernel(const KernelSpec& kernel,
+                      const Scalar* packed_Ac,
+                      const Scalar* packed_Bc,
+                      Scalar* C_block,
+                      size_t ldc,
+                      size_t Mc,
+                      size_t Nc,
+                      size_t Kc) {
+    const size_t mr_panels = (Mc + kernel.mr - 1) / kernel.mr;
+    const size_t nr_panels = (Nc + kernel.nr - 1) / kernel.nr;
+
+    for (size_t jr = 0; jr < nr_panels; ++jr) {
+        const size_t jc_inner = jr * kernel.nr;
+        const size_t cols = minz(kernel.nr, Nc - jc_inner);
+        const Scalar* packed_Bc_panel = packed_Bc + jr * Kc * kernel.nr;
+
+        for (size_t ir = 0; ir < mr_panels; ++ir) {
+            const size_t ic_inner = ir * kernel.mr;
+            const size_t rows = minz(kernel.mr, Mc - ic_inner);
+            const Scalar* packed_Ac_panel = packed_Ac + ir * Kc * kernel.mr;
+            Scalar* Ctile = C_block + ic_inner * ldc + jc_inner;
+
+            run_micro_kernel(
+                kernel,
+                packed_Ac_panel,
+                packed_Bc_panel,
+                Ctile,
+                ldc,
+                Kc,
+                rows,
+                cols);
+        }
+    }
+}
 
 void run_gotoblas_kernel(const KernelSpec& kernel,
                          const Scalar* A,
@@ -299,93 +411,60 @@ void run_gotoblas_kernel(const KernelSpec& kernel,
     const size_t MC = current_pack_m_block_size();
     const size_t NC = current_pack_n_block_size();
     const size_t KC = current_pack_k_block_size();
+    const size_t max_mr_panels = (MC + kernel.mr - 1) / kernel.mr;
+    const size_t max_nr_panels = (NC + kernel.nr - 1) / kernel.nr;
+    const size_t num_ic_blocks = (M + MC - 1) / MC;
 
-    #pragma omp parallel
-    {
-        const size_t max_m_panels = (MC + kernel.mr - 1) / kernel.mr;
-        const size_t max_n_panels = (NC + kernel.nr - 1) / kernel.nr;
-        std::vector<Scalar> packed_A(max_m_panels * KC * kernel.mr);
-        std::vector<Scalar> packed_B(max_n_panels * KC * kernel.nr);
-        const int tid = omp_get_thread_num();
-        const int nthreads = omp_get_num_threads();
-        const size_t num_i_blocks = (M + MC - 1) / MC;
-        const size_t blocks_per_thread =
-            (num_i_blocks + static_cast<size_t>(nthreads) - 1) / static_cast<size_t>(nthreads);
+    for (size_t jc = 0; jc < N; jc += NC) {
+        const size_t j_end = minz(jc + NC, N);
+        const size_t nc_cur = j_end - jc;
+        std::vector<Scalar> packed_Bc(max_nr_panels * KC * kernel.nr);
 
-        const size_t block_begin = minz(static_cast<size_t>(tid) * blocks_per_thread, num_i_blocks);
-        const size_t block_end = minz(block_begin + blocks_per_thread, num_i_blocks);
+        #pragma omp parallel
+        {
+            std::vector<Scalar> packed_Ac(max_mr_panels * KC * kernel.mr);
 
-        for (size_t block_idx = block_begin; block_idx < block_end; ++block_idx) {
-            const size_t ii = block_idx * MC;
-            const size_t i_max = minz(ii + MC, M);
-            const size_t m_block = i_max - ii;
+            for (size_t pc = 0; pc < K; pc += KC) {
+                const size_t p_end = minz(pc + KC, K);
+                const size_t kc_cur = p_end - pc;
 
-            for (size_t jj = 0; jj < N; jj += NC) {
-                const size_t j_max = minz(jj + NC, N);
-                const size_t n_block = j_max - jj;
-
-                for (size_t i = ii; i < i_max; ++i) {
-                    Scalar* Ci = C + i * N + jj;
-                    for (size_t x = 0; x < n_block; ++x) {
-                        Ci[x] = 0.0f;
-                    }
+                // Keep the implicit barrier on `single`: the following `omp for`
+                // reads the shared packed_Bc buffer and must not observe a partial pack.
+                // Do not add `nowait` here without replacing the synchronization.
+                #pragma omp single
+                {
+                    pack_Bc(kernel, B + pc * N + jc, packed_Bc.data(), N, kc_cur, nc_cur);
+                    g_gotoblas_pack_bc_call_count.fetch_add(1, std::memory_order_relaxed);
                 }
 
-                for (size_t kk = 0; kk < K; kk += KC) {
-                    const size_t k_max = minz(kk + KC, K);
-                    const size_t k_block = k_max - kk;
-                    const size_t m_panels = (m_block + kernel.mr - 1) / kernel.mr;
-                    const size_t n_panels = (n_block + kernel.nr - 1) / kernel.nr;
+                // Keep the implicit barrier on `omp for`: all ic-block consumers of the
+                // current packed_Bc must finish before the next pc iteration repacks it.
+                // Do not weaken this synchronization casually.
+                #pragma omp for schedule(static)
+                for (size_t ic_block = 0; ic_block < num_ic_blocks; ++ic_block) {
+                    const size_t ic = ic_block * MC;
+                    const size_t i_end = minz(ic + MC, M);
+                    const size_t mc_cur = i_end - ic;
 
-                    for (size_t jr_panel = 0; jr_panel < n_panels; ++jr_panel) {
-                        const size_t jr = jr_panel * kernel.nr;
-                        const size_t cols = minz(kernel.nr, n_block - jr);
-                        pack_b_micro_panel(
-                            B + kk * N + jj + jr,
-                            packed_B.data() + jr_panel * k_block * kernel.nr,
-                            N,
-                            k_block,
-                            cols,
-                            kernel.nr);
-                    }
-
-                    for (size_t ir_panel = 0; ir_panel < m_panels; ++ir_panel) {
-                        const size_t ir = ir_panel * kernel.mr;
-                        const size_t rows = minz(kernel.mr, m_block - ir);
-                        pack_a_micro_panel(
-                            A + (ii + ir) * K + kk,
-                            packed_A.data() + ir_panel * k_block * kernel.mr,
-                            K,
-                            k_block,
-                            rows,
-                            kernel.mr);
-
-                        const Scalar* packed_a_panel =
-                            packed_A.data() + ir_panel * k_block * kernel.mr;
-
-                        for (size_t jr_panel = 0; jr_panel < n_panels; ++jr_panel) {
-                            const size_t jr = jr_panel * kernel.nr;
-                            const size_t cols = minz(kernel.nr, n_block - jr);
-                            const Scalar* packed_b_panel =
-                                packed_B.data() + jr_panel * k_block * kernel.nr;
-                            Scalar* Ctile = C + (ii + ir) * N + jj + jr;
-
-                            if (rows == kernel.mr && cols == kernel.nr) {
-                                kernel.fn(packed_a_panel, packed_b_panel, Ctile, N, k_block);
-                            } else {
-                                sgemm_tile_scalar_packed(
-                                    packed_a_panel,
-                                    packed_b_panel,
-                                    Ctile,
-                                    N,
-                                    k_block,
-                                    rows,
-                                    cols,
-                                    kernel.mr,
-                                    kernel.nr);
+                    if (pc == 0) {
+                        for (size_t i = ic; i < i_end; ++i) {
+                            Scalar* Ci = C + i * N + jc;
+                            for (size_t x = 0; x < nc_cur; ++x) {
+                                Ci[x] = 0.0f;
                             }
                         }
                     }
+
+                    pack_Ac(kernel, A + ic * K + pc, packed_Ac.data(), K, mc_cur, kc_cur);
+                    run_macro_kernel(
+                        kernel,
+                        packed_Ac.data(),
+                        packed_Bc.data(),
+                        C + ic * N + jc,
+                        N,
+                        mc_cur,
+                        nc_cur,
+                        kc_cur);
                 }
             }
         }

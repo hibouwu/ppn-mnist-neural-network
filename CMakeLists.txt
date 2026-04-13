@@ -208,6 +208,7 @@ list(FILTER SOURCES EXCLUDE REGEX "src/gpu/cudnn_conv_backward.cpp$")
 # Exécutables
 add_executable(test_matrix tests/test_matrix.cpp ${SOURCES})
 add_executable(test_gemm_microkernels tests/test_gemm_microkernels.cpp ${SOURCES})
+add_executable(test_gemm_gotoblas_driver tests/test_gemm_gotoblas_driver.cpp ${SOURCES})
 add_executable(test_activations tests/test_activations.cpp ${SOURCES})
 add_executable(test_linear tests/test_linear.cpp ${SOURCES})
 add_executable(test_mlp tests/test_mlp.cpp ${SOURCES})
@@ -237,6 +238,7 @@ endif()
 set(TEST_TARGETS
     test_matrix
     test_gemm_microkernels
+    test_gemm_gotoblas_driver
     test_activations
     test_linear
     test_mlp
@@ -264,6 +266,7 @@ endif()
 
 add_test(NAME MatrixTest COMMAND test_matrix)
 add_test(NAME GemmMicrokernelsTest COMMAND test_gemm_microkernels)
+add_test(NAME GemmGotoBlasDriverTest COMMAND test_gemm_gotoblas_driver)
 add_test(NAME ActivationsTest COMMAND test_activations)
 add_test(NAME LinearTest COMMAND test_linear)
 add_test(NAME MLPTest COMMAND test_mlp)

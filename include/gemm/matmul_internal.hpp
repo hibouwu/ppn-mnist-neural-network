@@ -68,6 +68,8 @@ void sgemm_omp_gotoblas_avx512(const Scalar* A, const Scalar* B, Scalar* C,
 
 bool cpu_supports_avx2_fma();
 bool cpu_supports_avx512f();
+void reset_gotoblas_debug_counters();
+size_t gotoblas_pack_bc_call_count();
 
 void pack_a_micro_panel(const Scalar* A, Scalar* packed_A,
                         size_t lda, size_t Kc, size_t rows, size_t mr);
