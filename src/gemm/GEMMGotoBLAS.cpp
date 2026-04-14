@@ -4,6 +4,7 @@
 #include <omp.h>
 
 #include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <vector>
@@ -128,6 +129,63 @@ void microkernel_avx2_6x8(const Scalar* packed_A,
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((target("avx2,fma")))
 #endif
+void microkernel_avx2_4x8(const Scalar* packed_A,
+                          const Scalar* packed_B,
+                          Scalar* C,
+                          size_t ldc,
+                          size_t Kc) {
+    __m256 c0 = _mm256_loadu_ps(C + 0 * ldc);
+    __m256 c1 = _mm256_loadu_ps(C + 1 * ldc);
+    __m256 c2 = _mm256_loadu_ps(C + 2 * ldc);
+    __m256 c3 = _mm256_loadu_ps(C + 3 * ldc);
+
+    for (size_t k = 0; k < Kc; ++k) {
+        const __m256 b = _mm256_loadu_ps(packed_B + k * 8);
+        c0 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 4 + 0]), b, c0);
+        c1 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 4 + 1]), b, c1);
+        c2 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 4 + 2]), b, c2);
+        c3 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 4 + 3]), b, c3);
+    }
+
+    _mm256_storeu_ps(C + 0 * ldc, c0);
+    _mm256_storeu_ps(C + 1 * ldc, c1);
+    _mm256_storeu_ps(C + 2 * ldc, c2);
+    _mm256_storeu_ps(C + 3 * ldc, c3);
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("avx2,fma")))
+#endif
+void microkernel_avx2_5x8(const Scalar* packed_A,
+                          const Scalar* packed_B,
+                          Scalar* C,
+                          size_t ldc,
+                          size_t Kc) {
+    __m256 c0 = _mm256_loadu_ps(C + 0 * ldc);
+    __m256 c1 = _mm256_loadu_ps(C + 1 * ldc);
+    __m256 c2 = _mm256_loadu_ps(C + 2 * ldc);
+    __m256 c3 = _mm256_loadu_ps(C + 3 * ldc);
+    __m256 c4 = _mm256_loadu_ps(C + 4 * ldc);
+
+    for (size_t k = 0; k < Kc; ++k) {
+        const __m256 b = _mm256_loadu_ps(packed_B + k * 8);
+        c0 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 5 + 0]), b, c0);
+        c1 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 5 + 1]), b, c1);
+        c2 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 5 + 2]), b, c2);
+        c3 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 5 + 3]), b, c3);
+        c4 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 5 + 4]), b, c4);
+    }
+
+    _mm256_storeu_ps(C + 0 * ldc, c0);
+    _mm256_storeu_ps(C + 1 * ldc, c1);
+    _mm256_storeu_ps(C + 2 * ldc, c2);
+    _mm256_storeu_ps(C + 3 * ldc, c3);
+    _mm256_storeu_ps(C + 4 * ldc, c4);
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("avx2,fma")))
+#endif
 void microkernel_avx2_8x8(const Scalar* packed_A,
                           const Scalar* packed_B,
                           Scalar* C,
@@ -162,6 +220,45 @@ void microkernel_avx2_8x8(const Scalar* packed_A,
     _mm256_storeu_ps(C + 5 * ldc, c5);
     _mm256_storeu_ps(C + 6 * ldc, c6);
     _mm256_storeu_ps(C + 7 * ldc, c7);
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("avx2,fma")))
+#endif
+void microkernel_avx2_8x4(const Scalar* packed_A,
+                          const Scalar* packed_B,
+                          Scalar* C,
+                          size_t ldc,
+                          size_t Kc) {
+    __m128 c0 = _mm_loadu_ps(C + 0 * ldc);
+    __m128 c1 = _mm_loadu_ps(C + 1 * ldc);
+    __m128 c2 = _mm_loadu_ps(C + 2 * ldc);
+    __m128 c3 = _mm_loadu_ps(C + 3 * ldc);
+    __m128 c4 = _mm_loadu_ps(C + 4 * ldc);
+    __m128 c5 = _mm_loadu_ps(C + 5 * ldc);
+    __m128 c6 = _mm_loadu_ps(C + 6 * ldc);
+    __m128 c7 = _mm_loadu_ps(C + 7 * ldc);
+
+    for (size_t k = 0; k < Kc; ++k) {
+        const __m128 b = _mm_loadu_ps(packed_B + k * 4);
+        c0 = _mm_fmadd_ps(_mm_set1_ps(packed_A[k * 8 + 0]), b, c0);
+        c1 = _mm_fmadd_ps(_mm_set1_ps(packed_A[k * 8 + 1]), b, c1);
+        c2 = _mm_fmadd_ps(_mm_set1_ps(packed_A[k * 8 + 2]), b, c2);
+        c3 = _mm_fmadd_ps(_mm_set1_ps(packed_A[k * 8 + 3]), b, c3);
+        c4 = _mm_fmadd_ps(_mm_set1_ps(packed_A[k * 8 + 4]), b, c4);
+        c5 = _mm_fmadd_ps(_mm_set1_ps(packed_A[k * 8 + 5]), b, c5);
+        c6 = _mm_fmadd_ps(_mm_set1_ps(packed_A[k * 8 + 6]), b, c6);
+        c7 = _mm_fmadd_ps(_mm_set1_ps(packed_A[k * 8 + 7]), b, c7);
+    }
+
+    _mm_storeu_ps(C + 0 * ldc, c0);
+    _mm_storeu_ps(C + 1 * ldc, c1);
+    _mm_storeu_ps(C + 2 * ldc, c2);
+    _mm_storeu_ps(C + 3 * ldc, c3);
+    _mm_storeu_ps(C + 4 * ldc, c4);
+    _mm_storeu_ps(C + 5 * ldc, c5);
+    _mm_storeu_ps(C + 6 * ldc, c6);
+    _mm_storeu_ps(C + 7 * ldc, c7);
 }
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -205,6 +302,58 @@ void microkernel_avx2_4x16(const Scalar* packed_A,
 }
 
 #if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("avx2,fma")))
+#endif
+void microkernel_avx2_6x16(const Scalar* packed_A,
+                           const Scalar* packed_B,
+                           Scalar* C,
+                           size_t ldc,
+                           size_t Kc) {
+    __m256 c00 = _mm256_loadu_ps(C + 0 * ldc + 0);
+    __m256 c01 = _mm256_loadu_ps(C + 0 * ldc + 8);
+    __m256 c10 = _mm256_loadu_ps(C + 1 * ldc + 0);
+    __m256 c11 = _mm256_loadu_ps(C + 1 * ldc + 8);
+    __m256 c20 = _mm256_loadu_ps(C + 2 * ldc + 0);
+    __m256 c21 = _mm256_loadu_ps(C + 2 * ldc + 8);
+    __m256 c30 = _mm256_loadu_ps(C + 3 * ldc + 0);
+    __m256 c31 = _mm256_loadu_ps(C + 3 * ldc + 8);
+    __m256 c40 = _mm256_loadu_ps(C + 4 * ldc + 0);
+    __m256 c41 = _mm256_loadu_ps(C + 4 * ldc + 8);
+    __m256 c50 = _mm256_loadu_ps(C + 5 * ldc + 0);
+    __m256 c51 = _mm256_loadu_ps(C + 5 * ldc + 8);
+
+    for (size_t k = 0; k < Kc; ++k) {
+        const __m256 b0 = _mm256_loadu_ps(packed_B + k * 16 + 0);
+        const __m256 b1 = _mm256_loadu_ps(packed_B + k * 16 + 8);
+        c00 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 6 + 0]), b0, c00);
+        c01 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 6 + 0]), b1, c01);
+        c10 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 6 + 1]), b0, c10);
+        c11 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 6 + 1]), b1, c11);
+        c20 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 6 + 2]), b0, c20);
+        c21 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 6 + 2]), b1, c21);
+        c30 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 6 + 3]), b0, c30);
+        c31 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 6 + 3]), b1, c31);
+        c40 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 6 + 4]), b0, c40);
+        c41 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 6 + 4]), b1, c41);
+        c50 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 6 + 5]), b0, c50);
+        c51 = _mm256_fmadd_ps(_mm256_set1_ps(packed_A[k * 6 + 5]), b1, c51);
+    }
+
+    _mm256_storeu_ps(C + 0 * ldc + 0, c00);
+    _mm256_storeu_ps(C + 0 * ldc + 8, c01);
+    _mm256_storeu_ps(C + 1 * ldc + 0, c10);
+    _mm256_storeu_ps(C + 1 * ldc + 8, c11);
+    _mm256_storeu_ps(C + 2 * ldc + 0, c20);
+    _mm256_storeu_ps(C + 2 * ldc + 8, c21);
+    _mm256_storeu_ps(C + 3 * ldc + 0, c30);
+    _mm256_storeu_ps(C + 3 * ldc + 8, c31);
+    _mm256_storeu_ps(C + 4 * ldc + 0, c40);
+    _mm256_storeu_ps(C + 4 * ldc + 8, c41);
+    _mm256_storeu_ps(C + 5 * ldc + 0, c50);
+    _mm256_storeu_ps(C + 5 * ldc + 8, c51);
+}
+
+#if defined(__GNUC__) || defined(__clang__)
 __attribute__((target("avx512f")))
 #endif
 void microkernel_avx512_8x16(const Scalar* packed_A,
@@ -244,16 +393,24 @@ void microkernel_avx512_8x16(const Scalar* packed_A,
 }
 
 constexpr KernelSpec kKernelAvx2_6x8{"avx2_6x8", 6, 8, KernelIsa::Avx2, microkernel_avx2_6x8};
+constexpr KernelSpec kKernelAvx2_4x8{"avx2_4x8", 4, 8, KernelIsa::Avx2, microkernel_avx2_4x8};
+constexpr KernelSpec kKernelAvx2_5x8{"avx2_5x8", 5, 8, KernelIsa::Avx2, microkernel_avx2_5x8};
 constexpr KernelSpec kKernelAvx2_8x8{"avx2_8x8", 8, 8, KernelIsa::Avx2, microkernel_avx2_8x8};
+constexpr KernelSpec kKernelAvx2_8x4{"avx2_8x4", 8, 4, KernelIsa::Avx2, microkernel_avx2_8x4};
 constexpr KernelSpec kKernelAvx2_4x16{"avx2_4x16", 4, 16, KernelIsa::Avx2, microkernel_avx2_4x16};
+constexpr KernelSpec kKernelAvx2_6x16{"avx2_6x16", 6, 16, KernelIsa::Avx2, microkernel_avx2_6x16};
 constexpr KernelSpec kKernelAvx512_8x16{"avx512_8x16", 8, 16, KernelIsa::Avx512, microkernel_avx512_8x16};
 std::atomic<size_t> g_gotoblas_pack_bc_call_count{0};
 
 const KernelSpec* find_kernel_by_name(const char* name) {
     static constexpr const KernelSpec* kAll[] = {
         &kKernelAvx2_6x8,
+        &kKernelAvx2_4x8,
+        &kKernelAvx2_5x8,
         &kKernelAvx2_8x8,
+        &kKernelAvx2_8x4,
         &kKernelAvx2_4x16,
+        &kKernelAvx2_6x16,
         &kKernelAvx512_8x16,
     };
 
@@ -287,6 +444,97 @@ const KernelSpec& current_kernel_for_isa(KernelIsa isa) {
     }
 
     return *selected;
+}
+
+struct GotoBlasProfile {
+    const KernelSpec* kernel;
+    size_t pack_m;
+    size_t pack_n;
+    size_t pack_k;
+    const char* dispatch_mode;
+    const char* rule_id;
+};
+
+bool env_enabled(const char* name) {
+    const char* v = std::getenv(name);
+    return v && *v && std::strcmp(v, "0") != 0;
+}
+
+bool has_manual_profile_override() {
+    static constexpr const char* kVars[] = {
+        "MATMUL_GOTO_KERNEL",
+        "MATMUL_PACK_K",
+        "MATMUL_PACK_M",
+        "MATMUL_PACK_N",
+    };
+    for (const char* name : kVars) {
+        const char* v = std::getenv(name);
+        if (v && *v) {
+            return true;
+        }
+    }
+    return false;
+}
+
+GotoBlasProfile legacy_profile_for_isa(KernelIsa isa) {
+    return {
+        &current_kernel_for_isa(isa),
+        current_pack_m_block_size(),
+        current_pack_n_block_size(),
+        current_pack_k_block_size(),
+        "legacy",
+        "none",
+    };
+}
+
+GotoBlasProfile maybe_select_experimental_avx2_profile(size_t M, size_t N, size_t K) {
+    if (K <= 16 && N >= 128 && M >= 2048) {
+        return {&kKernelAvx2_4x16, 128, 256, 96, "experimental_profile", "conv2_dx_like_v1"};
+    }
+    if (N == 32 && K >= 64 && K <= 96 && M <= 512) {
+        return {&kKernelAvx2_4x16, 128, 128, 96, "experimental_profile", "smallk32_like_v1"};
+    }
+    return legacy_profile_for_isa(KernelIsa::Avx2);
+}
+
+GotoBlasProfile select_profile_for_avx2(size_t M, size_t N, size_t K) {
+    if (has_manual_profile_override()) {
+        GotoBlasProfile profile = legacy_profile_for_isa(KernelIsa::Avx2);
+        profile.dispatch_mode = "manual_env_override";
+        profile.rule_id = "none";
+        return profile;
+    }
+
+    if (!env_enabled("MATMUL_GOTO_EXPERIMENTAL_PROFILE_DISPATCH")) {
+        return legacy_profile_for_isa(KernelIsa::Avx2);
+    }
+
+    return maybe_select_experimental_avx2_profile(M, N, K);
+}
+
+void maybe_trace_profile_dispatch(const GotoBlasProfile& profile,
+                                  size_t M,
+                                  size_t N,
+                                  size_t K,
+                                  bool experimental_enabled,
+                                  bool manual_override) {
+    if (!env_enabled("MATMUL_GOTO_DISPATCH_TRACE")) {
+        return;
+    }
+
+    std::cerr << "[GOTOBLAS_DISPATCH] "
+              << "experimental_enabled=" << (experimental_enabled ? "yes" : "no")
+              << " manual_override=" << (manual_override ? "yes" : "no")
+              << " M=" << M
+              << " N=" << N
+              << " K=" << K
+              << " dispatch_mode=" << profile.dispatch_mode
+              << " rule_id=" << profile.rule_id
+              << " kernel=" << profile.kernel->name
+              << " pack_k=" << profile.pack_k
+              << " pack_m=" << profile.pack_m
+              << " pack_n=" << profile.pack_n
+              << "\n";
 }
 
 void reset_gotoblas_debug_counters() {
@@ -402,15 +650,18 @@ void run_macro_kernel(const KernelSpec& kernel,
 }
 
 void run_gotoblas_kernel(const KernelSpec& kernel,
+                         size_t pack_m,
+                         size_t pack_n,
+                         size_t pack_k,
                          const Scalar* A,
                          const Scalar* B,
                          Scalar* C,
                          size_t M,
                          size_t N,
                          size_t K) {
-    const size_t MC = current_pack_m_block_size();
-    const size_t NC = current_pack_n_block_size();
-    const size_t KC = current_pack_k_block_size();
+    const size_t MC = pack_m;
+    const size_t NC = pack_n;
+    const size_t KC = pack_k;
     const size_t max_mr_panels = (MC + kernel.mr - 1) / kernel.mr;
     const size_t max_nr_panels = (NC + kernel.nr - 1) / kernel.nr;
     const size_t num_ic_blocks = (M + MC - 1) / MC;
@@ -485,7 +736,12 @@ void sgemm_omp_gotoblas_avx2(const Scalar* A, const Scalar* B, Scalar* C,
         return;
     }
 
-    run_gotoblas_kernel(current_kernel_for_isa(KernelIsa::Avx2), A, B, C, M, N, K);
+    const bool experimental_enabled = env_enabled("MATMUL_GOTO_EXPERIMENTAL_PROFILE_DISPATCH");
+    const bool manual_override = has_manual_profile_override();
+    const GotoBlasProfile profile = select_profile_for_avx2(M, N, K);
+    maybe_trace_profile_dispatch(profile, M, N, K, experimental_enabled, manual_override);
+    run_gotoblas_kernel(
+        *profile.kernel, profile.pack_m, profile.pack_n, profile.pack_k, A, B, C, M, N, K);
 }
 
 void sgemm_omp_gotoblas_avx512(const Scalar* A, const Scalar* B, Scalar* C,
@@ -500,7 +756,18 @@ void sgemm_omp_gotoblas_avx512(const Scalar* A, const Scalar* B, Scalar* C,
         return;
     }
 
-    run_gotoblas_kernel(current_kernel_for_isa(KernelIsa::Avx512), A, B, C, M, N, K);
+    const KernelSpec& kernel = current_kernel_for_isa(KernelIsa::Avx512);
+    run_gotoblas_kernel(
+        kernel,
+        current_pack_m_block_size(),
+        current_pack_n_block_size(),
+        current_pack_k_block_size(),
+        A,
+        B,
+        C,
+        M,
+        N,
+        K);
 }
 
 }  // namespace gemm

@@ -149,8 +149,12 @@ int main() {
 
     const char* kernels[] = {
         "avx2_6x8",
+        "avx2_4x8",
+        "avx2_5x8",
         "avx2_8x8",
+        "avx2_8x4",
         "avx2_4x16",
+        "avx2_6x16",
         "avx512_8x16",
     };
 

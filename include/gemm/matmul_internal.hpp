@@ -83,9 +83,17 @@ void sgemm_tile_scalar_packed(const Scalar* packed_A, const Scalar* packed_B,
 
 void microkernel_avx2_6x8(const Scalar* packed_A, const Scalar* packed_B,
                           Scalar* C, size_t ldc, size_t Kc);
+void microkernel_avx2_4x8(const Scalar* packed_A, const Scalar* packed_B,
+                          Scalar* C, size_t ldc, size_t Kc);
+void microkernel_avx2_5x8(const Scalar* packed_A, const Scalar* packed_B,
+                          Scalar* C, size_t ldc, size_t Kc);
 void microkernel_avx2_8x8(const Scalar* packed_A, const Scalar* packed_B,
                           Scalar* C, size_t ldc, size_t Kc);
+void microkernel_avx2_8x4(const Scalar* packed_A, const Scalar* packed_B,
+                          Scalar* C, size_t ldc, size_t Kc);
 void microkernel_avx2_4x16(const Scalar* packed_A, const Scalar* packed_B,
+                           Scalar* C, size_t ldc, size_t Kc);
+void microkernel_avx2_6x16(const Scalar* packed_A, const Scalar* packed_B,
                            Scalar* C, size_t ldc, size_t Kc);
 void microkernel_avx512_8x16(const Scalar* packed_A, const Scalar* packed_B,
                              Scalar* C, size_t ldc, size_t Kc);
