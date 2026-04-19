@@ -26,6 +26,7 @@ namespace fs = std::filesystem;
 #include "distributed/distributed.hpp"
 #include "network.hpp"
 #include "cnn_network.hpp"
+#include "resnet_network.hpp"
 #include "checkpoint.hpp"
 #include "loss.hpp"
 #include "optimizer.hpp"
@@ -371,7 +372,7 @@ struct Config {
     unsigned int seed = 0;                // RNG seed. 0 means "non-deterministic/random seed path".
     std::string activation = "relu";      // MLP activation: relu / leaky_relu / gelu / sigmoid / tanh.
     std::string init = "he";              // MLP init strategy: he / xavier / manual.
-    std::string model = "mlp";            // Model type: mlp / cnn.
+    std::string model = "mlp";            // Model type: mlp / cnn / resnet.
     std::string optimizer = "momentum_sgd";  // Optimizer: sgd / momentum_sgd(/momentum) / adamw.
     double momentum = 0.9;                // Momentum for momentum_sgd.
     bool nesterov = false;                // Nesterov flag for momentum_sgd.
@@ -906,6 +907,26 @@ int main(int argc, char** argv) {
             std::cerr << "Error building CNN: " << e.what() << std::endl;
             return 1;
         }
+    } else if (cfg.model == "resnet") {
+        if (isMaster) {
+            std::cout << "Building ResNet Network..." << std::endl;
+        }
+        try {
+            ResNetConfig resnetCfg;
+            resnetCfg.input_channels = datasetInfo.input_channels;
+            resnetCfg.input_height = datasetInfo.input_height;
+            resnetCfg.input_width = datasetInfo.input_width;
+            resnetCfg.num_classes = datasetInfo.num_classes;
+            resnetCfg.conv_backend = parseConvBackend(cfg.conv_backend);
+            model = std::make_unique<ResNetNetwork>(
+                resnetCfg,
+                cfg.activation,
+                cfg.init,
+                cfg.seed);
+        } catch (const std::exception& e) {
+            std::cerr << "Error building ResNet: " << e.what() << std::endl;
+            return 1;
+        }
     } else if (cfg.model == "mlp") {
         if (isMaster) {
             std::cout << "Building MLP Network..." << std::endl;
@@ -936,7 +957,7 @@ int main(int argc, char** argv) {
         }
     } else {
         std::cerr << "Error: unsupported --model '" << cfg.model
-                  << "'. Expected 'mlp' or 'cnn'." << std::endl;
+                  << "'. Expected 'mlp', 'cnn', or 'resnet'." << std::endl;
         return 1;
     }
 

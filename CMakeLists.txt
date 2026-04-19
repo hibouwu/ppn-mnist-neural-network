@@ -219,6 +219,7 @@ add_executable(test_autodiff tests/test_autodiff.cpp ${SOURCES})
 add_executable(test_gradient_check tests/test_gradient_check.cpp ${SOURCES})
 add_executable(test_autograd_engine tests/test_autograd_engine.cpp ${SOURCES})
 add_executable(test_cnn_autograd tests/test_cnn_autograd.cpp ${SOURCES})
+add_executable(test_resnet_network tests/test_resnet_network.cpp ${SOURCES})
 add_executable(test_distributed_sync tests/test_distributed_sync.cpp ${SOURCES})
 add_executable(test_distributed_sync_mpi_contracts tests/test_distributed_sync.cpp ${SOURCES})
 
@@ -246,6 +247,7 @@ set(TEST_TARGETS
     test_gradient_check
     test_autograd_engine
     test_cnn_autograd
+    test_resnet_network
     test_distributed_sync
     test_distributed_sync_mpi_contracts
     test_dataloader
@@ -274,6 +276,7 @@ add_test(NAME AutodiffTest COMMAND test_autodiff)
 add_test(NAME GradientCheckTest COMMAND test_gradient_check)
 add_test(NAME AutogradEngineTest COMMAND test_autograd_engine)
 add_test(NAME CNNAutogradTest COMMAND test_cnn_autograd)
+add_test(NAME ResNetNetworkTest COMMAND test_resnet_network)
 add_test(NAME DistributedSyncTest COMMAND test_distributed_sync)
 if(ENABLE_MPI)
     add_test(NAME DistributedSyncMPIContractsWorldSize2
