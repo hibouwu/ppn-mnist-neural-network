@@ -1,4 +1,8 @@
 #include "tensor.hpp"
+#include "gemm/matmul_internal.hpp"
+
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <vector>
 #include <random>
@@ -16,6 +20,23 @@ Matrix random_matrix(size_t rows, size_t cols) {
         m.data[i] = dis(gen);
     }
     return m;
+}
+
+void emit_effective_matmul_config_if_requested() {
+    const char* emit = std::getenv("MATMUL_EMIT_EFFECTIVE_CONFIG");
+    if (emit == nullptr || *emit == '\0' || std::strcmp(emit, "0") == 0) {
+        return;
+    }
+
+    const gemm::MatmulImpl impl = gemm::current_impl();
+    std::cout << "Effective config: impl=" << gemm::matmul_impl_name(impl);
+    if (impl == gemm::MatmulImpl::OmpGotoBlasAvx2 || impl == gemm::MatmulImpl::OmpGotoBlasAvx512) {
+        std::cout << " kernel=" << gemm::gotoblas_current_kernel_name()
+                  << " mc=" << gemm::current_mc_block_size()
+                  << " nc=" << gemm::current_nc_block_size()
+                  << " kc=" << gemm::current_kc_block_size();
+    }
+    std::cout << std::endl;
 }
 
 int main(int argc, char** argv) {
@@ -110,6 +131,8 @@ int main(int argc, char** argv) {
     double f_sq_sum = 0.0;
     for (auto it = beginIt; it != endIt; ++it) f_sq_sum += (*it - final_mean) * (*it - final_mean);
     double final_std = (f_count > 1) ? std::sqrt(f_sq_sum / (f_count - 1)) : 0.0;
+
+    emit_effective_matmul_config_if_requested();
 
     // Output output to be parsed: "Mean: <MEAN> s, StdDev: <STDDEV> s, Reps: <REPS>"
     // Note: Added Reps to output so script can parse it

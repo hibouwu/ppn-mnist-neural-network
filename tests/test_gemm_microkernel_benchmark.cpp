@@ -7,20 +7,9 @@
 #include <iomanip>
 #include <iostream>
 #include <random>
-#include <string>
 #include <vector>
 
 namespace {
-
-bool kernel_available(const gemm::KernelSpec& spec) {
-    if (spec.isa == gemm::KernelIsa::Avx2) {
-        return gemm::cpu_supports_avx2_fma();
-    }
-    if (spec.isa == gemm::KernelIsa::Avx512) {
-        return gemm::cpu_supports_avx512f();
-    }
-    return false;
-}
 
 enum class BenchmarkMode {
     Timing,
@@ -33,22 +22,24 @@ BenchmarkMode parse_mode(const std::string& mode) {
     throw std::invalid_argument("Unknown benchmark mode: " + mode);
 }
 
-void run_hot_loop(const gemm::KernelSpec& spec,
+void run_hot_loop(const char* kernel_name,
                   const Scalar* packed_a,
                   const Scalar* packed_b,
                   Scalar* c,
                   size_t ldc,
                   size_t kc,
+                  size_t rows,
+                  size_t cols,
                   uint64_t calls) {
     for (uint64_t i = 0; i < calls; ++i) {
-        spec.fn(packed_a, packed_b, c, ldc, kc);
+        gemm::gotoblas_microkernel_for_shape(kernel_name, packed_a, packed_b, c, ldc, kc, rows, cols);
     }
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string kernel_name = "avx2_6x8";
+    std::string kernel_name = "avx2_8x8";
     size_t kc = 256;
     int reps = 200;
     int inner_iters = 10000;
@@ -62,45 +53,49 @@ int main(int argc, char** argv) {
     if (argc > 5) mode = parse_mode(argv[5]);
     if (argc > 6) perf_call_scale = static_cast<uint64_t>(std::stoull(argv[6]));
 
-    const gemm::KernelSpec* spec = gemm::find_kernel_by_name(kernel_name.c_str());
-    if (!spec) {
-        std::cerr << "Unknown kernel: " << kernel_name << "\n";
-        return 1;
-    }
-    if (!kernel_available(*spec)) {
-        std::cerr << "Kernel unavailable on this CPU: " << kernel_name << "\n";
+    if (!gemm::cpu_supports_avx2_fma()) {
+        std::cerr << "Unified AVX2 micro-kernel unavailable on this CPU\n";
         return 2;
     }
 
-    const size_t ldc = spec->nr + 8;
+    size_t mr = 0;
+    size_t nr = 0;
+    if (!gemm::gotoblas_try_get_kernel_shape(kernel_name.c_str(), &mr, &nr)) {
+        std::cerr << "Unknown kernel shape: " << kernel_name << "\n";
+        return 1;
+    }
+    const size_t rows = mr;
+    const size_t cols = nr;
+    const size_t ldc = nr + 8;
+
     std::mt19937 rng(42);
     std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
 
-    std::vector<Scalar> packed_a(kc * spec->mr);
-    std::vector<Scalar> packed_b(kc * spec->nr);
-    std::vector<Scalar> c(spec->mr * ldc, 0.0f);
+    std::vector<Scalar> packed_a(kc * mr);
+    std::vector<Scalar> packed_b(kc * nr);
+    std::vector<Scalar> c(mr * ldc, 0.0f);
 
     for (Scalar& v : packed_a) v = dist(rng);
     for (Scalar& v : packed_b) v = dist(rng);
     for (Scalar& v : c) v = dist(rng) * 0.01f;
 
-    run_hot_loop(*spec, packed_a.data(), packed_b.data(), c.data(), ldc, kc, 100);
+    run_hot_loop(kernel_name.c_str(), packed_a.data(), packed_b.data(), c.data(), ldc, kc, rows, cols, 100);
 
     const uint64_t timed_calls = static_cast<uint64_t>(reps) * static_cast<uint64_t>(inner_iters);
     const uint64_t perf_calls = timed_calls * perf_call_scale;
-    const uint64_t flops_per_call = 2ull * spec->mr * spec->nr * kc;
+    const uint64_t flops_per_call = 2ull * rows * cols * kc;
     const uint64_t perf_flops = flops_per_call * perf_calls;
 
     if (mode == BenchmarkMode::Perf) {
-        run_hot_loop(*spec, packed_a.data(), packed_b.data(), c.data(), ldc, kc, perf_calls);
+        run_hot_loop(kernel_name.c_str(), packed_a.data(), packed_b.data(), c.data(), ldc, kc, rows, cols, perf_calls);
 
         double checksum = 0.0;
         for (size_t i = 0; i < std::min<size_t>(c.size(), 32); ++i) checksum += c[i];
 
         std::cout << "Mode: perf\n";
-        std::cout << "Kernel: " << spec->name
-                  << ", MR: " << spec->mr
-                  << ", NR: " << spec->nr
+        std::cout << "Kernel: " << kernel_name
+                  << ", MR: " << mr
+                  << ", NR: " << nr
                   << ", KC: " << kc << "\n";
         std::cout << "TimedCalls: " << timed_calls
                   << ", PerfCallScale: " << perf_call_scale << "\n";
@@ -116,8 +111,16 @@ int main(int argc, char** argv) {
 
     for (int r = 0; r < reps; ++r) {
         auto t0 = std::chrono::high_resolution_clock::now();
-        run_hot_loop(*spec, packed_a.data(), packed_b.data(), c.data(), ldc, kc,
-                     static_cast<uint64_t>(inner_iters));
+        run_hot_loop(
+            kernel_name.c_str(),
+            packed_a.data(),
+            packed_b.data(),
+            c.data(),
+            ldc,
+            kc,
+            rows,
+            cols,
+            static_cast<uint64_t>(inner_iters));
         auto t1 = std::chrono::high_resolution_clock::now();
         const std::chrono::duration<double> diff = t1 - t0;
         timings.push_back(diff.count() / static_cast<double>(inner_iters));
@@ -153,9 +156,9 @@ int main(int argc, char** argv) {
               << " s, StdDev: " << stddev
               << " s, Reps: " << reps
               << ", InnerIters: " << inner_iters << "\n";
-    std::cout << "Kernel: " << spec->name
-              << ", MR: " << spec->mr
-              << ", NR: " << spec->nr
+    std::cout << "Kernel: " << kernel_name
+              << ", MR: " << mr
+              << ", NR: " << nr
               << ", KC: " << kc << "\n";
     std::cout << "TimedCalls: " << timed_calls
               << ", PerfCallScale: " << perf_call_scale << "\n";

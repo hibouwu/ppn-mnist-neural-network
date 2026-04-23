@@ -153,9 +153,9 @@ void sgemm_omp_blocked_packb(const Scalar* A, const Scalar* B, Scalar* C,
 
 void sgemm_omp_blocked_packab(const Scalar* A, const Scalar* B, Scalar* C,
                               size_t M, size_t N, size_t K) {
-    const size_t MB = current_pack_m_block_size();
-    const size_t NB = current_pack_n_block_size();
-    const size_t KB = current_pack_k_block_size();
+    const size_t MB = current_mc_block_size();
+    const size_t NB = current_nc_block_size();
+    const size_t KB = current_kc_block_size();
 
     #pragma omp parallel
     {

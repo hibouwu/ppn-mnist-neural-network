@@ -2,12 +2,11 @@
 
 #include <cmath>
 #include <iostream>
-#include <string>
 #include <vector>
 
 namespace {
 
-bool nearlyEqual(Scalar a, Scalar b, float tol = 1e-4f) {
+bool nearly_equal(Scalar a, Scalar b, float tol = 1e-4f) {
     return std::fabs(a - b) <= tol;
 }
 
@@ -19,7 +18,7 @@ bool test_pack_a_micro_panel() {
 
     std::vector<Scalar> A{
         1, 2, 3, 4, 5, 6, 7,
-        8, 9, 10, 11, 12, 13, 14
+        8, 9, 10, 11, 12, 13, 14,
     };
     std::vector<Scalar> packed(kc * mr, -1.0f);
 
@@ -28,7 +27,7 @@ bool test_pack_a_micro_panel() {
     const std::vector<Scalar> expected{
         1, 8, 0, 0,
         2, 9, 0, 0,
-        3, 10, 0, 0
+        3, 10, 0, 0,
     };
 
     if (packed != expected) {
@@ -47,7 +46,7 @@ bool test_pack_b_micro_panel() {
     std::vector<Scalar> B{
         1, 2, 3, 4, 5, 6,
         7, 8, 9, 10, 11, 12,
-        13, 14, 15, 16, 17, 18
+        13, 14, 15, 16, 17, 18,
     };
     std::vector<Scalar> packed(kc * nr, -1.0f);
 
@@ -56,7 +55,7 @@ bool test_pack_b_micro_panel() {
     const std::vector<Scalar> expected{
         1, 2, 3, 0,
         7, 8, 9, 0,
-        13, 14, 15, 0
+        13, 14, 15, 0,
     };
 
     if (packed != expected) {
@@ -71,75 +70,142 @@ void reference_kernel(const std::vector<Scalar>& packed_a,
                       std::vector<Scalar>& c,
                       size_t mr,
                       size_t nr,
+                      size_t packed_mr,
+                      size_t packed_nr,
                       size_t ldc,
                       size_t kc) {
     for (size_t i = 0; i < mr; ++i) {
         for (size_t j = 0; j < nr; ++j) {
             Scalar acc = c[i * ldc + j];
             for (size_t k = 0; k < kc; ++k) {
-                acc += packed_a[k * mr + i] * packed_b[k * nr + j];
+                acc += packed_a[k * packed_mr + i]
+                    * packed_b[k * packed_nr + j];
             }
             c[i * ldc + j] = acc;
         }
     }
 }
 
-bool test_kernel(const std::string& name) {
-    const gemm::KernelSpec* spec = gemm::find_kernel_by_name(name.c_str());
-    if (!spec) {
-        std::cerr << "Unknown kernel spec: " << name << "\n";
+bool test_microkernel_shape_full_tile(const char* shape_name) {
+    if (!gemm::cpu_supports_avx2_fma()) {
+        std::cout << "Skipping fixed micro-kernel test (AVX2/FMA unavailable)\n";
+        return true;
+    }
+
+    size_t mr = 0;
+    size_t nr = 0;
+    if (!gemm::gotoblas_try_get_kernel_shape(shape_name, &mr, &nr)) {
+        std::cerr << "Unknown micro-kernel shape: " << shape_name << "\n";
         return false;
     }
-
-    if (spec->isa == gemm::KernelIsa::Avx2 && !gemm::cpu_supports_avx2_fma()) {
-        std::cout << "Skipping " << name << " (AVX2/FMA unavailable)\n";
-        return true;
-    }
-    if (spec->isa == gemm::KernelIsa::Avx512 && !gemm::cpu_supports_avx512f()) {
-        std::cout << "Skipping " << name << " (AVX-512F unavailable)\n";
-        return true;
-    }
-
     const size_t kc = 5;
-    const size_t ldc = spec->nr + 3;
+    const size_t ldc = nr + 3;
 
-    std::vector<Scalar> packed_a(kc * spec->mr);
-    std::vector<Scalar> packed_b(kc * spec->nr);
-    std::vector<Scalar> c_test(spec->mr * ldc, 0.25f);
-    std::vector<Scalar> c_ref(spec->mr * ldc, 0.25f);
+    std::vector<Scalar> packed_a(kc * mr);
+    std::vector<Scalar> packed_b(kc * nr);
+    std::vector<Scalar> c_test(mr * ldc, 0.25f);
+    std::vector<Scalar> c_ref(mr * ldc, 0.25f);
 
     for (size_t k = 0; k < kc; ++k) {
-        for (size_t i = 0; i < spec->mr; ++i) {
-            packed_a[k * spec->mr + i] =
-                static_cast<Scalar>((static_cast<int>(i) - 2) * 0.5f + static_cast<float>(k));
+        for (size_t i = 0; i < mr; ++i) {
+            packed_a[k * mr + i] =
+                static_cast<Scalar>((static_cast<int>(i) - 3) * 0.5f + static_cast<float>(k));
         }
-        for (size_t j = 0; j < spec->nr; ++j) {
-            packed_b[k * spec->nr + j] =
-                static_cast<Scalar>((static_cast<int>(j) - 3) * 0.25f - static_cast<float>(k) * 0.1f);
+        for (size_t j = 0; j < nr; ++j) {
+            packed_b[k * nr + j] =
+                static_cast<Scalar>((static_cast<int>(j) - 2) * 0.25f - static_cast<float>(k) * 0.1f);
         }
     }
 
-    reference_kernel(packed_a, packed_b, c_ref, spec->mr, spec->nr, ldc, kc);
-    spec->fn(packed_a.data(), packed_b.data(), c_test.data(), ldc, kc);
+    reference_kernel(packed_a, packed_b, c_ref, mr, nr, mr, nr, ldc, kc);
+    gemm::gotoblas_microkernel_for_shape(
+        shape_name,
+        packed_a.data(),
+        packed_b.data(),
+        c_test.data(),
+        ldc,
+        kc,
+        mr,
+        nr);
 
-    for (size_t i = 0; i < spec->mr; ++i) {
-        for (size_t j = 0; j < spec->nr; ++j) {
-            const Scalar got = c_test[i * ldc + j];
-            const Scalar expected = c_ref[i * ldc + j];
-            if (!nearlyEqual(got, expected)) {
-                std::cerr << "Kernel " << name << " mismatch at (" << i << ", " << j
-                          << "): got " << got << ", expected " << expected << "\n";
+    for (size_t i = 0; i < mr; ++i) {
+        for (size_t j = 0; j < nr; ++j) {
+            if (!nearly_equal(c_test[i * ldc + j], c_ref[i * ldc + j])) {
+                std::cerr << shape_name << " full-tile kernel mismatch at (" << i << ", " << j << ")\n";
                 return false;
             }
         }
     }
+    return true;
+}
 
+bool test_microkernel_shape_fringe_tile(const char* shape_name) {
+    if (!gemm::cpu_supports_avx2_fma()) {
+        std::cout << "Skipping fixed fringe micro-kernel test (AVX2/FMA unavailable)\n";
+        return true;
+    }
+
+    size_t mr = 0;
+    size_t nr = 0;
+    if (!gemm::gotoblas_try_get_kernel_shape(shape_name, &mr, &nr)) {
+        std::cerr << "Unknown micro-kernel shape: " << shape_name << "\n";
+        return false;
+    }
+    const size_t rows = mr - 2;
+    const size_t cols = nr - 3;
+    const size_t kc = 7;
+    const size_t ldc = nr + 5;
+
+    std::vector<Scalar> packed_a(kc * mr, 0.0f);
+    std::vector<Scalar> packed_b(kc * nr, 0.0f);
+    std::vector<Scalar> c_test(mr * ldc, 0.0f);
+    std::vector<Scalar> c_ref(mr * ldc, 0.0f);
+
+    for (size_t k = 0; k < kc; ++k) {
+        for (size_t i = 0; i < rows; ++i) {
+            packed_a[k * mr + i] =
+                static_cast<Scalar>(0.2f * static_cast<float>(i + 1) + 0.1f * static_cast<float>(k));
+        }
+        for (size_t j = 0; j < cols; ++j) {
+            packed_b[k * nr + j] =
+                static_cast<Scalar>(0.15f * static_cast<float>(j + 1) - 0.05f * static_cast<float>(k));
+        }
+    }
+
+    reference_kernel(packed_a, packed_b, c_ref, rows, cols, mr, nr, ldc, kc);
+    gemm::gotoblas_microkernel_for_shape(
+        shape_name,
+        packed_a.data(),
+        packed_b.data(),
+        c_test.data(),
+        ldc,
+        kc,
+        rows,
+        cols);
+
+    for (size_t i = 0; i < rows; ++i) {
+        for (size_t j = 0; j < cols; ++j) {
+            if (!nearly_equal(c_test[i * ldc + j], c_ref[i * ldc + j])) {
+                std::cerr << shape_name << " fringe kernel mismatch at (" << i << ", " << j << ")\n";
+                return false;
+            }
+        }
+    }
     return true;
 }
 
 }  // namespace
 
 int main() {
+    const char* shapes[] = {
+        "avx2_8x8",
+        "avx2_12x8",
+        "avx2_13x8",
+        "avx2_4x16",
+        "avx2_5x16",
+        "avx2_6x16",
+    };
+
     if (!test_pack_a_micro_panel()) {
         return 1;
     }
@@ -147,23 +213,15 @@ int main() {
         return 1;
     }
 
-    const char* kernels[] = {
-        "avx2_6x8",
-        "avx2_4x8",
-        "avx2_5x8",
-        "avx2_8x8",
-        "avx2_8x4",
-        "avx2_4x16",
-        "avx2_6x16",
-        "avx512_8x16",
-    };
-
-    for (const char* kernel : kernels) {
-        if (!test_kernel(kernel)) {
+    for (const char* shape : shapes) {
+        if (!test_microkernel_shape_full_tile(shape)) {
+            return 1;
+        }
+        if (!test_microkernel_shape_fringe_tile(shape)) {
             return 1;
         }
     }
 
-    std::cout << "All GEMM micro-kernel tests passed!\n";
+    std::cout << "All GEMM fixed-kernel tests passed!\n";
     return 0;
 }

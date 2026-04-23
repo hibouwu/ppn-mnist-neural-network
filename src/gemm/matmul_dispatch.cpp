@@ -19,8 +19,15 @@ namespace gemm {
 
 namespace {
 
-size_t parse_positive_size_env(const char* name, size_t fallback) {
-    const char* v = std::getenv(name);
+size_t parse_positive_size_env_with_alias(const char* primary_name,
+                                          const char* legacy_name,
+                                          size_t fallback) {
+    const char* v = std::getenv(primary_name);
+    const char* used_name = primary_name;
+    if ((!v || !*v) && legacy_name != nullptr && *legacy_name != '\0') {
+        v = std::getenv(legacy_name);
+        used_name = legacy_name;
+    }
     if (!v || !*v) {
         return fallback;
     }
@@ -34,13 +41,13 @@ size_t parse_positive_size_env(const char* name, size_t fallback) {
         static bool warned_generic = false;
 
         bool* warned = &warned_generic;
-        if (std::strcmp(name, "MATMUL_PACK_M") == 0) warned = &warned_pack_m;
-        if (std::strcmp(name, "MATMUL_PACK_N") == 0) warned = &warned_pack_n;
-        if (std::strcmp(name, "MATMUL_PACK_K") == 0) warned = &warned_pack_k;
+        if (std::strcmp(used_name, "MATMUL_MC") == 0 || std::strcmp(used_name, "MATMUL_PACK_M") == 0) warned = &warned_pack_m;
+        if (std::strcmp(used_name, "MATMUL_NC") == 0 || std::strcmp(used_name, "MATMUL_PACK_N") == 0) warned = &warned_pack_n;
+        if (std::strcmp(used_name, "MATMUL_KC") == 0 || std::strcmp(used_name, "MATMUL_PACK_K") == 0) warned = &warned_pack_k;
 
         if (!*warned) {
             *warned = true;
-            std::cerr << "[WARN] " << name << " invalide ('" << v
+            std::cerr << "[WARN] " << used_name << " invalide ('" << v
                       << "'). Utilisation de la valeur par defaut "
                       << fallback << ".\n";
         }
@@ -121,18 +128,21 @@ size_t current_block_size() {
     return bs;
 }
 
-size_t current_pack_m_block_size() {
-    static const size_t bs = parse_positive_size_env("MATMUL_PACK_M", current_block_size());
+size_t current_mc_block_size() {
+    static const size_t bs = parse_positive_size_env_with_alias(
+        "MATMUL_MC", "MATMUL_PACK_M", current_block_size());
     return bs;
 }
 
-size_t current_pack_n_block_size() {
-    static const size_t bs = parse_positive_size_env("MATMUL_PACK_N", current_block_size());
+size_t current_nc_block_size() {
+    static const size_t bs = parse_positive_size_env_with_alias(
+        "MATMUL_NC", "MATMUL_PACK_N", current_block_size());
     return bs;
 }
 
-size_t current_pack_k_block_size() {
-    static const size_t bs = parse_positive_size_env("MATMUL_PACK_K", current_block_size());
+size_t current_kc_block_size() {
+    static const size_t bs = parse_positive_size_env_with_alias(
+        "MATMUL_KC", "MATMUL_PACK_K", current_block_size());
     return bs;
 }
 

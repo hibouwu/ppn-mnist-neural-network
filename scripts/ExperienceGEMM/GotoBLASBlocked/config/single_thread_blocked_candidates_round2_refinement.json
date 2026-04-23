@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "round_name": "round2_refinement",
+  "experiment_name": "Single-thread blocked-size second-round refinement",
+  "description": "Second-round single-thread local refinement around the first-round winning kernel-shape and blocked-size regions. This is not a new global search.",
+  "summary_title": "Single-Thread Blocked Round 2 Refinement Summary",
+  "plot_title": "Round 2 Refinement: Kernel Shape Relative To Best Custom Shape Per Workload",
+  "plot_filename": "round2_refinement_relative_to_best_custom_heatmap.png",
+  "output_layout": {
+    "raw_dir": "output/ExperienceGEMM/GotoBLASBlocked/round2_refinement/raw",
+    "summary_dir": "output/ExperienceGEMM/GotoBLASBlocked/round2_refinement/summary"
+  },
+  "benchmark": {
+    "binary": "build/test_benchmark_large",
+    "custom_impl": "omp_gotoblas_avx2",
+    "baseline_impl": "blas"
+  },
+  "execution_protocol": {
+    "timing_reps": 100,
+    "perf_reps": 5,
+    "benchmark_inner_reps": 1,
+    "threads": 1,
+    "pin_core": 0,
+    "use_taskset": true,
+    "enable_perf": true,
+    "enable_openblas_baseline": true,
+    "freq_policy": "set_if_needed",
+    "governor": "performance"
+  },
+  "workloads": {
+    "main": [
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_forward_mainstream_nn",
+        "WorkloadId": "mlp_fc1_b32",
+        "Size": [32, 784, 128],
+        "Note": "default MLP first layer, 784 -> 128"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_forward_mainstream_nn",
+        "WorkloadId": "mlp_fc1_b64",
+        "Size": [64, 784, 128],
+        "Note": "default MLP first layer, 784 -> 128"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_forward_mainstream_nn",
+        "WorkloadId": "mlp_fc1_b256",
+        "Size": [256, 784, 128],
+        "Note": "default MLP first layer, 784 -> 128"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_forward_mainstream_nn",
+        "WorkloadId": "cnn_fc1_b32",
+        "Size": [32, 400, 120],
+        "Note": "LeNet-style FC1, 400 -> 120"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_head_small_n_nn",
+        "WorkloadId": "mlp_fc2_b32",
+        "Size": [32, 128, 10],
+        "Note": "MLP logits head, 128 -> 10"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_head_small_n_nn",
+        "WorkloadId": "mlp_fc2_b64",
+        "Size": [64, 128, 10],
+        "Note": "MLP logits head, 128 -> 10"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_head_small_n_nn",
+        "WorkloadId": "mlp_fc2_b256",
+        "Size": [256, 128, 10],
+        "Note": "MLP logits head, 128 -> 10"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_head_small_n_nn",
+        "WorkloadId": "cnn_fc3_b32",
+        "Size": [32, 84, 10],
+        "Note": "LeNet-style FC3, 84 -> 10"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_head_small_n_nn",
+        "WorkloadId": "cnn_fc2_smallk_b32",
+        "Size": [32, 84, 32],
+        "Note": "narrow FC head extension, 84 -> 32"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_wide_output_nn",
+        "WorkloadId": "mlp_fc1_hidden256_b32",
+        "Size": [32, 784, 256],
+        "Note": "widened MLP first layer, 784 -> 256"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_wide_output_nn",
+        "WorkloadId": "mlp_fc1_hidden256_b64",
+        "Size": [64, 784, 256],
+        "Note": "widened MLP first layer, 784 -> 256"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_wide_output_nn",
+        "WorkloadId": "cnn_fc1_wide_b32",
+        "Size": [32, 400, 256],
+        "Note": "widened LeNet-style FC1, 400 -> 256"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "conv_dx_extremely_skinny_k_nn",
+        "WorkloadId": "cnn_conv1_dX_b32",
+        "Size": [25088, 6, 25],
+        "Note": "conv1 dX, batch 32"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "conv_dx_extremely_skinny_k_nn",
+        "WorkloadId": "cnn_conv1_dX_b64",
+        "Size": [50176, 6, 25],
+        "Note": "conv1 dX, batch 64"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "conv_dx_extremely_skinny_k_nn",
+        "WorkloadId": "cnn_conv2_dX_b32",
+        "Size": [3200, 16, 150],
+        "Note": "conv2 dX, batch 32"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "conv_dx_extremely_skinny_k_nn",
+        "WorkloadId": "cnn_conv2_dX_b64",
+        "Size": [6400, 16, 150],
+        "Note": "conv2 dX, batch 64"
+      }
+    ],
+    "sanity": [
+      {
+        "enabled": false,
+        "WorkloadFamily": "sanity_square",
+        "WorkloadId": "square_256",
+        "Size": [256, 256, 256],
+        "Note": "optional square sanity baseline"
+      }
+    ]
+  },
+  "kernel_rows": [
+    {
+      "KernelShape": "8x8",
+      "mr": 8,
+      "nr": 8,
+      "current_binary_supported": true,
+      "rows": [
+        { "Kc": 288, "Mc": [96, 128, 160, 192], "Nc": [448, 512, 576, 640] },
+        { "Kc": 384, "Mc": [64, 96, 128], "Nc": [320, 384, 448, 512] }
+      ]
+    },
+    {
+      "KernelShape": "4x16",
+      "mr": 4,
+      "nr": 16,
+      "current_binary_supported": true,
+      "rows": [
+        { "Kc": 192, "Mc": [160, 192, 224, 256, 288], "Nc": [640, 768, 896, 1024] },
+        { "Kc": 256, "Mc": [128, 160, 192], "Nc": [512, 576, 640, 704, 768] },
+        { "Kc": 320, "Mc": [96, 128, 160], "Nc": [384, 448, 512, 576] }
+      ]
+    }
+  ]
+}

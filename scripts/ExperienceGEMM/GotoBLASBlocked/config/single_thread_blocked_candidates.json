@@ -1,0 +1,213 @@
+{
+  "version": 1,
+  "description": "Single-thread blocked-size candidate screening derived from Docs/report/BlockedSizeCherche.md section 5.4.",
+  "benchmark": {
+    "binary": "build/test_benchmark_large",
+    "custom_impl": "omp_gotoblas_avx2",
+    "baseline_impl": "blas"
+  },
+  "execution_protocol": {
+    "timing_reps": 100,
+    "perf_reps": 5,
+    "benchmark_inner_reps": 1,
+    "threads": 1,
+    "pin_core": 0,
+    "use_taskset": true,
+    "enable_perf": true,
+    "enable_openblas_baseline": true,
+    "freq_policy": "set_if_needed",
+    "governor": "performance"
+  },
+  "workloads": {
+    "main": [
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_forward_mainstream_nn",
+        "WorkloadId": "mlp_fc1_b32",
+        "Size": [32, 784, 128],
+        "Note": "default MLP first layer, 784 -> 128"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_forward_mainstream_nn",
+        "WorkloadId": "mlp_fc1_b64",
+        "Size": [64, 784, 128],
+        "Note": "default MLP first layer, 784 -> 128"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_forward_mainstream_nn",
+        "WorkloadId": "mlp_fc1_b256",
+        "Size": [256, 784, 128],
+        "Note": "default MLP first layer, 784 -> 128"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_forward_mainstream_nn",
+        "WorkloadId": "cnn_fc1_b32",
+        "Size": [32, 400, 120],
+        "Note": "LeNet-style FC1, 400 -> 120"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_head_small_n_nn",
+        "WorkloadId": "mlp_fc2_b32",
+        "Size": [32, 128, 10],
+        "Note": "MLP logits head, 128 -> 10"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_head_small_n_nn",
+        "WorkloadId": "mlp_fc2_b64",
+        "Size": [64, 128, 10],
+        "Note": "MLP logits head, 128 -> 10"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_head_small_n_nn",
+        "WorkloadId": "mlp_fc2_b256",
+        "Size": [256, 128, 10],
+        "Note": "MLP logits head, 128 -> 10"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_head_small_n_nn",
+        "WorkloadId": "cnn_fc3_b32",
+        "Size": [32, 84, 10],
+        "Note": "LeNet-style FC3, 84 -> 10"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_head_small_n_nn",
+        "WorkloadId": "cnn_fc2_smallk_b32",
+        "Size": [32, 84, 32],
+        "Note": "narrow FC head extension, 84 -> 32"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_wide_output_nn",
+        "WorkloadId": "mlp_fc1_hidden256_b32",
+        "Size": [32, 784, 256],
+        "Note": "widened MLP first layer, 784 -> 256"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_wide_output_nn",
+        "WorkloadId": "mlp_fc1_hidden256_b64",
+        "Size": [64, 784, 256],
+        "Note": "widened MLP first layer, 784 -> 256"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_wide_output_nn",
+        "WorkloadId": "cnn_fc1_wide_b32",
+        "Size": [32, 400, 256],
+        "Note": "widened LeNet-style FC1, 400 -> 256"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "conv_dx_extremely_skinny_k_nn",
+        "WorkloadId": "cnn_conv1_dX_b32",
+        "Size": [25088, 6, 25],
+        "Note": "conv1 dX, batch 32"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "conv_dx_extremely_skinny_k_nn",
+        "WorkloadId": "cnn_conv1_dX_b64",
+        "Size": [50176, 6, 25],
+        "Note": "conv1 dX, batch 64"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "conv_dx_extremely_skinny_k_nn",
+        "WorkloadId": "cnn_conv2_dX_b32",
+        "Size": [3200, 16, 150],
+        "Note": "conv2 dX, batch 32"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "conv_dx_extremely_skinny_k_nn",
+        "WorkloadId": "cnn_conv2_dX_b64",
+        "Size": [6400, 16, 150],
+        "Note": "conv2 dX, batch 64"
+      }
+    ],
+    "sanity": [
+      {
+        "enabled": false,
+        "WorkloadFamily": "sanity_square",
+        "WorkloadId": "square_256",
+        "Size": [256, 256, 256],
+        "Note": "optional square sanity baseline"
+      }
+    ]
+  },
+  "kernel_rows": [
+    {
+      "KernelShape": "8x8",
+      "mr": 8,
+      "nr": 8,
+      "current_binary_supported": true,
+      "rows": [
+        { "Kc": 288, "Mc": [96, 160], "Nc": [448, 640] },
+        { "Kc": 384, "Mc": [64, 128], "Nc": [320, 512] }
+      ]
+    },
+    {
+      "KernelShape": "12x8",
+      "mr": 12,
+      "nr": 8,
+      "current_binary_supported": true,
+      "rows": [
+        { "Kc": 256, "Mc": [128, 192], "Nc": [512, 768] },
+        { "Kc": 352, "Mc": [64, 128], "Nc": [320, 512] },
+        { "Kc": 416, "Mc": [64, 96, 128], "Nc": [256, 448] }
+      ]
+    },
+    {
+      "KernelShape": "13x8",
+      "mr": 13,
+      "nr": 8,
+      "current_binary_supported": true,
+      "rows": [
+        { "Kc": 224, "Mc": [128, 192], "Nc": [576, 832] },
+        { "Kc": 320, "Mc": [96, 128], "Nc": [384, 576] },
+        { "Kc": 384, "Mc": [64, 128], "Nc": [320, 512] }
+      ]
+    },
+    {
+      "KernelShape": "4x16",
+      "mr": 4,
+      "nr": 16,
+      "current_binary_supported": true,
+      "rows": [
+        { "Kc": 192, "Mc": [160, 256], "Nc": [640, 1024] },
+        { "Kc": 256, "Mc": [128, 192], "Nc": [512, 768] },
+        { "Kc": 320, "Mc": [96, 128], "Nc": [384, 576] }
+      ]
+    },
+    {
+      "KernelShape": "5x16",
+      "mr": 5,
+      "nr": 16,
+      "current_binary_supported": true,
+      "rows": [
+        { "Kc": 160, "Mc": [192, 288], "Nc": [768, 1216] },
+        { "Kc": 192, "Mc": [160, 256], "Nc": [640, 1024] },
+        { "Kc": 256, "Mc": [128, 192], "Nc": [512, 768] }
+      ]
+    },
+    {
+      "KernelShape": "6x16",
+      "mr": 6,
+      "nr": 16,
+      "current_binary_supported": true,
+      "rows": [
+        { "Kc": 128, "Mc": [256, 384], "Nc": [1024, 1536] },
+        { "Kc": 160, "Mc": [192, 288], "Nc": [768, 1216] },
+        { "Kc": 224, "Mc": [128, 192], "Nc": [576, 832] }
+      ]
+    }
+  ]
+}
