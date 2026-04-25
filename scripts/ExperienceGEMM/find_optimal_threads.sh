@@ -5,7 +5,7 @@
 # Run this script via taskset if pinning is desired.
 
 # Result CSV
-OUTPUT_CSV="output/ExperienceGEMM/thread_scaling.csv"
+OUTPUT_CSV="output/ExperienceGEMM/thread_scaling_4way_comparison.csv"
 
 # ==========================================
 # 0. Rigorous Environment Setup
@@ -52,8 +52,8 @@ cd ..
 # 2. Configuration
 SIZES=(64 128 256 512)
 THREADS_LIST=(1 2 4 8 16)
-IMPLS=("omp" "blas")
-REPS=2000  # Augmenté à 5000 pour lisser la variabilité (voir Exp 6)
+IMPLS=("blas" "omp" "omp_gotoblas_avx2" "omp_gotoblas_avx512")
+REPS=2000
 
 HAS_PERF=false
 if command -v perf &> /dev/null; then
@@ -70,13 +70,29 @@ run_test() {
     local size=$2
     local t=$3
 
-    export OMP_NUM_THREADS=$t
-    export OPENBLAS_NUM_THREADS=$t
     export MATMUL_IMPL=$impl
-    
-    # Force affinity for stability
-    export OMP_PROC_BIND=true
-    export OMP_PLACES=cores
+
+    if [ "$impl" = "blas" ]; then
+        # OpenBLAS on this system uses OpenMP threads; OMP_NUM_THREADS must also be $t
+        export OMP_NUM_THREADS=$t
+        export OPENBLAS_NUM_THREADS=$t
+        unset OMP_PROC_BIND
+        unset OMP_PLACES
+        unset MATMUL_GOTO_KERNEL
+    elif [ "$impl" = "omp_gotoblas_avx512" ]; then
+        export OMP_NUM_THREADS=$t
+        export OPENBLAS_NUM_THREADS=1
+        export OMP_PROC_BIND=true
+        export OMP_PLACES=cores
+        export MATMUL_GOTO_KERNEL=avx512_8x32
+    else
+        # omp and omp_gotoblas_avx2
+        export OMP_NUM_THREADS=$t
+        export OPENBLAS_NUM_THREADS=1
+        export OMP_PROC_BIND=true
+        export OMP_PLACES=cores
+        unset MATMUL_GOTO_KERNEL
+    fi
 
     echo "---------------------------------------------------"
     echo "Running: $impl | Size: $size | Threads: $t"
