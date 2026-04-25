@@ -1190,6 +1190,22 @@ void run_macro_kernel(const Scalar* packed_A,
     }
 }
 
+// Compute per-thread scheduling granularity for the ic (row) dimension.
+// Identical in spirit to GEMMMultiThread's compute_task_m but uses kernel.mr
+// as the minimum so every task holds at least one full micro-kernel row panel.
+// task_m ≤ Mc always, so packed_A (sized on Mc) is never overflowed.
+inline size_t compute_goto_task_m(size_t M, size_t Mc, int nthreads, size_t mr) {
+    constexpr size_t kTargetTasksPerThread = 2;
+    if (nthreads <= 0 || M == 0) return Mc;
+    const size_t min_task_m = mr > 0 ? mr : 1;
+    const size_t target_tasks =
+        static_cast<size_t>(nthreads) * kTargetTasksPerThread;
+    const size_t rows_per_target = (M + target_tasks - 1) / target_tasks;
+    const size_t clamped =
+        rows_per_target < min_task_m ? min_task_m : rows_per_target;
+    return clamped < Mc ? clamped : Mc;
+}
+
 void run_gotoblas_fixed(const Scalar* A,
                         const Scalar* B,
                         Scalar* C,
@@ -1212,22 +1228,34 @@ void run_gotoblas_fixed(const Scalar* A,
         PackedWorkspace& local_workspace = packed_workspace();
         Scalar* packed_A = local_workspace.ensure_packed_a(packed_A_elements);
 
+        // task_m: scheduling granularity for the ic dimension, computed once
+        // per parallel region.  task_m ≤ Mc so packed_A is never too small.
+        // For small M this creates more tasks than mc_blocks would, keeping
+        // threads busy.  For large M it saturates at Mc (original behavior).
+        const int nthreads = omp_get_num_threads();
+        const size_t task_m = compute_goto_task_m(M, Mc, nthreads, kernel.mr);
+        const size_t task_blocks = (M + task_m - 1) / task_m;
+
         for (size_t jc = 0; jc < N; jc += Nc) {
             const size_t nc_cur = minz(Nc, N - jc);
             zero_panel(C + jc, N, M, nc_cur);
 
             for (size_t pc = 0; pc < K; pc += Kc) {
                 const size_t kc_cur = minz(Kc, K - pc);
+                // pack_B_block is done by a single thread; the implicit
+                // barrier of omp single ensures all threads see the result.
                 #pragma omp single
                 {
                     pack_B_block(B + pc * N + jc, packed_B, N, kc_cur, nc_cur, kernel);
                 }
 
-                const size_t mc_blocks = (M + Mc - 1) / Mc;
+                // Distribute finer-grained ic tasks among threads.
+                // pack_A_block and run_macro_kernel remain per-task so each
+                // thread owns exclusive C rows — no atomic/reduction needed.
                 #pragma omp for schedule(static)
-                for (size_t ic_block = 0; ic_block < mc_blocks; ++ic_block) {
-                    const size_t ic = ic_block * Mc;
-                    const size_t mc_cur = minz(Mc, M - ic);
+                for (size_t task_idx = 0; task_idx < task_blocks; ++task_idx) {
+                    const size_t ic = task_idx * task_m;
+                    const size_t mc_cur = minz(task_m, M - ic);
                     pack_A_block(A + ic * K + pc, packed_A, K, mc_cur, kc_cur, kernel);
                     run_macro_kernel(
                         packed_A,

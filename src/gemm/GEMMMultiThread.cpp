@@ -6,6 +6,32 @@
 
 namespace gemm {
 
+namespace {
+
+// Compute the per-thread scheduling granularity for the i (row) dimension.
+//
+// Decouples "how many tasks to create" from "what block size to use for
+// inner j/k cache blocking".  When M is small relative to
+// nthreads × block_size, num_tasks would be 1 and most threads idle.
+// This helper produces a finer task_m so num_tasks ≈ nthreads × 2.
+//
+// Invariant: task_m ≤ block_size, so the caller's packed buffers (sized on
+// block_size) never overflow regardless of task granularity.
+inline size_t compute_task_m(size_t M, size_t block_size, int nthreads) {
+    constexpr size_t kTargetTasksPerThread = 2;
+    constexpr size_t kMinTaskM = 16; // don't slice below this to limit overhead
+    if (nthreads <= 0 || M == 0) return block_size;
+    const size_t target_tasks =
+        static_cast<size_t>(nthreads) * kTargetTasksPerThread;
+    const size_t rows_per_target = (M + target_tasks - 1) / target_tasks;
+    // floor at kMinTaskM, ceil at block_size
+    const size_t clamped =
+        rows_per_target < kMinTaskM ? kMinTaskM : rows_per_target;
+    return clamped < block_size ? clamped : block_size;
+}
+
+} // namespace
+
 void sgemm_omp(const Scalar* A, const Scalar* B, Scalar* C,
                size_t M, size_t N, size_t K) {
     #pragma omp parallel
@@ -39,6 +65,10 @@ void sgemm_omp(const Scalar* A, const Scalar* B, Scalar* C,
     }
 }
 
+// task_m (scheduling granularity) is decoupled from BS (cache-block size).
+// Each task owns a contiguous row range of C; inner j/k loops still use BS
+// for cache blocking.  Small matrices get more tasks → better thread fill.
+// Large matrices: task_m saturates at BS → identical to original behavior.
 void sgemm_omp_blocked(const Scalar* A, const Scalar* B, Scalar* C,
                        size_t M, size_t N, size_t K) {
     const size_t BS = current_block_size();
@@ -47,16 +77,21 @@ void sgemm_omp_blocked(const Scalar* A, const Scalar* B, Scalar* C,
     {
         const int tid = omp_get_thread_num();
         const int nthreads = omp_get_num_threads();
-        const size_t num_i_blocks = (M + BS - 1) / BS;
-        const size_t blocks_per_thread =
-            (num_i_blocks + static_cast<size_t>(nthreads) - 1) / static_cast<size_t>(nthreads);
 
-        const size_t block_begin = minz(static_cast<size_t>(tid) * blocks_per_thread, num_i_blocks);
-        const size_t block_end = minz(block_begin + blocks_per_thread, num_i_blocks);
+        const size_t task_m = compute_task_m(M, BS, nthreads);
+        const size_t num_tasks = (M + task_m - 1) / task_m;
+        const size_t tasks_per_thread =
+            (num_tasks + static_cast<size_t>(nthreads) - 1) /
+            static_cast<size_t>(nthreads);
 
-        for (size_t block_idx = block_begin; block_idx < block_end; ++block_idx) {
-            const size_t ii = block_idx * BS;
-            const size_t i_max = minz(ii + BS, M);
+        const size_t task_begin =
+            minz(static_cast<size_t>(tid) * tasks_per_thread, num_tasks);
+        const size_t task_end =
+            minz(task_begin + tasks_per_thread, num_tasks);
+
+        for (size_t task_idx = task_begin; task_idx < task_end; ++task_idx) {
+            const size_t ii = task_idx * task_m;
+            const size_t i_max = minz(ii + task_m, M);
 
             for (size_t jj = 0; jj < N; jj += BS) {
                 const size_t j_max = minz(jj + BS, N);
@@ -89,6 +124,8 @@ void sgemm_omp_blocked(const Scalar* A, const Scalar* B, Scalar* C,
     }
 }
 
+// Same scheduling strategy as sgemm_omp_blocked.  packed_B (BS×BS) is
+// per-thread, sized on BS, and task_m ≤ BS keeps it within bounds.
 void sgemm_omp_blocked_packb(const Scalar* A, const Scalar* B, Scalar* C,
                              size_t M, size_t N, size_t K) {
     const size_t BS = current_block_size();
@@ -98,16 +135,21 @@ void sgemm_omp_blocked_packb(const Scalar* A, const Scalar* B, Scalar* C,
         std::vector<Scalar> packed_B(BS * BS);
         const int tid = omp_get_thread_num();
         const int nthreads = omp_get_num_threads();
-        const size_t num_i_blocks = (M + BS - 1) / BS;
-        const size_t blocks_per_thread =
-            (num_i_blocks + static_cast<size_t>(nthreads) - 1) / static_cast<size_t>(nthreads);
 
-        const size_t block_begin = minz(static_cast<size_t>(tid) * blocks_per_thread, num_i_blocks);
-        const size_t block_end = minz(block_begin + blocks_per_thread, num_i_blocks);
+        const size_t task_m = compute_task_m(M, BS, nthreads);
+        const size_t num_tasks = (M + task_m - 1) / task_m;
+        const size_t tasks_per_thread =
+            (num_tasks + static_cast<size_t>(nthreads) - 1) /
+            static_cast<size_t>(nthreads);
 
-        for (size_t block_idx = block_begin; block_idx < block_end; ++block_idx) {
-            const size_t ii = block_idx * BS;
-            const size_t i_max = minz(ii + BS, M);
+        const size_t task_begin =
+            minz(static_cast<size_t>(tid) * tasks_per_thread, num_tasks);
+        const size_t task_end =
+            minz(task_begin + tasks_per_thread, num_tasks);
+
+        for (size_t task_idx = task_begin; task_idx < task_end; ++task_idx) {
+            const size_t ii = task_idx * task_m;
+            const size_t i_max = minz(ii + task_m, M);
 
             for (size_t jj = 0; jj < N; jj += BS) {
                 const size_t j_max = minz(jj + BS, N);
@@ -151,6 +193,8 @@ void sgemm_omp_blocked_packb(const Scalar* A, const Scalar* B, Scalar* C,
     }
 }
 
+// Same scheduling strategy.  packed_A (MB×KB) is per-thread; task_m ≤ MB
+// guarantees m_block ≤ MB so the buffer is always sufficient.
 void sgemm_omp_blocked_packab(const Scalar* A, const Scalar* B, Scalar* C,
                               size_t M, size_t N, size_t K) {
     const size_t MB = current_mc_block_size();
@@ -163,16 +207,21 @@ void sgemm_omp_blocked_packab(const Scalar* A, const Scalar* B, Scalar* C,
         std::vector<Scalar> packed_B(KB * NB);
         const int tid = omp_get_thread_num();
         const int nthreads = omp_get_num_threads();
-        const size_t num_i_blocks = (M + MB - 1) / MB;
-        const size_t blocks_per_thread =
-            (num_i_blocks + static_cast<size_t>(nthreads) - 1) / static_cast<size_t>(nthreads);
 
-        const size_t block_begin = minz(static_cast<size_t>(tid) * blocks_per_thread, num_i_blocks);
-        const size_t block_end = minz(block_begin + blocks_per_thread, num_i_blocks);
+        const size_t task_m = compute_task_m(M, MB, nthreads);
+        const size_t num_tasks = (M + task_m - 1) / task_m;
+        const size_t tasks_per_thread =
+            (num_tasks + static_cast<size_t>(nthreads) - 1) /
+            static_cast<size_t>(nthreads);
 
-        for (size_t block_idx = block_begin; block_idx < block_end; ++block_idx) {
-            const size_t ii = block_idx * MB;
-            const size_t i_max = minz(ii + MB, M);
+        const size_t task_begin =
+            minz(static_cast<size_t>(tid) * tasks_per_thread, num_tasks);
+        const size_t task_end =
+            minz(task_begin + tasks_per_thread, num_tasks);
+
+        for (size_t task_idx = task_begin; task_idx < task_end; ++task_idx) {
+            const size_t ii = task_idx * task_m;
+            const size_t i_max = minz(ii + task_m, M);
             const size_t m_block = i_max - ii;
 
             for (size_t jj = 0; jj < N; jj += NB) {

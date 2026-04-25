@@ -52,7 +52,7 @@ cd ..
 # 2. Configuration
 SIZES=(64 128 256 512)
 THREADS_LIST=(1 2 4 8 16)
-IMPLS=("blas" "omp" "omp_gotoblas_avx2" "omp_gotoblas_avx512")
+IMPLS=("blas" "omp" "omp_blocked" "omp_blocked_packab" "omp_gotoblas_avx2" "omp_gotoblas_avx512")
 REPS=2000
 
 HAS_PERF=false
