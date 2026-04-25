@@ -1,9 +1,11 @@
+#include "gemm/matmul_internal.hpp"
 #include "tensor.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 
 #include <omp.h>
@@ -155,6 +157,95 @@ bool test_driver_shapes(const char* kernel_name) {
 
     return true;
 }
+
+bool test_avx512_driver_shape(const char* kernel_name) {
+    size_t mr = 0;
+    size_t nr = 0;
+    if (!gemm::gotoblas_try_get_kernel_shape(kernel_name, &mr, &nr)) {
+        std::cerr << "Unknown AVX-512 kernel shape in driver test: " << kernel_name << "\n";
+        return false;
+    }
+
+    const struct ShapeCase {
+        size_t m;
+        size_t n;
+        size_t k;
+        int threads;
+        const char* label;
+    } cases[] = {
+        {mr, nr, 128, 1, "avx512_full_tile"},
+        {2 * mr, 2 * nr, 256, 2, "avx512_multiple_full_tiles"},
+        {mr + 1, nr, 128, 2, "avx512_m_fringe_plus_one"},
+        {mr - 1, nr, 128, 2, "avx512_m_fringe_minus_one"},
+        {mr, nr + 1, 128, 2, "avx512_n_fringe_plus_one"},
+        {mr, nr + 15, 128, 2, "avx512_n_fringe_wide_tail"},
+        {mr, 1, 128, 2, "avx512_n_fringe_one_col"},
+        {mr + 1, nr + 1, 128, 2, "avx512_mn_fringe_plus_one"},
+        {3, 7, 5, 1, "avx512_mn_fringe_small"},
+        {mr, nr, 1, 1, "avx512_small_k_1"},
+        {mr, nr, 2, 1, "avx512_small_k_2"},
+        {mr, nr, 3, 1, "avx512_small_k_3"},
+        {mr, nr, 5, 1, "avx512_small_k_5"},
+        {mr, nr, 16, 1, "avx512_small_k_16"},
+        {32, 128, 784, 4, "avx512_nn_fc_like"},
+        {32, 10, 128, 4, "avx512_nn_head_like"},
+    };
+
+    EnvVarGuard kernel_guard("MATMUL_GOTO_KERNEL", kernel_name);
+    for (const ShapeCase& c : cases) {
+        const std::string label = std::string(kernel_name) + "_" + c.label;
+        if (!run_shape_case(c.m, c.n, c.k, c.threads, label)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool test_avx512_driver_shapes() {
+    if (!gemm::cpu_supports_avx512f()) {
+        std::cout << "Skipping AVX-512 GotoBLAS driver tests (AVX-512F unavailable)\n";
+        return true;
+    }
+
+    EnvVarGuard impl_guard("MATMUL_IMPL", "omp_gotoblas_avx512");
+    {
+        EnvVarGuard wrong_kernel_guard("MATMUL_GOTO_KERNEL", "avx2_8x8");
+        try {
+            (void)run_shape_case(8, 16, 1, 1, "avx512_rejects_avx2_kernel");
+            std::cerr << "AVX-512 path unexpectedly accepted AVX2 kernel shape\n";
+            return false;
+        } catch (const std::invalid_argument&) {
+            // Expected: AVX-512 path must not silently run AVX2 micro-kernels.
+        } catch (const std::exception& e) {
+            std::cerr << "Unexpected exception while checking AVX-512 kernel rejection: "
+                      << e.what() << "\n";
+            return false;
+        }
+    }
+
+    const char* kernels[] = {
+        "avx512_4x16",
+        "avx512_8x16",
+        "avx512_14x16",
+        "avx512_16x16",
+        "avx512_18x16",
+        "avx512_20x16",
+        "avx512_4x32",
+        "avx512_6x32",
+        "avx512_8x32",
+        "avx512_10x32",
+        "avx512_12x32",
+    };
+
+    for (const char* kernel : kernels) {
+        if (!test_avx512_driver_shape(kernel)) {
+            return false;
+        }
+    }
+
+    return true;
+}
 }  // namespace
 
 int main() {
@@ -164,6 +255,15 @@ int main() {
     EnvVarGuard mc_guard("MATMUL_MC", "16");
     EnvVarGuard nc_guard("MATMUL_NC", "32");
     EnvVarGuard kc_guard("MATMUL_KC", "20");
+
+    const char* requested_impl = std::getenv("TEST_GEMM_GOTOBLAS_IMPL");
+    if (requested_impl != nullptr && std::string(requested_impl) == "avx512") {
+        if (!test_avx512_driver_shapes()) {
+            return 1;
+        }
+        std::cout << "GotoBLAS AVX-512 driver tests passed or skipped!\n";
+        return 0;
+    }
 
     const char* kernels[] = {
         "avx2_8x8",
@@ -175,6 +275,20 @@ int main() {
     };
 
     EnvVarGuard impl_guard("MATMUL_IMPL", "omp_gotoblas_avx2");
+    {
+        EnvVarGuard wrong_kernel_guard("MATMUL_GOTO_KERNEL", "avx512_8x16");
+        try {
+            (void)run_shape_case(8, 16, 1, 1, "avx2_rejects_avx512_kernel");
+            std::cerr << "AVX2 path unexpectedly accepted AVX-512 kernel shape\n";
+            return 1;
+        } catch (const std::invalid_argument&) {
+            // Expected: AVX2 path must not silently run AVX-512 micro-kernels.
+        } catch (const std::exception& e) {
+            std::cerr << "Unexpected exception while checking AVX2 kernel rejection: "
+                      << e.what() << "\n";
+            return 1;
+        }
+    }
 
     for (const char* kernel : kernels) {
         if (!test_driver_shapes(kernel)) {

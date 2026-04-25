@@ -10,6 +10,29 @@ bool nearly_equal(Scalar a, Scalar b, float tol = 1e-4f) {
     return std::fabs(a - b) <= tol;
 }
 
+struct ShapeUnderTest {
+    const char* name;
+    bool requires_avx512;
+};
+
+bool shape_is_supported(const ShapeUnderTest& shape, const char* label) {
+    if (shape.requires_avx512) {
+        if (!gemm::cpu_supports_avx512f()) {
+            std::cout << "Skipping " << label << " for " << shape.name
+                      << " (AVX-512F unavailable)\n";
+            return false;
+        }
+        return true;
+    }
+
+    if (!gemm::cpu_supports_avx2_fma()) {
+        std::cout << "Skipping " << label << " for " << shape.name
+                  << " (AVX2/FMA unavailable)\n";
+        return false;
+    }
+    return true;
+}
+
 bool test_pack_a_micro_panel() {
     const size_t lda = 7;
     const size_t kc = 3;
@@ -86,16 +109,15 @@ void reference_kernel(const std::vector<Scalar>& packed_a,
     }
 }
 
-bool test_microkernel_shape_full_tile(const char* shape_name) {
-    if (!gemm::cpu_supports_avx2_fma()) {
-        std::cout << "Skipping fixed micro-kernel test (AVX2/FMA unavailable)\n";
+bool test_microkernel_shape_full_tile(const ShapeUnderTest& shape) {
+    if (!shape_is_supported(shape, "full-tile micro-kernel test")) {
         return true;
     }
 
     size_t mr = 0;
     size_t nr = 0;
-    if (!gemm::gotoblas_try_get_kernel_shape(shape_name, &mr, &nr)) {
-        std::cerr << "Unknown micro-kernel shape: " << shape_name << "\n";
+    if (!gemm::gotoblas_try_get_kernel_shape(shape.name, &mr, &nr)) {
+        std::cerr << "Unknown micro-kernel shape: " << shape.name << "\n";
         return false;
     }
     const size_t kc = 5;
@@ -119,7 +141,7 @@ bool test_microkernel_shape_full_tile(const char* shape_name) {
 
     reference_kernel(packed_a, packed_b, c_ref, mr, nr, mr, nr, ldc, kc);
     gemm::gotoblas_microkernel_for_shape(
-        shape_name,
+        shape.name,
         packed_a.data(),
         packed_b.data(),
         c_test.data(),
@@ -131,7 +153,7 @@ bool test_microkernel_shape_full_tile(const char* shape_name) {
     for (size_t i = 0; i < mr; ++i) {
         for (size_t j = 0; j < nr; ++j) {
             if (!nearly_equal(c_test[i * ldc + j], c_ref[i * ldc + j])) {
-                std::cerr << shape_name << " full-tile kernel mismatch at (" << i << ", " << j << ")\n";
+                std::cerr << shape.name << " full-tile kernel mismatch at (" << i << ", " << j << ")\n";
                 return false;
             }
         }
@@ -139,16 +161,15 @@ bool test_microkernel_shape_full_tile(const char* shape_name) {
     return true;
 }
 
-bool test_microkernel_shape_fringe_tile(const char* shape_name) {
-    if (!gemm::cpu_supports_avx2_fma()) {
-        std::cout << "Skipping fixed fringe micro-kernel test (AVX2/FMA unavailable)\n";
+bool test_microkernel_shape_fringe_tile(const ShapeUnderTest& shape) {
+    if (!shape_is_supported(shape, "fringe micro-kernel test")) {
         return true;
     }
 
     size_t mr = 0;
     size_t nr = 0;
-    if (!gemm::gotoblas_try_get_kernel_shape(shape_name, &mr, &nr)) {
-        std::cerr << "Unknown micro-kernel shape: " << shape_name << "\n";
+    if (!gemm::gotoblas_try_get_kernel_shape(shape.name, &mr, &nr)) {
+        std::cerr << "Unknown micro-kernel shape: " << shape.name << "\n";
         return false;
     }
     const size_t rows = mr - 2;
@@ -174,7 +195,7 @@ bool test_microkernel_shape_fringe_tile(const char* shape_name) {
 
     reference_kernel(packed_a, packed_b, c_ref, rows, cols, mr, nr, ldc, kc);
     gemm::gotoblas_microkernel_for_shape(
-        shape_name,
+        shape.name,
         packed_a.data(),
         packed_b.data(),
         c_test.data(),
@@ -186,7 +207,7 @@ bool test_microkernel_shape_fringe_tile(const char* shape_name) {
     for (size_t i = 0; i < rows; ++i) {
         for (size_t j = 0; j < cols; ++j) {
             if (!nearly_equal(c_test[i * ldc + j], c_ref[i * ldc + j])) {
-                std::cerr << shape_name << " fringe kernel mismatch at (" << i << ", " << j << ")\n";
+                std::cerr << shape.name << " fringe kernel mismatch at (" << i << ", " << j << ")\n";
                 return false;
             }
         }
@@ -197,13 +218,24 @@ bool test_microkernel_shape_fringe_tile(const char* shape_name) {
 }  // namespace
 
 int main() {
-    const char* shapes[] = {
-        "avx2_8x8",
-        "avx2_12x8",
-        "avx2_13x8",
-        "avx2_4x16",
-        "avx2_5x16",
-        "avx2_6x16",
+    const ShapeUnderTest shapes[] = {
+        {"avx2_8x8", false},
+        {"avx2_12x8", false},
+        {"avx2_13x8", false},
+        {"avx2_4x16", false},
+        {"avx2_5x16", false},
+        {"avx2_6x16", false},
+        {"avx512_4x16", true},
+        {"avx512_8x16", true},
+        {"avx512_14x16", true},
+        {"avx512_16x16", true},
+        {"avx512_18x16", true},
+        {"avx512_20x16", true},
+        {"avx512_4x32", true},
+        {"avx512_6x32", true},
+        {"avx512_8x32", true},
+        {"avx512_10x32", true},
+        {"avx512_12x32", true},
     };
 
     if (!test_pack_a_micro_panel()) {
@@ -213,7 +245,7 @@ int main() {
         return 1;
     }
 
-    for (const char* shape : shapes) {
+    for (const ShapeUnderTest& shape : shapes) {
         if (!test_microkernel_shape_full_tile(shape)) {
             return 1;
         }

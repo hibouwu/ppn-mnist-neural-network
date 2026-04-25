@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "description": "AVX-512 GotoBLAS stage-2 blocked-size candidates for extra intermediate shapes only.",
+  "benchmark": {
+    "binary": "build/test_benchmark_large",
+    "custom_impl": "omp_gotoblas_avx512",
+    "baseline_impl": "blas"
+  },
+  "execution_protocol": {
+    "timing_reps": 300,
+    "perf_reps": 3,
+    "benchmark_inner_reps": 1,
+    "threads": 1,
+    "pin_core": 0,
+    "use_taskset": true,
+    "enable_perf": true,
+    "enable_openblas_baseline": false,
+    "freq_policy": "detect",
+    "governor": "performance"
+  },
+  "workloads": {
+    "main": [
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_forward_mainstream_nn",
+        "WorkloadId": "mlp_fc1_b32",
+        "Size": [32, 784, 128],
+        "Note": "default MLP first layer"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_head_small_n_nn",
+        "WorkloadId": "mlp_fc2_b32",
+        "Size": [32, 128, 10],
+        "Note": "small-N logits head"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "fc_wide_output_nn",
+        "WorkloadId": "mlp_fc1_hidden256_b32",
+        "Size": [32, 784, 256],
+        "Note": "wider output"
+      },
+      {
+        "enabled": true,
+        "WorkloadFamily": "conv_dx_extremely_skinny_k_nn",
+        "WorkloadId": "cnn_conv2_dX_b32",
+        "Size": [3200, 16, 150],
+        "Note": "skinny-K convolution-gradient-like GEMM"
+      }
+    ],
+    "sanity": []
+  },
+  "kernel_rows": [
+    {
+      "KernelShape": "avx512_14x16",
+      "mr": 14,
+      "nr": 16,
+      "candidate_class": "primary_extra",
+      "current_binary_supported": true,
+      "rows": [
+        { "Kc": 160, "Mc": [28, 42, 56], "Nc": [256, 384, 512, 640, 768, 1024] },
+        { "Kc": 192, "Mc": [28, 42, 56], "Nc": [256, 384, 512, 640, 768, 1024] },
+        { "Kc": 256, "Mc": [28, 42, 56], "Nc": [256, 384, 512, 640, 768] }
+      ]
+    },
+    {
+      "KernelShape": "avx512_18x16",
+      "mr": 18,
+      "nr": 16,
+      "candidate_class": "primary_extra",
+      "current_binary_supported": true,
+      "rows": [
+        { "Kc": 128, "Mc": [36, 54, 72], "Nc": [256, 384, 512, 640, 768, 1024] },
+        { "Kc": 160, "Mc": [36, 54, 72], "Nc": [256, 384, 512, 640, 768, 1024] },
+        { "Kc": 192, "Mc": [36, 54, 72], "Nc": [256, 384, 512, 640, 768, 1024] }
+      ]
+    },
+    {
+      "KernelShape": "avx512_6x32",
+      "mr": 6,
+      "nr": 32,
+      "candidate_class": "primary_extra",
+      "current_binary_supported": true,
+      "rows": [
+        { "Kc": 128, "Mc": [12, 24, 36, 48], "Nc": [256, 384, 512, 640, 768, 1024] },
+        { "Kc": 160, "Mc": [12, 24, 36, 48], "Nc": [256, 384, 512, 640, 768, 1024] },
+        { "Kc": 192, "Mc": [12, 24, 36, 48], "Nc": [256, 384, 512, 640, 768, 1024] }
+      ]
+    },
+    {
+      "KernelShape": "avx512_10x32",
+      "mr": 10,
+      "nr": 32,
+      "candidate_class": "primary_extra",
+      "current_binary_supported": true,
+      "rows": [
+        { "Kc": 64, "Mc": [20, 40, 60], "Nc": [256, 384, 512, 640, 768, 1024] },
+        { "Kc": 96, "Mc": [20, 40, 60], "Nc": [256, 384, 512, 640, 768, 1024] },
+        { "Kc": 128, "Mc": [20, 40, 60], "Nc": [256, 384, 512, 640, 768, 1024] }
+      ]
+    }
+  ]
+}

@@ -3,9 +3,12 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
+#include <string>
 
 #include <cblas.h>
 
@@ -14,6 +17,51 @@
 
 #include "profiling.hpp"
 #endif
+
+namespace {
+
+struct MatmulShapeTracer {
+    bool enabled = false;
+    std::string filepath;
+    std::ofstream file;
+    std::mutex mtx;
+    bool header_written = false;
+
+    MatmulShapeTracer() {
+        const char* env = std::getenv("MATMUL_TRACE_SHAPES");
+        if (!env || std::strcmp(env, "1") != 0) {
+            return;
+        }
+        const char* path_env = std::getenv("MATMUL_TRACE_SHAPES_FILE");
+        filepath = (path_env && *path_env) ? path_env : "matmul_shapes.csv";
+        file.open(filepath, std::ios::app);
+        if (file.is_open()) {
+            enabled = true;
+        } else {
+            std::cerr << "[MATMUL_TRACE] Failed to open trace file: " << filepath << "\n";
+        }
+    }
+
+    void trace(std::size_t M, std::size_t K, std::size_t N,
+               bool transA, bool transB, const char* impl_name) {
+        if (!enabled) return;
+        std::lock_guard<std::mutex> lock(mtx);
+        if (!header_written) {
+            file << "M,K,N,transA,transB,impl\n";
+            header_written = true;
+        }
+        file << M << "," << K << "," << N << ","
+             << (transA ? 1 : 0) << "," << (transB ? 1 : 0) << ","
+             << impl_name << "\n";
+    }
+};
+
+MatmulShapeTracer& shape_tracer() {
+    static MatmulShapeTracer instance;
+    return instance;
+}
+
+}  // namespace
 
 namespace gemm {
 
@@ -194,6 +242,7 @@ void Matrix::matmul_into(const Matrix& other, Matrix& out, bool transA, bool tra
 #endif
 
     const gemm::MatmulImpl impl = gemm::current_impl();
+    shape_tracer().trace(M, K, N, transA, transB, gemm::matmul_impl_name(impl));
 
     if (impl == gemm::MatmulImpl::Blas) {
         cblas_sgemm(

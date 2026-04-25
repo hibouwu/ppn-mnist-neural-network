@@ -9,6 +9,7 @@
 #include <iostream>
 #include <new>
 #include <stdexcept>
+#include <string>
 
 namespace gemm {
 
@@ -17,21 +18,39 @@ namespace {
 constexpr size_t kDefaultMicroKernelRows = 8; // Mr = 8
 constexpr size_t kDefaultMicroKernelCols = 8; // Nr = 8
 constexpr size_t kCacheBlockM = 8; // Mc = 64
-constexpr size_t kCacheBlockN = 448; // Nc = 384
+constexpr size_t kCacheBlockN = 448; // Nc = 448
 constexpr size_t kCacheBlockK = 384; // Kc = 384
+constexpr size_t kPackedWorkspaceAlignment = 64;
+
+enum class KernelIsa {
+    Avx2,
+    Avx512,
+};
 
 struct KernelShape {
     const char* name;
+    KernelIsa isa;
     size_t mr;
     size_t nr;
 };
 
-constexpr KernelShape kKernel8x8{"avx2_8x8", 8, 8};
-constexpr KernelShape kKernel12x8{"avx2_12x8", 12, 8};
-constexpr KernelShape kKernel13x8{"avx2_13x8", 13, 8};
-constexpr KernelShape kKernel4x16{"avx2_4x16", 4, 16};
-constexpr KernelShape kKernel5x16{"avx2_5x16", 5, 16};
-constexpr KernelShape kKernel6x16{"avx2_6x16", 6, 16};
+constexpr KernelShape kKernel8x8{"avx2_8x8", KernelIsa::Avx2, 8, 8};
+constexpr KernelShape kKernel12x8{"avx2_12x8", KernelIsa::Avx2, 12, 8};
+constexpr KernelShape kKernel13x8{"avx2_13x8", KernelIsa::Avx2, 13, 8};
+constexpr KernelShape kKernel4x16{"avx2_4x16", KernelIsa::Avx2, 4, 16};
+constexpr KernelShape kKernel5x16{"avx2_5x16", KernelIsa::Avx2, 5, 16};
+constexpr KernelShape kKernel6x16{"avx2_6x16", KernelIsa::Avx2, 6, 16};
+constexpr KernelShape kKernelAvx5124x16{"avx512_4x16", KernelIsa::Avx512, 4, 16};
+constexpr KernelShape kKernelAvx5128x16{"avx512_8x16", KernelIsa::Avx512, 8, 16};
+constexpr KernelShape kKernelAvx51214x16{"avx512_14x16", KernelIsa::Avx512, 14, 16};
+constexpr KernelShape kKernelAvx51216x16{"avx512_16x16", KernelIsa::Avx512, 16, 16};
+constexpr KernelShape kKernelAvx51218x16{"avx512_18x16", KernelIsa::Avx512, 18, 16};
+constexpr KernelShape kKernelAvx51220x16{"avx512_20x16", KernelIsa::Avx512, 20, 16};
+constexpr KernelShape kKernelAvx5124x32{"avx512_4x32", KernelIsa::Avx512, 4, 32};
+constexpr KernelShape kKernelAvx5126x32{"avx512_6x32", KernelIsa::Avx512, 6, 32};
+constexpr KernelShape kKernelAvx5128x32{"avx512_8x32", KernelIsa::Avx512, 8, 32};
+constexpr KernelShape kKernelAvx51210x32{"avx512_10x32", KernelIsa::Avx512, 10, 32};
+constexpr KernelShape kKernelAvx51212x32{"avx512_12x32", KernelIsa::Avx512, 12, 32};
 
 const KernelShape* find_kernel_shape(const char* shape_name) {
     if (shape_name == nullptr || *shape_name == '\0' ||
@@ -59,14 +78,63 @@ const KernelShape* find_kernel_shape(const char* shape_name) {
         std::strcmp(shape_name, "6x16") == 0) {
         return &kKernel6x16;
     }
+    if (std::strcmp(shape_name, "avx512_8x16") == 0) {
+        return &kKernelAvx5128x16;
+    }
+    if (std::strcmp(shape_name, "avx512_4x16") == 0) {
+        return &kKernelAvx5124x16;
+    }
+    if (std::strcmp(shape_name, "avx512_14x16") == 0) {
+        return &kKernelAvx51214x16;
+    }
+    if (std::strcmp(shape_name, "avx512_16x16") == 0) {
+        return &kKernelAvx51216x16;
+    }
+    if (std::strcmp(shape_name, "avx512_18x16") == 0) {
+        return &kKernelAvx51218x16;
+    }
+    if (std::strcmp(shape_name, "avx512_20x16") == 0) {
+        return &kKernelAvx51220x16;
+    }
+    if (std::strcmp(shape_name, "avx512_4x32") == 0) {
+        return &kKernelAvx5124x32;
+    }
+    if (std::strcmp(shape_name, "avx512_6x32") == 0) {
+        return &kKernelAvx5126x32;
+    }
+    if (std::strcmp(shape_name, "avx512_8x32") == 0) {
+        return &kKernelAvx5128x32;
+    }
+    if (std::strcmp(shape_name, "avx512_10x32") == 0) {
+        return &kKernelAvx51210x32;
+    }
+    if (std::strcmp(shape_name, "avx512_12x32") == 0) {
+        return &kKernelAvx51212x32;
+    }
     return nullptr;
 }
 
-const KernelShape& current_kernel_shape() {
+const char* kernel_isa_name(KernelIsa isa) {
+    return isa == KernelIsa::Avx512 ? "AVX-512" : "AVX2";
+}
+
+const KernelShape& current_kernel_shape(KernelIsa isa) {
     const char* env = std::getenv("MATMUL_GOTO_KERNEL");
     const KernelShape* resolved = find_kernel_shape(env);
     if (resolved != nullptr) {
+        if (resolved->isa != isa) {
+            throw std::invalid_argument(
+                std::string("MATMUL_GOTO_KERNEL '") + resolved->name +
+                "' is not valid for the " + kernel_isa_name(isa) + " GotoBLAS path");
+        }
         return *resolved;
+    }
+    if (isa == KernelIsa::Avx512) {
+        if (env != nullptr && *env != '\0') {
+            throw std::invalid_argument(
+                std::string("Unknown AVX-512 GotoBLAS micro-kernel shape: '") + env + "'");
+        }
+        return kKernelAvx5128x32;
     }
     static bool warned = false;
     if (!warned && env != nullptr && *env != '\0') {
@@ -77,6 +145,10 @@ const KernelShape& current_kernel_shape() {
     return kKernel8x8;
 }
 
+const KernelShape& current_kernel_shape() {
+    return current_kernel_shape(KernelIsa::Avx2);
+}
+
 struct PackedWorkspace {
     Scalar* packed_A = nullptr;
     Scalar* packed_B = nullptr;
@@ -85,20 +157,21 @@ struct PackedWorkspace {
 
     ~PackedWorkspace() {
         if (packed_A) {
-            ::operator delete[](packed_A, std::align_val_t(32));
+            ::operator delete[](packed_A, std::align_val_t(kPackedWorkspaceAlignment));
         }
         if (packed_B) {
-            ::operator delete[](packed_B, std::align_val_t(32));
+            ::operator delete[](packed_B, std::align_val_t(kPackedWorkspaceAlignment));
         }
     }
 
     Scalar* ensure_packed_a(size_t elements) {
         if (elements > packed_A_capacity) {
             if (packed_A) {
-                ::operator delete[](packed_A, std::align_val_t(32));
+                ::operator delete[](packed_A, std::align_val_t(kPackedWorkspaceAlignment));
             }
             packed_A = static_cast<Scalar*>(
-                ::operator new[](elements * sizeof(Scalar), std::align_val_t(32)));
+                ::operator new[](elements * sizeof(Scalar),
+                                  std::align_val_t(kPackedWorkspaceAlignment)));
             packed_A_capacity = elements;
         }
         return packed_A;
@@ -107,10 +180,11 @@ struct PackedWorkspace {
     Scalar* ensure_packed_b(size_t elements) {
         if (elements > packed_B_capacity) {
             if (packed_B) {
-                ::operator delete[](packed_B, std::align_val_t(32));
+                ::operator delete[](packed_B, std::align_val_t(kPackedWorkspaceAlignment));
             }
             packed_B = static_cast<Scalar*>(
-                ::operator new[](elements * sizeof(Scalar), std::align_val_t(32)));
+                ::operator new[](elements * sizeof(Scalar),
+                                  std::align_val_t(kPackedWorkspaceAlignment)));
             packed_B_capacity = elements;
         }
         return packed_B;
@@ -770,6 +844,188 @@ inline void microkernel_fringe_avx2_4x16(const Scalar* packed_A,
     }
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("avx512f")))
+#endif
+inline void microkernel_full_avx512_mx16(const Scalar* packed_A,
+                                         const Scalar* packed_B,
+                                         Scalar* C,
+                                         size_t ldc,
+                                         size_t Kc,
+                                         size_t mr) {
+    __m512 c[20];
+    for (size_t i = 0; i < mr; ++i) {
+        c[i] = _mm512_loadu_ps(C + i * ldc);
+    }
+
+    const Scalar* a_ptr = packed_A;
+    const Scalar* b_ptr = packed_B;
+    for (size_t k = 0; k < Kc; ++k) {
+        const __m512 b = _mm512_loadu_ps(b_ptr);
+        for (size_t i = 0; i < mr; ++i) {
+            c[i] = _mm512_fmadd_ps(_mm512_set1_ps(a_ptr[i]), b, c[i]);
+        }
+        a_ptr += mr;
+        b_ptr += 16;
+    }
+
+    for (size_t i = 0; i < mr; ++i) {
+        _mm512_storeu_ps(C + i * ldc, c[i]);
+    }
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("avx512f")))
+#endif
+inline void microkernel_fringe_avx512_mx16(const Scalar* packed_A,
+                                           const Scalar* packed_B,
+                                           Scalar* C,
+                                           size_t ldc,
+                                           size_t Kc,
+                                           size_t mr,
+                                           size_t rows,
+                                           size_t cols) {
+    const __mmask16 col_mask = cols >= 16
+        ? static_cast<__mmask16>(0xFFFFu)
+        : static_cast<__mmask16>((1u << cols) - 1u);
+    const bool full_cols = col_mask == static_cast<__mmask16>(0xFFFFu);
+
+    __m512 c[20];
+    for (size_t i = 0; i < mr; ++i) {
+        if (i < rows) {
+            Scalar* Ci = C + i * ldc;
+            c[i] = full_cols ? _mm512_loadu_ps(Ci) : _mm512_maskz_loadu_ps(col_mask, Ci);
+        } else {
+            c[i] = _mm512_setzero_ps();
+        }
+    }
+
+    const Scalar* a_ptr = packed_A;
+    const Scalar* b_ptr = packed_B;
+    for (size_t k = 0; k < Kc; ++k) {
+        const __m512 b = _mm512_loadu_ps(b_ptr);
+        for (size_t i = 0; i < mr; ++i) {
+            c[i] = _mm512_fmadd_ps(_mm512_set1_ps(a_ptr[i]), b, c[i]);
+        }
+        a_ptr += mr;
+        b_ptr += 16;
+    }
+
+    for (size_t i = 0; i < rows; ++i) {
+        Scalar* Ci = C + i * ldc;
+        if (full_cols) {
+            _mm512_storeu_ps(Ci, c[i]);
+        } else {
+            _mm512_mask_storeu_ps(Ci, col_mask, c[i]);
+        }
+    }
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("avx512f")))
+#endif
+inline void microkernel_full_avx512_mx32(const Scalar* packed_A,
+                                         const Scalar* packed_B,
+                                         Scalar* C,
+                                         size_t ldc,
+                                         size_t Kc,
+                                         size_t mr) {
+    __m512 c_lo[12];
+    __m512 c_hi[12];
+    for (size_t i = 0; i < mr; ++i) {
+        c_lo[i] = _mm512_loadu_ps(C + i * ldc);
+        c_hi[i] = _mm512_loadu_ps(C + i * ldc + 16);
+    }
+
+    const Scalar* a_ptr = packed_A;
+    const Scalar* b_ptr = packed_B;
+    for (size_t k = 0; k < Kc; ++k) {
+        const __m512 b_lo = _mm512_loadu_ps(b_ptr);
+        const __m512 b_hi = _mm512_loadu_ps(b_ptr + 16);
+        for (size_t i = 0; i < mr; ++i) {
+            const __m512 a = _mm512_set1_ps(a_ptr[i]);
+            c_lo[i] = _mm512_fmadd_ps(a, b_lo, c_lo[i]);
+            c_hi[i] = _mm512_fmadd_ps(a, b_hi, c_hi[i]);
+        }
+        a_ptr += mr;
+        b_ptr += 32;
+    }
+
+    for (size_t i = 0; i < mr; ++i) {
+        _mm512_storeu_ps(C + i * ldc, c_lo[i]);
+        _mm512_storeu_ps(C + i * ldc + 16, c_hi[i]);
+    }
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("avx512f")))
+#endif
+inline void microkernel_fringe_avx512_mx32(const Scalar* packed_A,
+                                           const Scalar* packed_B,
+                                           Scalar* C,
+                                           size_t ldc,
+                                           size_t Kc,
+                                           size_t mr,
+                                           size_t rows,
+                                           size_t cols) {
+    const size_t cols_lo = std::min<size_t>(16, cols);
+    const size_t cols_hi = cols > 16 ? cols - 16 : 0;
+    const __mmask16 mask_lo = cols_lo == 16
+        ? static_cast<__mmask16>(0xFFFFu)
+        : static_cast<__mmask16>((1u << cols_lo) - 1u);
+    const __mmask16 mask_hi = cols_hi >= 16
+        ? static_cast<__mmask16>(0xFFFFu)
+        : static_cast<__mmask16>((1u << cols_hi) - 1u);
+    const bool full_lo = mask_lo == static_cast<__mmask16>(0xFFFFu);
+    const bool full_hi = mask_hi == static_cast<__mmask16>(0xFFFFu);
+
+    __m512 c_lo[12];
+    __m512 c_hi[12];
+    for (size_t i = 0; i < mr; ++i) {
+        if (i < rows) {
+            Scalar* Ci = C + i * ldc;
+            c_lo[i] = full_lo ? _mm512_loadu_ps(Ci) : _mm512_maskz_loadu_ps(mask_lo, Ci);
+            c_hi[i] = cols_hi == 0
+                ? _mm512_setzero_ps()
+                : (full_hi ? _mm512_loadu_ps(Ci + 16) : _mm512_maskz_loadu_ps(mask_hi, Ci + 16));
+        } else {
+            c_lo[i] = _mm512_setzero_ps();
+            c_hi[i] = _mm512_setzero_ps();
+        }
+    }
+
+    const Scalar* a_ptr = packed_A;
+    const Scalar* b_ptr = packed_B;
+    for (size_t k = 0; k < Kc; ++k) {
+        const __m512 b_lo = _mm512_loadu_ps(b_ptr);
+        const __m512 b_hi = _mm512_loadu_ps(b_ptr + 16);
+        for (size_t i = 0; i < mr; ++i) {
+            const __m512 a = _mm512_set1_ps(a_ptr[i]);
+            c_lo[i] = _mm512_fmadd_ps(a, b_lo, c_lo[i]);
+            c_hi[i] = _mm512_fmadd_ps(a, b_hi, c_hi[i]);
+        }
+        a_ptr += mr;
+        b_ptr += 32;
+    }
+
+    for (size_t i = 0; i < rows; ++i) {
+        Scalar* Ci = C + i * ldc;
+        if (full_lo) {
+            _mm512_storeu_ps(Ci, c_lo[i]);
+        } else {
+            _mm512_mask_storeu_ps(Ci, mask_lo, c_lo[i]);
+        }
+        if (cols_hi == 0) {
+            continue;
+        }
+        if (full_hi) {
+            _mm512_storeu_ps(Ci + 16, c_hi[i]);
+        } else {
+            _mm512_mask_storeu_ps(Ci + 16, mask_hi, c_hi[i]);
+        }
+    }
+}
+
 void run_selected_microkernel(const KernelShape& kernel,
                               const Scalar* packed_A,
                               const Scalar* packed_B,
@@ -778,6 +1034,43 @@ void run_selected_microkernel(const KernelShape& kernel,
                               size_t Kc,
                               size_t rows,
                               size_t cols) {
+    if (kernel.isa == KernelIsa::Avx512) {
+        if (!cpu_supports_avx512f()) {
+            throw std::runtime_error(
+                "AVX-512 GotoBLAS micro-kernel requires AVX-512F support");
+        }
+        if ((kernel.mr == kKernelAvx5124x16.mr ||
+             kernel.mr == kKernelAvx5128x16.mr ||
+             kernel.mr == kKernelAvx51214x16.mr ||
+             kernel.mr == kKernelAvx51216x16.mr ||
+             kernel.mr == kKernelAvx51218x16.mr ||
+             kernel.mr == kKernelAvx51220x16.mr) &&
+            kernel.nr == 16) {
+            if (rows == kernel.mr && cols == kernel.nr) {
+                microkernel_full_avx512_mx16(packed_A, packed_B, C, ldc, Kc, kernel.mr);
+            } else {
+                microkernel_fringe_avx512_mx16(
+                    packed_A, packed_B, C, ldc, Kc, kernel.mr, rows, cols);
+            }
+            return;
+        }
+        if ((kernel.mr == kKernelAvx5124x32.mr ||
+             kernel.mr == kKernelAvx5126x32.mr ||
+             kernel.mr == kKernelAvx5128x32.mr ||
+             kernel.mr == kKernelAvx51210x32.mr ||
+             kernel.mr == kKernelAvx51212x32.mr) &&
+            kernel.nr == 32) {
+            if (rows == kernel.mr && cols == kernel.nr) {
+                microkernel_full_avx512_mx32(packed_A, packed_B, C, ldc, Kc, kernel.mr);
+            } else {
+                microkernel_fringe_avx512_mx32(
+                    packed_A, packed_B, C, ldc, Kc, kernel.mr, rows, cols);
+            }
+            return;
+        }
+        throw std::invalid_argument("Unsupported AVX-512 GotoBLAS micro-kernel shape");
+    }
+
     if (kernel.mr == kKernel8x8.mr && kernel.nr == kKernel8x8.nr) {
         if (rows == kernel.mr && cols == kernel.nr) {
             microkernel_full_avx2_8x8(packed_A, packed_B, C, ldc, Kc);
@@ -902,8 +1195,9 @@ void run_gotoblas_fixed(const Scalar* A,
                         Scalar* C,
                         size_t M,
                         size_t N,
-                        size_t K) {
-    const KernelShape& kernel = current_kernel_shape();
+                        size_t K,
+                        KernelIsa isa) {
+    const KernelShape& kernel = current_kernel_shape(isa);
     const size_t Mc = current_mc_block_size();
     const size_t Nc = current_nc_block_size();
     const size_t Kc = current_kc_block_size();
@@ -982,9 +1276,26 @@ size_t gotoblas_default_mc() { return kCacheBlockM; }
 size_t gotoblas_default_nc() { return kCacheBlockN; }
 size_t gotoblas_default_kc() { return kCacheBlockK; }
 
-const char* gotoblas_current_kernel_name() { return current_kernel_shape().name; }
-size_t gotoblas_current_mr() { return current_kernel_shape().mr; }
-size_t gotoblas_current_nr() { return current_kernel_shape().nr; }
+const char* gotoblas_current_kernel_name() {
+    const KernelIsa isa = current_impl() == MatmulImpl::OmpGotoBlasAvx512
+        ? KernelIsa::Avx512
+        : KernelIsa::Avx2;
+    return current_kernel_shape(isa).name;
+}
+
+size_t gotoblas_current_mr() {
+    const KernelIsa isa = current_impl() == MatmulImpl::OmpGotoBlasAvx512
+        ? KernelIsa::Avx512
+        : KernelIsa::Avx2;
+    return current_kernel_shape(isa).mr;
+}
+
+size_t gotoblas_current_nr() {
+    const KernelIsa isa = current_impl() == MatmulImpl::OmpGotoBlasAvx512
+        ? KernelIsa::Avx512
+        : KernelIsa::Avx2;
+    return current_kernel_shape(isa).nr;
+}
 
 bool gotoblas_try_get_kernel_shape(const char* shape_name, size_t* mr, size_t* nr) {
     const KernelShape* shape = find_kernel_shape(shape_name);
@@ -1073,7 +1384,7 @@ void sgemm_omp_gotoblas_avx2(const Scalar* A,
             "omp_gotoblas_avx2 requires AVX2/FMA support; no legacy fallback is retained");
     }
 
-    run_gotoblas_fixed(A, B, C, M, N, K);
+    run_gotoblas_fixed(A, B, C, M, N, K, KernelIsa::Avx2);
 }
 
 void sgemm_omp_gotoblas_avx512(const Scalar* A,
@@ -1082,7 +1393,12 @@ void sgemm_omp_gotoblas_avx512(const Scalar* A,
                                size_t M,
                                size_t N,
                                size_t K) {
-    sgemm_omp_gotoblas_avx2(A, B, C, M, N, K);
+    if (!cpu_supports_avx512f()) {
+        throw std::runtime_error(
+            "omp_gotoblas_avx512 requires AVX-512F support; no AVX2 alias fallback is used");
+    }
+
+    run_gotoblas_fixed(A, B, C, M, N, K, KernelIsa::Avx512);
 }
 
 }  // namespace gemm
