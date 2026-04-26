@@ -21,6 +21,16 @@ constexpr size_t kCacheBlockM = 8; // Mc = 64
 constexpr size_t kCacheBlockN = 448; // Nc = 448
 constexpr size_t kCacheBlockK = 384; // Kc = 384
 constexpr size_t kPackedWorkspaceAlignment = 64;
+constexpr size_t kPackedPrefetchDistance = 4;
+constexpr size_t kPackLoopPrefetchDistance = 8;
+
+#if defined(__clang__)
+#define GEMM_UNROLL_4 _Pragma("unroll 4")
+#elif defined(__GNUC__)
+#define GEMM_UNROLL_4 _Pragma("GCC unroll 4")
+#else
+#define GEMM_UNROLL_4
+#endif
 
 enum class KernelIsa {
     Avx2,
@@ -196,6 +206,26 @@ PackedWorkspace& packed_workspace() {
     return workspace;
 }
 
+inline void prefetch_l1(const void* ptr) {
+#if defined(__GNUC__) || defined(__clang__)
+    __builtin_prefetch(ptr, 0, 3);
+#else
+    (void)ptr;
+#endif
+}
+
+inline void prefetch_packed_k_iteration(const Scalar* a_ptr,
+                                        const Scalar* b_ptr,
+                                        size_t a_stride,
+                                        size_t b_stride,
+                                        size_t k,
+                                        size_t Kc) {
+    if (k + kPackedPrefetchDistance < Kc) {
+        prefetch_l1(a_ptr + kPackedPrefetchDistance * a_stride);
+        prefetch_l1(b_ptr + kPackedPrefetchDistance * b_stride);
+    }
+}
+
 void zero_panel(Scalar* C, size_t ldc, size_t rows, size_t cols) {
     #pragma omp for schedule(static) nowait
     for (size_t i = 0; i < rows; ++i) {
@@ -234,7 +264,9 @@ inline void microkernel_full_avx2_8x8(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, kKernel8x8.mr, kKernel8x8.nr, k, Kc);
         const __m256 b = _mm256_loadu_ps(b_ptr);
         c0 = _mm256_fmadd_ps(_mm256_broadcast_ss(a_ptr + 0), b, c0);
         c1 = _mm256_fmadd_ps(_mm256_broadcast_ss(a_ptr + 1), b, c1);
@@ -293,7 +325,9 @@ inline void microkernel_fringe_avx2_8x8(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, kKernel8x8.mr, kKernel8x8.nr, k, Kc);
         const __m256 b = _mm256_loadu_ps(b_ptr);
         for (size_t i = 0; i < kKernel8x8.mr; ++i) {
             c[i] = _mm256_fmadd_ps(_mm256_broadcast_ss(a_ptr + i), b, c[i]);
@@ -327,7 +361,9 @@ inline void microkernel_full_avx2_12x8(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, 12, 8, k, Kc);
         const __m256 b = _mm256_loadu_ps(b_ptr);
         for (size_t i = 0; i < 12; ++i) {
             c[i] = _mm256_fmadd_ps(_mm256_broadcast_ss(a_ptr + i), b, c[i]);
@@ -376,7 +412,9 @@ inline void microkernel_fringe_avx2_12x8(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, 12, 8, k, Kc);
         const __m256 b = _mm256_loadu_ps(b_ptr);
         for (size_t i = 0; i < 12; ++i) {
             c[i] = _mm256_fmadd_ps(_mm256_broadcast_ss(a_ptr + i), b, c[i]);
@@ -410,7 +448,9 @@ inline void microkernel_full_avx2_13x8(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, 13, 8, k, Kc);
         const __m256 b = _mm256_loadu_ps(b_ptr);
         for (size_t i = 0; i < 13; ++i) {
             c[i] = _mm256_fmadd_ps(_mm256_broadcast_ss(a_ptr + i), b, c[i]);
@@ -459,7 +499,9 @@ inline void microkernel_fringe_avx2_13x8(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, 13, 8, k, Kc);
         const __m256 b = _mm256_loadu_ps(b_ptr);
         for (size_t i = 0; i < 13; ++i) {
             c[i] = _mm256_fmadd_ps(_mm256_broadcast_ss(a_ptr + i), b, c[i]);
@@ -497,7 +539,9 @@ inline void microkernel_full_avx2_4x16(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, kKernel4x16.mr, kKernel4x16.nr, k, Kc);
         const __m256 b0 = _mm256_loadu_ps(b_ptr + 0);
         const __m256 b1 = _mm256_loadu_ps(b_ptr + 8);
         c00 = _mm256_fmadd_ps(_mm256_broadcast_ss(a_ptr + 0), b0, c00);
@@ -539,7 +583,9 @@ inline void microkernel_full_avx2_5x16(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, 5, 16, k, Kc);
         const __m256 b0 = _mm256_loadu_ps(b_ptr + 0);
         const __m256 b1 = _mm256_loadu_ps(b_ptr + 8);
         for (size_t i = 0; i < 5; ++i) {
@@ -611,7 +657,9 @@ inline void microkernel_fringe_avx2_5x16(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, 5, 16, k, Kc);
         const __m256 b0 = _mm256_loadu_ps(b_ptr + 0);
         const __m256 b1 = _mm256_loadu_ps(b_ptr + 8);
         for (size_t i = 0; i < 5; ++i) {
@@ -658,7 +706,9 @@ inline void microkernel_full_avx2_6x16(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, 6, 16, k, Kc);
         const __m256 b0 = _mm256_loadu_ps(b_ptr + 0);
         const __m256 b1 = _mm256_loadu_ps(b_ptr + 8);
         for (size_t i = 0; i < 6; ++i) {
@@ -730,7 +780,9 @@ inline void microkernel_fringe_avx2_6x16(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, 6, 16, k, Kc);
         const __m256 b0 = _mm256_loadu_ps(b_ptr + 0);
         const __m256 b1 = _mm256_loadu_ps(b_ptr + 8);
         for (size_t i = 0; i < 6; ++i) {
@@ -814,7 +866,9 @@ inline void microkernel_fringe_avx2_4x16(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, kKernel4x16.mr, kKernel4x16.nr, k, Kc);
         const __m256 b0 = _mm256_loadu_ps(b_ptr + 0);
         const __m256 b1 = _mm256_loadu_ps(b_ptr + 8);
         for (size_t i = 0; i < kKernel4x16.mr; ++i) {
@@ -860,7 +914,9 @@ inline void microkernel_full_avx512_mx16(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, mr, 16, k, Kc);
         const __m512 b = _mm512_loadu_ps(b_ptr);
         for (size_t i = 0; i < mr; ++i) {
             c[i] = _mm512_fmadd_ps(_mm512_set1_ps(a_ptr[i]), b, c[i]);
@@ -902,7 +958,9 @@ inline void microkernel_fringe_avx512_mx16(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, mr, 16, k, Kc);
         const __m512 b = _mm512_loadu_ps(b_ptr);
         for (size_t i = 0; i < mr; ++i) {
             c[i] = _mm512_fmadd_ps(_mm512_set1_ps(a_ptr[i]), b, c[i]);
@@ -939,7 +997,9 @@ inline void microkernel_full_avx512_mx32(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, mr, 32, k, Kc);
         const __m512 b_lo = _mm512_loadu_ps(b_ptr);
         const __m512 b_hi = _mm512_loadu_ps(b_ptr + 16);
         for (size_t i = 0; i < mr; ++i) {
@@ -996,7 +1056,9 @@ inline void microkernel_fringe_avx512_mx32(const Scalar* packed_A,
 
     const Scalar* a_ptr = packed_A;
     const Scalar* b_ptr = packed_B;
+    GEMM_UNROLL_4
     for (size_t k = 0; k < Kc; ++k) {
+        prefetch_packed_k_iteration(a_ptr, b_ptr, mr, 32, k, Kc);
         const __m512 b_lo = _mm512_loadu_ps(b_ptr);
         const __m512 b_hi = _mm512_loadu_ps(b_ptr + 16);
         for (size_t i = 0; i < mr; ++i) {
@@ -1347,7 +1409,11 @@ void pack_a_micro_panel(const Scalar* A,
                         size_t mr) {
     for (size_t k = 0; k < Kc; ++k) {
         Scalar* dst = packed_A + k * mr;
+        if (k + kPackLoopPrefetchDistance < Kc) {
+            prefetch_l1(A + k + kPackLoopPrefetchDistance);
+        }
         size_t i = 0;
+        GEMM_UNROLL_4
         for (; i < rows; ++i) {
             dst[i] = A[i * lda + k];
         }
@@ -1366,7 +1432,11 @@ void pack_b_micro_panel(const Scalar* B,
     for (size_t k = 0; k < Kc; ++k) {
         Scalar* dst = packed_B + k * nr;
         const Scalar* src = B + k * ldb;
+        if (k + kPackLoopPrefetchDistance < Kc) {
+            prefetch_l1(B + (k + kPackLoopPrefetchDistance) * ldb);
+        }
         size_t j = 0;
+        GEMM_UNROLL_4
         for (; j < cols; ++j) {
             dst[j] = src[j];
         }
