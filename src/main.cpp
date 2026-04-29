@@ -28,6 +28,7 @@ namespace fs = std::filesystem;
 #include "cnn_network.hpp"
 #include "resnet_network.hpp"
 #include "checkpoint.hpp"
+#include "ist/ist_runtime.hpp"
 #include "loss.hpp"
 #include "optimizer.hpp"
 #include "runtime/grad_sync_mode_info.hpp"
@@ -327,6 +328,9 @@ static EpochProfile reduceEpochProfile(const DistributedContext& dist, EpochProf
         profile.sync_pack_time_s,
         profile.sync_launch_time_s,
         profile.sync_unpack_time_s,
+        profile.sync_encode_time_s,
+        profile.sync_comm_time_s,
+        profile.sync_decode_time_s,
         static_cast<double>(profile.sync_bucket_count),
         static_cast<double>(profile.sync_bucket_bytes),
         static_cast<double>(profile.sync_launched_bucket_count),
@@ -345,13 +349,16 @@ static EpochProfile reduceEpochProfile(const DistributedContext& dist, EpochProf
     profile.sync_pack_time_s = max_fields[5];
     profile.sync_launch_time_s = max_fields[6];
     profile.sync_unpack_time_s = max_fields[7];
-    profile.sync_bucket_count = static_cast<std::uint64_t>(max_fields[8]);
-    profile.sync_bucket_bytes = static_cast<std::uint64_t>(max_fields[9]);
-    profile.sync_launched_bucket_count = static_cast<std::uint64_t>(max_fields[10]);
-    profile.sync_effective_overlap = static_cast<std::uint64_t>(max_fields[11]);
-    profile.opt_time_s = max_fields[12];
-    profile.step_time_s_sum = max_fields[13];
-    profile.max_step_time_s = max_fields[14];
+    profile.sync_encode_time_s = max_fields[8];
+    profile.sync_comm_time_s = max_fields[9];
+    profile.sync_decode_time_s = max_fields[10];
+    profile.sync_bucket_count = static_cast<std::uint64_t>(max_fields[11]);
+    profile.sync_bucket_bytes = static_cast<std::uint64_t>(max_fields[12]);
+    profile.sync_launched_bucket_count = static_cast<std::uint64_t>(max_fields[13]);
+    profile.sync_effective_overlap = static_cast<std::uint64_t>(max_fields[14]);
+    profile.opt_time_s = max_fields[15];
+    profile.step_time_s_sum = max_fields[16];
+    profile.max_step_time_s = max_fields[17];
     profile.step_count = dist.allReduceSumU64(profile.step_count);
     return profile;
 }
@@ -393,6 +400,10 @@ struct Config {
     std::string conv_backend = "reference"; // Conv backend: reference / onednn.
 
     std::string out_dir = "output";       // Output directory for metrics/log artifacts.
+    std::string train_mode = "dense";     // Training mode: dense / ist (stage-1: config + validation only).
+    int ist_local_steps = 1;              // Local optimizer steps before IST sync (> 0).
+    unsigned int ist_partition_seed = 0;  // Subnetwork partition seed (0 => fallback to --seed).
+    int ist_resample_every = 0;           // Repartition period in epochs (0 => disabled).
     std::string grad_sync_mode = "per_param"; // per_param / bucketed / overlap_bucketed
     std::size_t bucket_size_bytes = 1024 * 1024;
     bool qualification_artifacts = false;
@@ -411,6 +422,15 @@ static std::string normalizeOptimizerName(const std::string& optimizer_name) {
         return "momentum_sgd";
     }
     return optimizer_name;
+}
+
+static std::string normalizeTrainModeName(const std::string& train_mode_name) {
+    if (train_mode_name == "dense" || train_mode_name == "ist") {
+        return train_mode_name;
+    }
+    throw std::invalid_argument(
+        "unsupported --train_mode '" + train_mode_name +
+        "'. Expected 'dense' or 'ist'.");
 }
 
 static checkpoint::Metadata makeCheckpointMetadata(const Config& cfg) {
@@ -611,6 +631,20 @@ int main(int argc, char** argv) {
             } else if (arg == "--out_dir") {
                 explicit_flags.insert(arg);
                 cfg.out_dir = requireValue(arg);
+            } else if (arg == "--train_mode") {
+                explicit_flags.insert(arg);
+                cfg.train_mode = normalizeTrainModeName(requireValue(arg));
+            } else if (arg == "--ist_local_steps") {
+                explicit_flags.insert(arg);
+                cfg.ist_local_steps = parseIntInRange(
+                    requireValue(arg), arg, 1, std::numeric_limits<int>::max());
+            } else if (arg == "--ist_partition_seed") {
+                explicit_flags.insert(arg);
+                cfg.ist_partition_seed = parseUnsignedIntStrict(requireValue(arg), arg);
+            } else if (arg == "--ist_resample_every") {
+                explicit_flags.insert(arg);
+                cfg.ist_resample_every = parseIntInRange(
+                    requireValue(arg), arg, 0, std::numeric_limits<int>::max());
             } else if (arg == "--grad_sync_mode") {
                 explicit_flags.insert(arg);
                 cfg.grad_sync_mode = requireValue(arg);
@@ -713,6 +747,10 @@ int main(int argc, char** argv) {
             failIfConflicting("--cnn_pool_strides", cfg.cnn_pool_strides, checkpoint_cfg.cnn_pool_strides);
             failIfConflicting("--cnn_fc_hidden_sizes", cfg.cnn_fc_hidden_sizes, checkpoint_cfg.cnn_fc_hidden_sizes);
             failIfConflicting("--conv_backend", cfg.conv_backend, checkpoint_cfg.conv_backend);
+            failIfConflicting("--train_mode", cfg.train_mode, checkpoint_cfg.train_mode);
+            failIfConflicting("--ist_local_steps", cfg.ist_local_steps, checkpoint_cfg.ist_local_steps);
+            failIfConflicting("--ist_partition_seed", cfg.ist_partition_seed, checkpoint_cfg.ist_partition_seed);
+            failIfConflicting("--ist_resample_every", cfg.ist_resample_every, checkpoint_cfg.ist_resample_every);
         } catch (const std::exception& e) {
             std::cerr << "Error parsing arguments: " << e.what() << std::endl;
             return 1;
@@ -722,6 +760,10 @@ int main(int argc, char** argv) {
         const std::string requested_save_checkpoint = cfg.save_checkpoint;
         const std::string requested_resume = cfg.resume;
         const std::string requested_out_dir = cfg.out_dir;
+        const std::string requested_train_mode = cfg.train_mode;
+        const int requested_ist_local_steps = cfg.ist_local_steps;
+        const unsigned int requested_ist_partition_seed = cfg.ist_partition_seed;
+        const int requested_ist_resample_every = cfg.ist_resample_every;
         const std::string requested_grad_sync_mode = cfg.grad_sync_mode;
         const std::size_t requested_bucket_size_bytes = cfg.bucket_size_bytes;
         const bool requested_qualification_artifacts = cfg.qualification_artifacts;
@@ -734,6 +776,10 @@ int main(int argc, char** argv) {
         cfg.save_checkpoint = requested_save_checkpoint;
         cfg.resume = requested_resume;
         cfg.out_dir = requested_out_dir;
+        cfg.train_mode = requested_train_mode;
+        cfg.ist_local_steps = requested_ist_local_steps;
+        cfg.ist_partition_seed = requested_ist_partition_seed;
+        cfg.ist_resample_every = requested_ist_resample_every;
         cfg.grad_sync_mode = requested_grad_sync_mode;
         cfg.bucket_size_bytes = requested_bucket_size_bytes;
         cfg.qualification_artifacts = requested_qualification_artifacts;
@@ -766,6 +812,21 @@ int main(int argc, char** argv) {
             std::cerr << "Error: --seed must be non-zero when running with MPI world size > 1."
                       << std::endl;
         }
+        return 1;
+    }
+
+    const unsigned int ist_partition_seed_effective =
+        (cfg.ist_partition_seed != 0) ? cfg.ist_partition_seed : cfg.seed;
+    if (cfg.train_mode == "ist" && dist.worldSize() > 1 && ist_partition_seed_effective == 0) {
+        if (isMaster) {
+            std::cerr << "Error: IST partitioning requires deterministic seed in distributed mode. "
+                      << "Set --seed (non-zero) or --ist_partition_seed (non-zero)." << std::endl;
+        }
+        return 1;
+    }
+    if (cfg.train_mode == "ist" && cfg.model != "cnn") {
+        std::cerr << "Error: --train_mode ist currently supports only --model cnn."
+                  << std::endl;
         return 1;
     }
 
@@ -819,6 +880,11 @@ int main(int argc, char** argv) {
         startup_summary_data.eps = cfg.eps;
         startup_summary_data.world_size = dist.worldSize();
         std::cout << io::formatTrainingStartupSummary(startup_summary_data);
+        std::cout << "  Train Mode: " << cfg.train_mode << "\n";
+        std::cout << "  IST Local Steps: " << cfg.ist_local_steps << "\n";
+        std::cout << "  IST Partition Seed: " << ist_partition_seed_effective
+                  << (cfg.ist_partition_seed == 0 ? " (fallback to --seed)" : "") << "\n";
+        std::cout << "  IST Resample Every (epochs): " << cfg.ist_resample_every << "\n\n";
 
         const std::string grad_sync_warning =
             io::formatGradSyncWarning(grad_sync_mode_info);
@@ -829,6 +895,7 @@ int main(int argc, char** argv) {
 
     // 1. Build Model (fail-fast: validate config before loading data)
     std::unique_ptr<NeuralNetwork> model;
+    std::unique_ptr<ist::OwnershipPlan> ist_ownership_plan;
     if (cfg.model == "cnn") {
         bool hasCustom = !cfg.cnn_conv_channels.empty() ||
                          !cfg.cnn_conv_kernels.empty()  ||
@@ -961,6 +1028,44 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (cfg.train_mode == "ist") {
+        try {
+            auto ownership_plan = std::make_unique<ist::OwnershipPlan>(ist::buildOwnershipPlan(
+                model->getParameters(),
+                dist.rank(),
+                dist.worldSize(),
+                ist_partition_seed_effective));
+
+            std::ostringstream local_summary;
+            local_summary << "rank=" << dist.rank()
+                          << ", owned=" << ownership_plan->owned_elements
+                          << "/" << ownership_plan->total_elements
+                          << " (" << std::fixed << std::setprecision(4)
+                          << (ist::ownershipRatio(*ownership_plan) * 100.0) << "%)"
+                          << ", axes=[";
+            for (std::size_t i = 0; i < ownership_plan->axes.size(); ++i) {
+                if (i > 0) {
+                    local_summary << ",";
+                }
+                local_summary << ist::toString(ownership_plan->axes[i]);
+            }
+            local_summary << "]";
+
+            const auto all_rank_summaries = dist.allGatherStrings(local_summary.str());
+            if (isMaster) {
+                std::cout << "[IST] Ownership plan initialized with "
+                          << ownership_plan->masks.size() << " parameter masks." << std::endl;
+                for (const auto& summary : all_rank_summaries) {
+                    std::cout << "[IST] " << summary << std::endl;
+                }
+            }
+            ist_ownership_plan = std::move(ownership_plan);
+        } catch (const std::exception& e) {
+            std::cerr << "Error building IST ownership plan: " << e.what() << std::endl;
+            return 1;
+        }
+    }
+
     try {
         // 2. Prepare Data
         if (isMaster) {
@@ -1076,11 +1181,22 @@ int main(int argc, char** argv) {
             }
         }
 
-        runtime::GradSyncSetup grad_sync_setup = runtime::buildGradSyncSetup(
-            dist,
-            model->getParameters(),
-            grad_sync_mode_info,
-            cfg.bucket_size_bytes);
+        GradCompressionConfig grad_compression_cfg;
+        grad_compression_cfg.enabled = cfg.grad_compress;
+        grad_compression_cfg.mode = cfg.grad_compress_mode;
+        grad_compression_cfg.topk_ratio = cfg.grad_topk_ratio;
+        grad_compression_cfg.error_feedback = cfg.grad_error_feedback;
+        grad_compression_cfg.interval = cfg.grad_compress_interval;
+
+        runtime::GradSyncSetup grad_sync_setup;
+        if (cfg.train_mode != "ist") {
+            grad_sync_setup = runtime::buildGradSyncSetup(
+                dist,
+                model->getParameters(),
+                grad_sync_mode_info,
+                cfg.bucket_size_bytes,
+                grad_compression_cfg);
+        }
         const auto synchronizable_params =
             runtime::collectSynchronizableParams(model->getParameters());
 
@@ -1126,13 +1242,22 @@ int main(int argc, char** argv) {
         artifacts_writer.initialize();
         artifacts_writer.initializeQualificationArtifacts(synchronizable_params);
 
-
-        GradCompressionConfig grad_compression_cfg;
-        grad_compression_cfg.enabled = cfg.grad_compress;
-        grad_compression_cfg.mode = cfg.grad_compress_mode;
-        grad_compression_cfg.topk_ratio = cfg.grad_topk_ratio;
-        grad_compression_cfg.error_feedback = cfg.grad_error_feedback;
-        grad_compression_cfg.interval = cfg.grad_compress_interval;
+        IstTrainingConfig ist_training_cfg;
+        if (cfg.train_mode == "ist") {
+            if (!ist_ownership_plan) {
+                std::cerr << "Error: missing IST ownership plan in train_mode=ist." << std::endl;
+                return 1;
+            }
+            ist_training_cfg.enabled = true;
+            ist_training_cfg.local_steps = cfg.ist_local_steps;
+            ist_training_cfg.ownership_masks = &ist_ownership_plan->masks;
+        }
+        Trainer::ParamAllReduceFn ist_param_all_reduce_fn = nullptr;
+        if (cfg.train_mode == "ist" && dist.worldSize() > 1) {
+            ist_param_all_reduce_fn = [&dist](Scalar* data, std::size_t n) {
+                dist.allReduceSum(data, n);
+            };
+        }
 
         Trainer trainer(*model,
                         lossFn,
@@ -1159,7 +1284,10 @@ int main(int argc, char** argv) {
                                     synchronizable_params);
                             }
                         },
-                        grad_compression_cfg);
+                        grad_compression_cfg,
+                        grad_sync_setup.grad_compression_handled_in_runtime,
+                        ist_training_cfg,
+                        ist_param_all_reduce_fn);
 
         io::RunProfileSummary runProfileSummary;
         runProfileSummary.grad_sync_mode = grad_sync_mode_info;

@@ -13,6 +13,14 @@
 #include <unordered_set>
 #include <vector>
 
+struct CommCompressionConfig {
+    bool enabled = false;
+    std::string mode = "none";
+    double topk_ratio = 0.1;
+    bool error_feedback = false;
+    int interval = 1;
+};
+
 class GradientSyncRuntime {
 public:
     virtual ~GradientSyncRuntime() = default;
@@ -29,23 +37,30 @@ class StepBoundaryBucketedSync {
 public:
     StepBoundaryBucketedSync(const DistributedContext& dist,
                             const std::vector<Node::Ptr>& params,
-                            std::size_t bucket_size_bytes);
+                            std::size_t bucket_size_bytes,
+                            const CommCompressionConfig& grad_compression_cfg);
 
     std::uint64_t sync(std::uint64_t local_batch);
     SyncStepProfile lastStepProfile() const { return last_profile_; }
 
 private:
+    void encodeBeforeComm(std::size_t bucket_idx, std::vector<Scalar>& buffer) const;
+    void decodeAfterComm(std::vector<Scalar>& buffer) const;
+
     const DistributedContext& dist_;
+    CommCompressionConfig grad_compression_cfg_;
     ParamRegistry registry_;
     BucketLayout bucket_layout_;
     SyncStepProfile last_profile_;
+    std::uint64_t step_index_ = 0;
 };
 
 class BucketedOverlapRuntime : public GradientSyncRuntime {
 public:
     BucketedOverlapRuntime(const DistributedContext& dist,
                            const std::vector<Node::Ptr>& params,
-                           std::size_t bucket_size_bytes);
+                           std::size_t bucket_size_bytes,
+                           const CommCompressionConfig& grad_compression_cfg);
 
     void beginStep(std::uint64_t local_batch) override;
     void planStep(const std::vector<Node::Ptr>& reachable_leaf_params) override;
@@ -55,6 +70,9 @@ public:
     SyncStepProfile lastStepProfile() const override { return last_profile_; }
 
 private:
+    void encodeBeforeComm(std::size_t bucket_idx, std::vector<Scalar>& buffer) const;
+    void decodeAfterComm(std::vector<Scalar>& buffer) const;
+
     void validateLayoutAgreement() const;
     void validateStableLayout() const;
     void recordLaunchEvent(std::size_t bucket_idx,
@@ -97,15 +115,18 @@ private:
         bool step_active = false;
         bool saw_ready_event = false;
         bool planning_completed = false;
+        std::uint64_t step_index = 0;
         std::chrono::steady_clock::time_point step_begin_time {};
         std::chrono::steady_clock::time_point backward_complete_time {};
         bool backward_complete_time_recorded = false;
     };
 
     const DistributedContext& dist_;
+    CommCompressionConfig grad_compression_cfg_;
     ParamRegistry registry_;
     BucketLayout bucket_layout_;
     const std::string layout_descriptor_;
+    std::uint64_t step_index_ = 0;
     StepContext step_;
     SyncStepProfile last_profile_;
 };

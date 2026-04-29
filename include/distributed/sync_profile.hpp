@@ -35,6 +35,9 @@ struct SyncLaunchEvent {
 };
 
 struct SyncStepProfile {
+    double encode_time_s = 0.0;
+    double comm_time_s = 0.0;
+    double decode_time_s = 0.0;
     double pack_time_s = 0.0;
     double launch_time_s = 0.0;
     double wait_time_s = 0.0;

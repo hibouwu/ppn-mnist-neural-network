@@ -2,6 +2,9 @@
 #include "synchronizable_param.hpp"
 
 #include <chrono>
+#include <cmath>
+#include <limits>
+#include <cstring>
 #include <sstream>
 #include <stdexcept>
 
@@ -21,16 +24,91 @@ std::unordered_set<const Node*> allRegisteredParams(const ParamRegistry& registr
     return out;
 }
 
+Scalar quantizeToFp16Like(Scalar x) {
+    // Fast fp16-like quantization on float32:
+    // - clamp exponent to fp16 normal range
+    // - round mantissa to 10 bits using bit operations
+    // This avoids expensive frexp/ldexp paths in hot loops.
+    std::uint32_t bits = 0;
+    std::memcpy(&bits, &x, sizeof(bits));
+
+    const std::uint32_t sign = bits & 0x80000000u;
+    const std::uint32_t exp = bits & 0x7f800000u;
+
+    // Keep NaN/Inf as-is.
+    if (exp == 0x7f800000u) {
+        return x;
+    }
+
+    // Zero/subnormal -> signed zero.
+    if (exp == 0u || exp < 0x33800000u) { // unbiased exp < -24
+        const std::uint32_t z = sign;
+        Scalar out = 0.0f;
+        std::memcpy(&out, &z, sizeof(out));
+        return out;
+    }
+
+    // Overflow wrt fp16 range -> signed inf.
+    if (exp > 0x47000000u) { // unbiased exp > 15
+        const std::uint32_t inf_bits = sign | 0x7f800000u;
+        Scalar out = 0.0f;
+        std::memcpy(&out, &inf_bits, sizeof(out));
+        return out;
+    }
+
+    // Round to 10 mantissa bits (drop lower 13 bits).
+    std::uint32_t rounded = bits + 0x00001000u;
+    if ((rounded & 0x7f800000u) > 0x47000000u) {
+        const std::uint32_t inf_bits = sign | 0x7f800000u;
+        Scalar out = 0.0f;
+        std::memcpy(&out, &inf_bits, sizeof(out));
+        return out;
+    }
+    rounded &= 0xffffe000u;
+
+    Scalar out = 0.0f;
+    std::memcpy(&out, &rounded, sizeof(out));
+    return out;
+}
+
+void applyFp16LikeQuantInPlace(std::vector<Scalar>& buffer) {
+    for (Scalar& v : buffer) {
+        v = quantizeToFp16Like(v);
+    }
+}
+
 }
 
 StepBoundaryBucketedSync::StepBoundaryBucketedSync(const DistributedContext& dist,
                                                    const std::vector<Node::Ptr>& params,
-                                                   std::size_t bucket_size_bytes)
+                                                   std::size_t bucket_size_bytes,
+                                                   const CommCompressionConfig& grad_compression_cfg)
     : dist_(dist),
+      grad_compression_cfg_(grad_compression_cfg),
       registry_(params),
       bucket_layout_(registry_, bucket_size_bytes) {}
 
+void StepBoundaryBucketedSync::encodeBeforeComm(std::size_t bucket_idx, std::vector<Scalar>& buffer) const {
+    if (!grad_compression_cfg_.enabled) {
+        return;
+    }
+    (void)bucket_idx;
+    const int interval = std::max(1, grad_compression_cfg_.interval);
+    if ((step_index_ % static_cast<std::uint64_t>(interval)) != 0) {
+        return;
+    }
+    if (grad_compression_cfg_.mode == "fp16") {
+        applyFp16LikeQuantInPlace(buffer);
+    }
+}
+
+void StepBoundaryBucketedSync::decodeAfterComm(std::vector<Scalar>& buffer) const {
+    // fp16-like mode keeps data in float buffer after quantization + allreduce.
+    (void)buffer;
+}
+
 std::uint64_t StepBoundaryBucketedSync::sync(std::uint64_t local_batch) {
+    ++step_index_;
     last_profile_ = {};
     last_profile_.bucket_count = static_cast<std::uint64_t>(bucket_layout_.bucketCount());
     for (std::size_t bucket_idx = 0; bucket_idx < bucket_layout_.bucketCount(); ++bucket_idx) {
@@ -48,7 +126,20 @@ std::uint64_t StepBoundaryBucketedSync::sync(std::uint64_t local_batch) {
     auto launch_start = Clock::now();
     for (std::size_t bucket_idx = 0; bucket_idx < bucket_layout_.bucketCount(); ++bucket_idx) {
         auto& bucket = bucket_layout_.bucket(bucket_idx);
+        auto encode_start = Clock::now();
+        encodeBeforeComm(bucket_idx, bucket.buffer);
+        auto encode_end = Clock::now();
+        last_profile_.encode_time_s += elapsedSeconds(encode_start, encode_end);
+
+        auto comm_start = Clock::now();
         dist_.allReduceSum(bucket.buffer.data(), bucket.buffer.size());
+        auto comm_end = Clock::now();
+        last_profile_.comm_time_s += elapsedSeconds(comm_start, comm_end);
+
+        auto decode_start = Clock::now();
+        decodeAfterComm(bucket.buffer);
+        auto decode_end = Clock::now();
+        last_profile_.decode_time_s += elapsedSeconds(decode_start, decode_end);
         last_profile_.launched_bucket_count += 1;
     }
     auto launch_end = Clock::now();
@@ -73,13 +164,34 @@ std::uint64_t StepBoundaryBucketedSync::sync(std::uint64_t local_batch) {
 
 BucketedOverlapRuntime::BucketedOverlapRuntime(const DistributedContext& dist,
                                                const std::vector<Node::Ptr>& params,
-                                               std::size_t bucket_size_bytes)
+                                               std::size_t bucket_size_bytes,
+                                               const CommCompressionConfig& grad_compression_cfg)
     : dist_(dist),
+      grad_compression_cfg_(grad_compression_cfg),
       registry_(params),
       bucket_layout_(registry_, bucket_size_bytes),
       layout_descriptor_(bucket_layout_.serializedDescriptor()) {
     validateLayoutAgreement();
     resetStepState();
+}
+
+void BucketedOverlapRuntime::encodeBeforeComm(std::size_t bucket_idx, std::vector<Scalar>& buffer) const {
+    if (!grad_compression_cfg_.enabled) {
+        return;
+    }
+    (void)bucket_idx;
+    const int interval = std::max(1, grad_compression_cfg_.interval);
+    if ((step_.step_index % static_cast<std::uint64_t>(interval)) != 0) {
+        return;
+    }
+    if (grad_compression_cfg_.mode == "fp16") {
+        applyFp16LikeQuantInPlace(buffer);
+    }
+}
+
+void BucketedOverlapRuntime::decodeAfterComm(std::vector<Scalar>& buffer) const {
+    // fp16-like mode keeps data in float buffer after quantization + allreduce.
+    (void)buffer;
 }
 
 void BucketedOverlapRuntime::validateLayoutAgreement() const {
@@ -211,7 +323,15 @@ void BucketedOverlapRuntime::launchBucket(std::size_t bucket_idx, SyncLaunchReas
 
     auto launch_start = Clock::now();
     auto& bucket = bucket_layout_.bucket(bucket_idx);
+    auto encode_start = Clock::now();
+    encodeBeforeComm(bucket_idx, bucket.buffer);
+    auto encode_end = Clock::now();
+    last_profile_.encode_time_s += elapsedSeconds(encode_start, encode_end);
+
+    auto comm_start = Clock::now();
     bucket_state.request = dist_.iallReduceSum(bucket.buffer.data(), bucket.buffer.size());
+    auto comm_end = Clock::now();
+    last_profile_.comm_time_s += elapsedSeconds(comm_start, comm_end);
     bucket_state.launched = true;
     bucket_state.completed = dist_.isNullRequest(bucket_state.request);
     bucket_state.launch_reason = reason;
@@ -266,6 +386,7 @@ void BucketedOverlapRuntime::beginStep(std::uint64_t local_batch) {
     validateStableLayout();
     resetStepState();
     step_.step_active = true;
+    step_.step_index = ++step_index_;
     step_.local_batch = local_batch;
     step_.step_begin_time = Clock::now();
     last_profile_ = {};
@@ -444,6 +565,11 @@ std::uint64_t BucketedOverlapRuntime::finalizeAndGetGlobalBatch() {
     auto unpack_start = Clock::now();
     const auto registered_params = allRegisteredParams(registry_);
     for (std::size_t bucket_idx = 0; bucket_idx < step_.buckets.size(); ++bucket_idx) {
+        auto& bucket = bucket_layout_.bucket(bucket_idx);
+        auto decode_start = Clock::now();
+        decodeAfterComm(bucket.buffer);
+        auto decode_end = Clock::now();
+        last_profile_.decode_time_s += elapsedSeconds(decode_start, decode_end);
         bucket_layout_.unpackBucket(bucket_idx, registered_params);
     }
     auto unpack_end = Clock::now();

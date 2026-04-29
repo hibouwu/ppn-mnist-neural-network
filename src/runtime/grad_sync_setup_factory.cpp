@@ -9,9 +9,17 @@ namespace runtime {
 GradSyncSetup buildGradSyncSetup(const DistributedContext& dist,
                                  const std::vector<Node::Ptr>& model_params,
                                  const GradSyncModeInfo& mode_info,
-                                 std::size_t bucket_size_bytes) {
+                                 std::size_t bucket_size_bytes,
+                                 const GradCompressionConfig& grad_compression_cfg) {
     GradSyncSetup setup;
     const auto syncable_params = collectSynchronizableParams(model_params);
+    const CommCompressionConfig comm_cfg {
+        grad_compression_cfg.enabled,
+        grad_compression_cfg.mode,
+        grad_compression_cfg.topk_ratio,
+        grad_compression_cfg.error_feedback,
+        grad_compression_cfg.interval
+    };
 
     if (mode_info.parsed_mode == GradSyncMode::PerParamBlocking) {
         if (dist.worldSize() > 1) {
@@ -36,7 +44,8 @@ GradSyncSetup buildGradSyncSetup(const DistributedContext& dist,
         auto bucketed_sync = std::make_shared<StepBoundaryBucketedSync>(
             dist,
             syncable_params,
-            bucket_size_bytes);
+            bucket_size_bytes,
+            comm_cfg);
         setup.grad_sync_fn = [bucketed_sync](const std::vector<Node::Ptr>&,
                                              std::uint64_t local_batch) -> std::uint64_t {
             return bucketed_sync->sync(local_batch);
@@ -44,17 +53,20 @@ GradSyncSetup buildGradSyncSetup(const DistributedContext& dist,
         setup.sync_profile_provider = [bucketed_sync]() {
             return bucketed_sync->lastStepProfile();
         };
+        setup.grad_compression_handled_in_runtime = grad_compression_cfg.enabled;
         return setup;
     }
 
     setup.gradient_sync_runtime = std::make_unique<BucketedOverlapRuntime>(
         dist,
         syncable_params,
-        bucket_size_bytes);
+        bucket_size_bytes,
+        comm_cfg);
     GradientSyncRuntime* runtime_ptr = setup.gradient_sync_runtime.get();
     setup.sync_profile_provider = [runtime_ptr]() {
         return runtime_ptr->lastStepProfile();
     };
+    setup.grad_compression_handled_in_runtime = grad_compression_cfg.enabled;
     return setup;
 }
 

@@ -21,6 +21,12 @@ struct GradCompressionConfig {
     int interval = 1;
 };
 
+struct IstTrainingConfig {
+    bool enabled = false;
+    int local_steps = 1;
+    const std::vector<Matrix>* ownership_masks = nullptr;
+};
+
 
 struct EpochProfile {
     double epoch_time_s = 0.0;
@@ -31,6 +37,9 @@ struct EpochProfile {
     double sync_pack_time_s = 0.0;
     double sync_launch_time_s = 0.0;
     double sync_unpack_time_s = 0.0;
+    double sync_encode_time_s = 0.0;
+    double sync_comm_time_s = 0.0;
+    double sync_decode_time_s = 0.0;
     double opt_time_s = 0.0;
     double step_time_s_sum = 0.0;
     double max_step_time_s = 0.0;
@@ -68,6 +77,7 @@ public:
     using StepObserverFn = std::function<void(
         std::uint64_t step_index,
         const SyncStepProfile* sync_profile)>;
+    using ParamAllReduceFn = std::function<void(Scalar* data, std::size_t n)>;
 
     // Trainer keeps references; it does not own these objects.
     Trainer(NeuralNetwork& model,
@@ -79,7 +89,10 @@ public:
             GradientSyncRuntime* gradientSyncRuntime = nullptr,
             SyncProfileProviderFn syncProfileProvider = nullptr,
             StepObserverFn stepObserver = nullptr,
-            GradCompressionConfig grad_compression_cfg = {});
+            GradCompressionConfig grad_compression_cfg = {},
+            bool grad_compression_handled_in_runtime = false,
+            IstTrainingConfig ist_training_cfg = {},
+            ParamAllReduceFn paramAllReduceFn = nullptr);
 
     // One training epoch (with backward + parameter updates)
     Metrics trainEpoch();
@@ -99,6 +112,12 @@ private:
     SyncProfileProviderFn sync_profile_provider_;
     StepObserverFn step_observer_;
     GradCompressionConfig grad_compression_cfg_;
+    bool grad_compression_handled_in_runtime_ = false;
+    IstTrainingConfig ist_training_cfg_;
+    ParamAllReduceFn param_all_reduce_fn_;
+    std::vector<Matrix> ist_snapshots_;
+    bool ist_snapshots_initialized_ = false;
+    std::uint64_t ist_local_step_counter_ = 0;
 
 
     // Shared implementation used by trainEpoch() and evaluate()

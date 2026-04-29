@@ -70,6 +70,9 @@ std::string formatEpochSummary(int epoch,
         << ", sync_pack = " << train_metrics.profile.sync_pack_time_s << "s"
         << ", sync_launch = " << train_metrics.profile.sync_launch_time_s << "s"
         << ", sync_unpack = " << train_metrics.profile.sync_unpack_time_s << "s"
+        << ", sync_encode = " << train_metrics.profile.sync_encode_time_s << "s"
+        << ", sync_comm = " << train_metrics.profile.sync_comm_time_s << "s"
+        << ", sync_decode = " << train_metrics.profile.sync_decode_time_s << "s"
         << ", effective_overlap = " << train_metrics.profile.sync_effective_overlap
         << " (trace only; not qualification)"
         << ", opt = " << train_metrics.profile.opt_time_s << "s"
