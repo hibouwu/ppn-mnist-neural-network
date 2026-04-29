@@ -200,7 +200,8 @@ file(GLOB AUTOGRAD_SOURCES "src/autograd/*.cpp")
 file(GLOB DISTRIBUTED_SOURCES "src/distributed/*.cpp")
 file(GLOB IO_SOURCES "src/io/*.cpp")
 file(GLOB RUNTIME_SOURCES "src/runtime/*.cpp")
-list(APPEND SOURCES ${GEMM_SOURCES} ${AUTOGRAD_SOURCES} ${DISTRIBUTED_SOURCES} ${IO_SOURCES} ${RUNTIME_SOURCES})
+file(GLOB IST_SOURCES "src/ist/*.cpp")
+list(APPEND SOURCES ${GEMM_SOURCES} ${AUTOGRAD_SOURCES} ${DISTRIBUTED_SOURCES} ${IO_SOURCES} ${RUNTIME_SOURCES} ${IST_SOURCES})
 list(FILTER SOURCES EXCLUDE REGEX "src/main.cpp$")
 list(FILTER SOURCES EXCLUDE REGEX "src/gpu/cudnn_conv_forward.cpp$")
 list(FILTER SOURCES EXCLUDE REGEX "src/gpu/cudnn_conv_backward.cpp$")
@@ -226,6 +227,7 @@ add_executable(test_distributed_sync_mpi_contracts tests/test_distributed_sync.c
 add_executable(test_dataloader tests/test_dataloader.cpp ${SOURCES})
 add_executable(test_optimizer tests/test_optimizer.cpp ${SOURCES})
 add_executable(test_tiny_imagenet_dataset tests/test_tiny_imagenet_dataset.cpp ${SOURCES})
+add_executable(test_ist_runtime tests/test_ist_runtime.cpp ${SOURCES})
 
 # Main Application
 add_executable(ppn_train src/main.cpp ${SOURCES})
@@ -253,6 +255,7 @@ set(TEST_TARGETS
     test_dataloader
     test_optimizer
     test_tiny_imagenet_dataset
+    test_ist_runtime
 )
 
 foreach(target ${TEST_TARGETS})
@@ -288,6 +291,7 @@ endif()
 add_test(NAME DataLoaderTest COMMAND test_dataloader WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME OptimizerTest COMMAND test_optimizer)
 add_test(NAME TinyImageNetDatasetTest COMMAND test_tiny_imagenet_dataset)
+add_test(NAME IstRuntimeTest COMMAND test_ist_runtime)
 
 add_executable(test_benchmark_large tests/test_benchmark_large.cpp ${SOURCES})
 target_link_libraries(test_benchmark_large PUBLIC ${OPENBLAS_LIB} mnist_reader_lib ${JPEG_LIB} ppn_vtune)
