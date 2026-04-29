@@ -628,7 +628,7 @@ fc\_forward      & 32×784×128     & 83.5  & 101.9 & 156.2 & $-35\%$ & OpenBLAS
 
 \section{固定方阵上的线程扩展补充实验}
 
-除前述真实工作负载外，本文还对 64×64、128×128、256×256 和 512×512 四组固定方阵做了多实现线程扩展补充实验。该实验由脚本 \texttt{scripts/ExperienceGEMM/find\_optimal\_threads.sh} 统一驱动，对 \texttt{blas}、\texttt{omp}、\texttt{omp\_blocked}、\texttt{omp\_blocked\_packab}、\texttt{omp\_gotoblas\_avx2} 与 \texttt{omp\_gotoblas\_avx512} 六条路径进行同口径测量；而 \texttt{scripts/ExperienceGEMM/find\_optimal\_threads\_avx512.sh} 则用于对 AVX-512 路径做单独复查。图~\ref{fig:scaling_4way_all_impls} 只展示 1--8 个物理线程范围内的结果。
+除前述真实工作负载外，本文还对 64×64、128×128、256×256 和 512×512 四组固定方阵做了多实现线程扩展补充实验。该实验由脚本 \texttt{scripts/ExperienceGEMM/find\_optimal\_threads.sh} 统一驱动，对 \texttt{blas}、\texttt{omp}、\texttt{omp\_blocked}、\texttt{omp\_blocked\_packab}、\texttt{omp\_gotoblas\_avx2}、\texttt{omp\_gotoblas\_avx512}与\texttt{omp\_unroll\_prefetch} 七种实现进行同口径测量；而 \texttt{scripts/ExperienceGEMM/find\_optimal\_threads\_avx512.sh} 则用于对 AVX-512 路径做单独复查。图~\ref{fig:scaling_4way_all_impls} 只展示 1--8 个物理线程范围内的结果。
 
 \begin{figure}[H]
     \centering
@@ -642,9 +642,269 @@ fc\_forward      & 32×784×128     & 83.5  & 101.9 & 156.2 & $-35\%$ & OpenBLAS
 
 \chapter{卷积的优化}
 
+前一章讨论了 CNN 主线是如何在现有框架中接入的；但当网络从 MLP 过渡到卷积结构之后，真正的工程挑战并不只在于“能不能算”，而在于“能不能在更真实的训练规模下高效地算”。本章因此不再局限于卷积公式本身，而是围绕当前 CNN 训练主线上的几个关键瓶颈展开：同步数据并行中的梯度通信、自动求导运行时的执行成本，以及在这些框架层开销下降之后重新暴露出来的卷积算子热点。
+
+\section{卷积层的实现方式}
+
+\texttt{Conv2DLayer} 的核心设计是将卷积计算转换为矩阵乘法，而不是直接编写四重或五重嵌套循环的朴素卷积。具体来说，当前实现采用 \texttt{im2col} 技术，将输入特征图中每个滑动窗口展开为一行，从而把卷积前向传播改写成一次标准 GEMM：
+\[
+\texttt{im2col}(X) \in \mathbb{R}^{(N \cdot H_{out} \cdot W_{out}) \times (C_{in}\cdot k_H \cdot k_W)},
+\]
+\[
+W \in \mathbb{R}^{C_{out} \times (C_{in}\cdot k_H \cdot k_W)},
+\]
+\[
+Y = \texttt{im2col}(X)\cdot W^T + b.
+\]
+
+这种写法的关键价值在于，卷积层并不需要自行维护一套全新的高性能乘法内核，而是可以直接复用项目中已经存在的 \texttt{MathOps::matmul} 路径。换句话说，卷积计算被约化为“先做数据重排，再调用成熟的矩阵乘法实现”。这既降低了实现复杂度，也为后续卷积优化与 GEMM 优化之间建立了直接联系。
+
+与此同时，这种实现选择也决定了后续性能分析的关注点。当前卷积路径的成本并不只来自“卷积公式”本身，而是来自 \texttt{im2col}、GEMM、以及 backward 中的 \texttt{col2im} 和梯度矩阵乘法等一整条链路。因此，后文讨论的卷积热点、autograd hot path 以及 CPU backend 限制，都应理解为对这条 \texttt{im2col/GEMM/col2im} 实现路径的分析，而不是对抽象卷积算子做脱离实现的理论讨论。
+
 \chapter{CNN架构的实现}
 
-\chapter{}
+本项目在原有 MLP 训练框架之上加入了一条面向图像结构的 CNN 主线。这里的实现目标并不是一开始就追求 ResNet 级别的高度模块化或复杂组件，而是在尽量少改动现有系统的前提下，使卷积网络能够复用既有的自动求导、优化器、数据加载与训练循环。基于这一原则，当前实现选择了一套接近 LeNet-5 的最小 CNN 结构，并围绕 \texttt{Conv2D}、\texttt{MaxPool2D} 与网络抽象接口做增量扩展。
+
+\section{整体实现思路}
+
+CNN 的接入遵循“最小侵入”原则。训练器、损失函数、优化器以及底层 \texttt{Node}/\texttt{Matrix} 计算框架尽量保持不变，仅在网络抽象层引入统一接口 \texttt{NeuralNetwork}，使原有的 \texttt{MLPNetwork} 与新增的 \texttt{LeNetNetwork} 都能够被同一套训练逻辑调用。这样做的直接好处是：一方面避免为 CNN 重写训练主循环，另一方面也保证了 MLP 与 CNN 在参数管理、反向传播和优化步骤上的一致性。
+
+从软件分层上看，当前实现仍然沿用原有的三层结构：底层是 \texttt{Matrix} 提供的矩阵存储与矩阵乘法，中间层是 \texttt{Node}/\texttt{MathOps} 提供的计算图与自动求导，上层则是在此基础上新增 \texttt{Conv2DLayer}、\texttt{MaxPool2DLayer} 和 \texttt{LeNetNetwork}。因此，CNN 并不是独立于现有框架重新实现的一套系统，而是建立在既有 autodiff 引擎之上的结构扩展。
+
+\section{LeNet 风格网络结构}
+
+当前 CNN 主线采用一套适配 MNIST 的 LeNet 风格结构。输入仍保持与原项目一致的扁平形式，即每个样本先以 $(N,784)$ 进入网络；进入 CNN 后，再在前向传播内部解释为 $(N,1,28,28)$ 的单通道图像。网络主体由两层卷积、两层池化和三层全连接组成，如表~\ref{tab:cnn_architecture} 所示。
+
+\begin{table}[H]
+\centering
+\caption{当前 CNN 主线的网络结构}
+\label{tab:cnn_architecture}
+\begin{tabular}{p{0.06\textwidth}p{0.28\textwidth}p{0.20\textwidth}p{0.20\textwidth}p{0.12\textwidth}}
+\toprule
+\textbf{\#} & \textbf{层} & \textbf{输入} & \textbf{输出} & \textbf{参数量} \\
+\midrule
+1 & Conv2D $(5\times5,\ s=1,\ p=2)$ & $(N,1,28,28)$ & $(N,6,28,28)$ & 156 \\
+2 & ReLU & $(N,6,28,28)$ & $(N,6,28,28)$ & 0 \\
+3 & MaxPool2D $(2\times2,\ s=2)$ & $(N,6,28,28)$ & $(N,6,14,14)$ & 0 \\
+4 & Conv2D $(5\times5,\ s=1,\ p=0)$ & $(N,6,14,14)$ & $(N,16,10,10)$ & 2416 \\
+5 & ReLU & $(N,16,10,10)$ & $(N,16,10,10)$ & 0 \\
+6 & MaxPool2D $(2\times2,\ s=2)$ & $(N,16,10,10)$ & $(N,16,5,5)$ & 0 \\
+7 & Flatten & $(N,16,5,5)$ & $(N,400)$ & 0 \\
+8 & Linear $400 \rightarrow 120$ + ReLU & $(N,400)$ & $(N,120)$ & 48120 \\
+9 & Linear $120 \rightarrow 84$ + ReLU & $(N,120)$ & $(N,84)$ & 10164 \\
+10 & Linear $84 \rightarrow 10$ & $(N,84)$ & $(N,10)$ & 850 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+整套网络总计约 $61706$ 个可训练参数。与更深的现代 CNN 相比，这个规模并不大，但对于当前项目而言已经足以体现卷积、池化、特征展平以及分类头之间的基本协作关系，也能够在 MNIST 和后续更复杂图像任务上作为卷积主线的起点。
+
+\section{前向数据流与形状传播}
+
+该网络的前向数据流可以概括为：
+\[
+(N,784)
+\rightarrow (N,1,28,28)
+\rightarrow \text{Conv+ReLU}
+\rightarrow \text{Pool}
+\rightarrow \text{Conv+ReLU}
+\rightarrow \text{Pool}
+\rightarrow \text{Flatten}
+\rightarrow \text{FC+ReLU}
+\rightarrow \text{FC+ReLU}
+\rightarrow \text{Logits}.
+\]
+
+这里一个重要实现选择是：项目没有单独引入 \texttt{Tensor4D} 之类的新数据结构，而是继续使用统一的 \texttt{Matrix} 作为底层存储。也就是说，逻辑上的四维张量 $(N,C,H,W)$ 在内存中仍被展平为二维矩阵 \texttt{Matrix(N, C*H*W)}，再通过形状参数解释其语义。对某个元素 $(n,c,h,w)$，其线性索引可写为
+\[
+\texttt{idx} = c \times H \times W + h \times W + w.
+\]
+这样做的优点是避免重写一套新的底层张量存储与算子系统，并使卷积层可以直接复用现有矩阵运算接口；代价则是每一层都需要显式传递形状信息，并在实现中谨慎处理 reshape 与索引。
+
+\section{池化层与全连接分类头}
+
+\texttt{MaxPool2DLayer} 负责在空间维度上做下采样。当前实现选择最大池化而非平均池化，原因是最大池化更符合经典 LeNet 风格主线，也更容易在保持显著局部响应的同时降低后续计算量。实现上，池化层在前向时记录每个窗口中最大值的位置，以便反向传播时将梯度准确散射回输入张量对应位置。由于池化层本身不含可训练参数，因此它只影响特征形状与梯度流向，而不引入额外权重更新。
+
+在两次卷积和池化之后，特征图尺寸从 $(N,1,28,28)$ 逐步变为 $(N,16,5,5)$。随后网络在 \texttt{forward()} 中直接执行展平操作，将其改写为 $(N,400)$，并送入三层全连接分类头。这里没有再额外定义一个单独的 \texttt{FlattenLayer} 类，而是把展平看作网络内部的一步简单 reshape。这个决定同样体现了“最小实现”的总体思路：只有在真正需要独立语义或复杂状态时才新增类，否则优先复用现有结构。
+
+\section{接口抽象与代码组织}
+
+为了使训练器能够同时支持 MLP 与 CNN，代码中增加了一个非常精简的网络抽象接口 \texttt{NeuralNetwork}，其职责只有两项：执行前向传播，以及返回全部可训练参数。于是，\texttt{MLPNetwork} 与 \texttt{LeNetNetwork} 都可以通过同一接口被优化器和训练器消费，而训练循环不必关心底层到底是全连接网络还是卷积网络。
+
+从文件组织上看，CNN 相关增量主要集中在以下几部分：
+\begin{itemize}
+    \item \texttt{include/conv2d\_layer.hpp} 与 \texttt{src/conv2d\_layer.cpp}：卷积层实现；
+    \item \texttt{include/maxpool2d\_layer.hpp} 与 \texttt{src/maxpool2d\_layer.cpp}：池化层实现；
+    \item \texttt{include/cnn\_network.hpp} 与 \texttt{src/cnn\_network.cpp}：LeNet 风格 CNN 主体；
+    \item \texttt{include/neural\_network.hpp}：统一网络接口；
+    \item \texttt{src/main.cpp}：加入 \texttt{--model cnn} 等命令行入口。
+\end{itemize}
+
+相比完全重构训练框架，这种改动规模是受控的。原有的损失函数、优化器、训练器、自动求导节点和矩阵库都被完整保留，只是在其上增加了新的层类型与新的网络组合方式。这也是为什么当前 CNN 主线能够较快接入，并进一步成为后续性能分析与卷积优化实验的基础。
+
+\section{设计取舍与当前边界}
+
+当前 CNN 架构实现的重点是“先打通主线，再逐步扩展能力”。因此，它有几个很明确的设计取舍。第一，数据表示上坚持复用 \texttt{Matrix}，避免引入新的张量基类；第二，网络结构上采用固定成员组合，而不是动态层列表；第三，卷积实现上优先走 \texttt{im2col + matmul} 的工程可复用途径，而不是一开始就为每类卷积写专门 kernel。
+
+这些选择让系统在复杂度和可维护性之间取得了较合适的平衡，但边界也同样清楚。当前主线仍以 LeNet 风格 CNN 为主，尚未引入 BatchNorm、残差连接或更强的模块化 block 体系；输入表示虽然足以支撑当前卷积网络，但对更一般的高维张量算子还不够自然；而卷积层虽然已经可用，其性能又会明显受到 \texttt{im2col} 重排和后续 GEMM 路径的影响。正因为如此，CNN 架构的实现既是功能扩展的一步，也是后续“卷积优化”章节成立的前提。
+
+\chapter{Tiny-ImageNet数据集迁移与后续方向}
+
+随着分布式训练和 CNN 主线逐步成形，实验对象也从早期的 MNIST 转向了更接近真实图像任务的 \texttt{Tiny-ImageNet}。这一迁移并不是简单地“换一个数据集看看效果”，而是因为 MNIST 本身过于简单，已经不足以充分暴露卷积网络、分布式同步与输入流水线之间的真实性能矛盾。
+
+\section{为什么从 MNIST 迁移到 Tiny-ImageNet}
+
+MNIST 是一个非常合适的教学型数据集：图像规模小、类别数少、输入单通道、训练成本低，非常适合验证 MLP、损失函数和自动求导是否正确。但从系统优化的角度看，它也正因为过于简单，而难以充分体现分布式训练的挑战。例如，在 MNIST 上，输入解码与数据流几乎没有压力，模型规模也较小，卷积计算与梯度同步都不够“重”，因此许多真实瓶颈不会充分暴露。
+
+相比之下，\texttt{Tiny-ImageNet} 具有 200 个类别，训练集每类 500 张图像，验证集每类 50 张图像，输入为彩色图像，任务复杂度和数据规模都显著高于 MNIST。按当前数据组织方式计，训练集约为 100000 张图像，验证集约为 10000 张图像，测试集约为 10000 张图像。这样的任务规模更容易把卷积计算、内存重排、JPEG 解码、mini-batch 装配以及分布式同步之间的相互影响体现出来，因此也更适合作为当前阶段的主实验平台。
+
+\section{迁移后的现状与限制}
+
+围绕 \texttt{Tiny-ImageNet}，项目已经对数据加载逻辑和训练循环做了相应适配，使 CNN 模型能够正确处理新的输入格式和类别规模。但从当前结果看，这条主线仍然处在“能跑通并可分析”的阶段，而非“训练质量和系统效率都已成熟”的阶段。
+
+一方面，在最近的 CPU 分布式实验中，单个 epoch 仍然可能达到约十分钟量级，具体时间会随 MPI 规模、本地 batch 大小和梯度同步模式变化而波动。另一方面，当前 CNN 配置在收敛性上也仍不理想，训练若干 epoch 后测试精度依然偏低。这表明问题并不只来自实现性能，也与模型结构、超参数和训练策略本身有关。
+
+\section{后续工作的两条主线}
+
+基于当前分析，后续工作大体可以沿两条互补路线继续推进。
+
+第一条路线是系统侧的进一步加速，重点仍然放在卷积主路径上，尤其是 \texttt{im2col/col2im}、卷积 backward 以及卷积与 GEMM 之间的数据重排成本。前文的 profiling 已经说明：当通信和 engine 开销被压下去之后，真正主导总时间的正是这些卷积相关 kernel。
+
+第二条路线则是模型侧的改进，包括 CNN 架构本身的增强、超参数调优以及训练配置调整。只有在系统效率和模型质量两方面同时推进，当前项目才能既在工程上给出可信的性能结论，也在学习任务上获得更有说服力的最终结果。
+
+\chapter{输入管线与实验自动化支撑}
+
+除了卷积、分布式同步和自动求导运行时本身之外，当前项目还有两类并不直接体现为单个算子公式、但对整条训练主线能否稳定推进非常关键的工程能力：其一是面向 \texttt{Tiny-ImageNet} 的输入管线改造，其二是围绕超参数搜索与实验记录建立的自动化脚本和元数据输出。这两部分共同决定了系统是否能够从“能跑单个实验”进一步提升为“能稳定组织一批正式实验并保留复现实验证据”。
+
+\section{从矩阵式加载到 \texttt{BatchSource} 抽象}
+
+在早期的 MNIST 路径中，数据天然适合以矩阵形式整体载入内存：输入可以直接表示为一个大的 \texttt{Matrix}，标签也可以表示为对应的目标矩阵，再由 \texttt{DataLoader} 在样本维上做索引切片。这种方式对 MNIST 足够直接，也有利于快速验证 MLP 与基础训练循环的正确性。
+
+但当实验对象迁移到 \texttt{Tiny-ImageNet} 之后，这种“先把全部数据组织成两个大矩阵、训练时再切 batch”的模式就不再理想。原因在于 \texttt{Tiny-ImageNet} 的原始输入并不是规则的小型灰度矩阵，而是目录结构下的大量 JPEG 彩色图像。若仍然沿用完全相同的装载方式，不仅初始化阶段会更重，也会让输入路径缺乏进一步工程化的空间。
+
+为此，当前代码在 \texttt{DataLoader} 与底层数据源之间加入了一个更通用的抽象，即 \texttt{BatchSource}。这一接口并不要求数据预先以整块矩阵形式常驻内存，而是只要求数据源能够回答三个问题：样本总数是多少、输入列数是多少、目标列数是多少，以及在给定一组样本索引时，如何把这些样本装载进 batch buffer。也就是说，\texttt{DataLoader} 不再关心数据究竟来自内存中的矩阵，还是来自文件系统中的图像，只关心“给我这一批索引，我该如何得到一个 batch”。
+
+\section{Tiny-ImageNet 的流式 JPEG 解码}
+
+在 MNIST 路径上，\texttt{BatchSource} 可以退化为一个非常简单的 \texttt{MatrixBatchSource}：当 \texttt{DataLoader} 给出一组样本索引时，数据源只需要把这些行从已有矩阵中拷贝到 \texttt{batch\_x} 和 \texttt{batch\_y} 中即可。这个实现仍然会产生 batch 级复制，但它已经把“batch 组织逻辑”和“底层数据来源”解耦开了。
+
+真正重要的变化出现在 \texttt{Tiny-ImageNet} 路径。当前实现不再要求训练开始前就把全部 JPEG 图像统一解码为常驻矩阵，而是通过 \texttt{TinyImageNetDataset} 提供面向训练集和测试集的 \texttt{BatchSource}，在训练循环需要某个 mini-batch 时，按索引读取并解码对应图像。换句话说，图像数据在当前主线中是以 batch 为粒度被流式装载的，而不是一次性全部解码进内存。对当前项目而言，这一改动的意义并不只是“节省内存”这么简单，更关键的是它让 \texttt{Tiny-ImageNet + CNN} 这条更真实的数据集主线，在现有 CPU 框架内具备了可运行性和后续可优化性。
+
+与此同时，\texttt{DataLoader} 本身也已经具备一些基础工程化处理。例如，训练循环会复用 \texttt{batch\_x} 与 \texttt{batch\_y} 这两个 batch buffer，而不是每一步都重新创建主 batch 矩阵；\texttt{DataLoader} 内部还维护统一的样本索引序列，并支持基于随机数生成器的 shuffle。这样做虽然还没有达到完整的高性能输入流水线，但至少已经避免了最粗糙的“每步新建全部 batch 容器”的开销。
+
+\section{当前输入管线的边界}
+
+应当指出，当前输入管线虽然已经完成了从 MNIST 到 \texttt{Tiny-ImageNet} 的关键升级，但它还不是一个完全成熟的工业级图像加载系统。第一，\texttt{DataLoader::nextBatchInto(...)} 目前仍会在每一步构造 \texttt{batch\_indices}，这意味着索引层面还有小块分配和复制；第二，\texttt{Tiny-ImageNet} 路径虽然已经支持按 batch 流式解码 JPEG，但还没有进一步加入异步 prefetch、decode overlap、缓存策略或更完整的数据增强；第三，MNIST 路径本身仍以物理拷贝为主，而不是零拷贝 view。
+
+因此，这一部分在报告中的合适表述应当是：当前项目已经完成了“从教学型矩阵数据集到真实图像数据集输入抽象”的关键迁移，但更进一步的 I/O 与预处理优化仍是后续工作的重要方向。也正因为如此，输入管线不应被简单当作外围脚本，而应被视为当前训练系统主线的一部分。
+
+\section{HPO 脚本与 \texttt{run\_meta.json}}
+
+除了输入管线，另一项值得单独说明的工程能力是实验自动化。当前项目并不完全依赖手工修改参数、手工执行训练、手工记录结果的方式，而是已经具备一套面向 CNN 训练的 HPO 与实验脚本。其中一个典型入口是基于 Optuna 的超参数搜索脚本，它能够围绕学习率、batch size、初始化方式等配置组织多轮试验，并将每个 run 的结果写回统一目录结构。
+
+更重要的是，这条实验脚本路径已经开始输出结构化元数据。以 \texttt{run\_meta.json} 为例，脚本会记录 run id、可执行文件路径、数据目录、trial 数量、epoch 数、随机种子、study 名称、评价指标、MPI 相关配置等信息。这样做的价值在于：一次实验的结果不再只是终端里的一串日志，而是带有最基本复现信息和实验上下文的文件化记录。
+
+与之配套，HPO 路径还会输出诸如 \texttt{trials.csv}、\texttt{best.txt} 等产物，用于保留各 trial 的结果与最终最佳配置。对于课程项目而言，这种做法已经明显超出了“截图保存最好结果”的水平；而对于后续更系统的性能分析或模型调参工作，它也提供了一个比较自然的自动化基础。
+
+\section{实验自动化的意义与当前局限}
+
+从整体工程角度看，\texttt{run\_meta.json} 这类元数据输出与 HPO 脚本的意义主要体现在两个方面。第一，它提高了实验的可复现性，使得后续分析者能够追溯某个结果对应的配置、执行入口和实验组织方式；第二，它为未来统一训练 artifact、profile 输出和 qualification 结果留下了接口，使“训练结果”逐步从一次性日志演化为一组可以被脚本处理、汇总和比较的标准化文件。
+
+不过，当前这套能力也还存在边界。首先，\texttt{run\_meta.json} 主要集中在 HPO/实验脚本路径中，并不是所有普通训练 run 都默认具备同等级别的完整元数据；其次，HPO 侧虽然已经具备较好的批量实验组织能力，但它与主训练路径的全部 artifact 体系还没有完全统一；最后，它更多解决的是“如何组织和记录实验”，而不是自动给出完整报告、图表或正式 benchmark 结论。
+
+因此，当前较准确的总结应当是：项目已经开始具备实验自动化和结构化元数据记录能力，这使其工程完成度明显高于单纯的手工训练脚本；但要进一步把这些能力收敛成统一的实验追踪体系，仍需要后续继续打通 HPO、常规训练、qualification 和 profiling 输出之间的关系。
+
+
+\chapter{MPI}
+
+\section{同步数据并行与梯度聚合}
+
+当前分布式训练采用经典的同步数据并行（synchronous data parallelism）方案。每个 MPI 进程，也就是每个 \texttt{rank}，都维护一份完整的模型参数副本；在数据侧，每个 rank 基于 \texttt{rank} 和 \texttt{world\_size} 构造自己的逻辑分片，仅在本地 shard 上执行前向与反向传播。
+
+设第 $r$ 个 rank 在某一步处理的本地 mini-batch 大小为 $B_r$，其在本地 backward 结束后得到的梯度和为 $g_r$。在同步数据并行中，各 rank 首先通过全局归约得到梯度总和：
+\[
+g_{\mathrm{sum}}=\sum_{r=0}^{\mathrm{world\_size}-1} g_r.
+\]
+同理，全局 batch 大小为
+\[
+B_{\mathrm{global}}=\sum_{r=0}^{\mathrm{world\_size}-1} B_r.
+\]
+于是，真正用于参数更新的全局平均梯度为
+\[
+g_{\mathrm{global}}
+=\frac{1}{B_{\mathrm{global}}}g_{\mathrm{sum}}
+=\frac{1}{B_{\mathrm{global}}}\sum_{r=0}^{\mathrm{world\_size}-1} g_r.
+\]
+每个 rank 随后都使用同一个平均梯度更新自己的模型副本：
+\[
+\theta \leftarrow \theta-\eta\, g_{\mathrm{global}},
+\]
+其中 $\theta$ 表示模型参数，$\eta$ 表示学习率。由于所有 rank 在每一步都使用同一个聚合梯度，因此各参数副本在更新后仍保持严格一致。
+
+这个训练语义本身并不复杂，难点在于如何组织梯度同步。最朴素的实现方式，是在每个参数完成本地梯度计算后，在 backward 末尾逐参数调用阻塞式 \texttt{MPI\_Allreduce} 做全局同步。当前代码中，这一基线模式对应 \texttt{Grad Sync Mode = per\_param}。从数学上看，它完全正确；但从系统角度看，逐参数做小规模集体通信会引入大量调用开销，通信粒度也过碎，不利于后续优化。
+
+\section{从逐参数同步到梯度 Bucketing}
+
+为降低通信侧的固定开销，系统首先在保持训练语义完全不变的前提下，引入了基于 \texttt{bucket} 的梯度同步。其核心思想是：不再对每个参数单独发起一次归约，而是按照参数在 \texttt{trainable\_params\_} 中的顺序，将多个参数梯度打包到连续缓冲区中，再以 \texttt{bucket} 为单位调用 \texttt{MPI\_Allreduce}。
+
+在实现上，\texttt{BucketManager} 负责建立一份静态分区。每个参数都会被映射到某个 \texttt{bucket}，并记录该参数在连续缓冲区中的偏移量和长度。这里采用了两个简单但重要的约束：其一，单个参数不会被切分到多个 \texttt{bucket} 中；其二，特别大的参数可以独占一个 \texttt{bucket}。这样可以让后续的打包（pack）、归约和解包（unpack）逻辑保持简单且稳定。
+
+在 \texttt{non-overlap, bucketed} 模式下，梯度同步仍然发生在整个 backward 完成之后，只是同步单位从“参数”变成了“梯度桶”。也就是说，系统先将多个参数梯度复制到连续的 \texttt{bucket} buffer 中，再对每个 \texttt{bucket} 调用一次 \texttt{MPI\_Allreduce}，最后把结果写回各参数的梯度缓冲区。应当强调的是，这一步优化并没有改变前文给出的更新公式；被改变的只是通信前梯度的组织方式。因此，它可以被看作一种纯工程层的通信粒度优化。
+
+\section{通信与计算的重叠}
+
+当 bucketing 稳定之后，下一步优化不再满足于“把很多小通信并成少数大通信”，而是进一步尝试将通信时间隐藏到 backward 计算过程中。为此，系统引入了 \texttt{overlap, bucketed} 模式：当某个参数梯度已经完全可用，并且其所属 \texttt{bucket} 中所有活跃参数都已经就绪时，该 \texttt{bucket} 的归约便可以提前发起，而不需要等整个 backward 全部完成。
+
+这一过程的关键机制是将阻塞式 \texttt{MPI\_Allreduce} 替换为异步的 \texttt{MPI\_Iallreduce}。在实现上，\texttt{DistributedContext} 除了提供传统阻塞式 collective 之外，也提供了异步请求封装以及 \texttt{wait}/\texttt{waitAll} 等等待原语；更上层则由显式运行时 \texttt{BucketedOverlapRuntime} 管理每一步训练的生命周期，包括 \texttt{beginStep(...)}、\texttt{onParameterGradReady(...)}、\texttt{onBackwardComplete()} 与 \texttt{finalizeAndGetGlobalBatch()} 等阶段。
+
+从运行时语义看，\texttt{overlap, bucketed} 模式比单纯的 \texttt{bucketed} 模式多了一项关键能力：它能够识别“某个参数梯度现在已经 final-ready，因此其所属 \texttt{bucket} 可以立刻发起归约”这一中间事件。于是，部分梯度通信可以在后续卷积层仍在反向传播时就已经进行，从而实现计算与通信的部分重叠。与此同时，为了保证数学结果与基线完全一致，在执行 \texttt{optimizer\_.step()} 之前，运行时仍会显式等待所有异步请求完成，并确保所有 \texttt{bucket} 已经正确解包回参数梯度。
+
+因此，\texttt{per\_param}、\texttt{bucketed} 与 \texttt{overlap\_bucketed} 三种模式虽然在执行组织上不同，但都共享同一个核心语义：每个 rank 最终都依据全局平均梯度同步更新参数。差别不在优化规则，而在同步流程的粒度控制与对通信开销的隐藏能力。
+
+\section{工程结果：瓶颈从通信转向卷积计算}
+
+在当前主线的历史 profiling 记录中，分布式优化已经能够明显改变时间分布。针对 \texttt{Tiny-ImageNet} 上一个三层卷积 CNN 配置，在 \texttt{world\_size = 16}、\texttt{batch\_size = 64}、\texttt{Grad Sync Mode = overlap\_bucketed} 且 \texttt{bucket\_size\_bytes = 4 MiB} 的条件下，一次 epoch 的总时间大约为 $630\,\mathrm{s}$，其中 \texttt{fwd\_bwd} 约为 $543\,\mathrm{s}$，\texttt{sync\_total} 约为 $59\,\mathrm{s}$。
+
+这些数据说明，通信已经不再吞掉绝大多数训练时间；但它们同时也表明，经过前述的同步优化后，系统的主要瓶颈并没有消失，而是转移到了 CNN 本身的计算路径上。更具体地说，热点越来越集中在卷积相关操作以及伴随的内存重排上，而不再只是 MPI 集体通信。
+
+需要说明的是，上述数值目前应被理解为历史 profiling 记录，而不是已经重新资格验证（requalify）后的最终 benchmark 结论。也就是说，这些结果足以支撑工程分析和瓶颈判断，但还不能单独作为“overlap 一定带来稳定 benchmark 收益”的最终论证。因此，本章对它们的使用方式主要是诊断性的：它们说明系统优化已经把问题从通信侧推向了卷积算子侧，这恰恰为后续卷积内核优化提供了目标。
+
+\section{Autograd 从隐式 backward 到显式执行引擎}
+
+仅仅优化分布式通信还不够，因为通信是否能够与计算重叠，直接取决于系统能否精确判断“某个参数梯度在什么时刻真正可用”。这一点恰好暴露了原始 autodiff 实现的结构性限制。
+
+最初版本的自动求导采用了一种非常直接的做法：每个算子在 forward 时构造自己的输出 \texttt{Node}，并通过 \texttt{setBackwardFn(...)} 给该节点绑定一个闭包式的 \texttt{backwardFn}。这个 lambda 会捕获 backward 所需的 forward 状态，例如输入矩阵、broadcast 信息、\texttt{im2col} 缓存或池化索引等；训练时，\texttt{loss\_node->backward()} 则按照拓扑逆序依次执行这些局部 backward 逻辑。
+
+这种设计在项目早期足够有效，因为它可以比较快地打通 MLP、激活函数、损失函数乃至后续 CNN 层的反向传播。但它的问题并不在于梯度公式错误，而在于运行时语义过于粗糙。在旧模型中，一个局部 backward 计算出梯度贡献后，会立刻通过 \texttt{addGrad(...)} 写入父节点的梯度缓冲区。从数学角度看这当然是对的；但从运行时角度看，系统实际上无法区分“这只是某个节点输出梯度的一部分贡献”还是“这是最后一笔贡献，因此该梯度已经 final-ready”。
+
+于是，像参数梯度何时可以触发通信、何时可以触发 profiling、何时一个 \texttt{bucket} 中的所有参数都已经就绪，这些对 distributed overlap 至关重要的问题，在旧框架里都没有显式表达。对传统的“等整个 backward 完成后再统一同步”的训练方式而言，这一限制还可以容忍；但对 \texttt{bucketed overlap}、参数级 ready hook、乃至更复杂计算图的调度，这种模糊语义会直接变成架构障碍。
+
+\section{显式 Engine 的结构重构}
+
+为解决上述问题，项目将 backward 从“节点各自携带匿名闭包并被被动调用”的模式，重构为“由中央执行引擎显式调度”的模式。新的设计并不改变梯度公式本身，而是引入更明确的 autograd 元数据与执行状态。
+
+在这一版本中，\texttt{Node} 虽然保留了原有外部接口，但内部增加了更清晰的语义信息，例如 \texttt{requires\_grad}、\texttt{is\_leaf}、\texttt{is\_parameter}、按需延迟分配的 \texttt{grad}、显式输入依赖列表 \texttt{inputs}、可选的 \texttt{GradFn}，以及按值保存的 \texttt{BackwardContext}。只有真正需要梯度的输出节点才会构造这些 backward 状态，因此常量路径不会再平白携带无用的反向信息。
+
+\texttt{Node::backward()} 也不再直接执行旧式 reverse-topo lambda 链，而是将责任交给 \texttt{AutogradEngine}。该引擎从 loss 节点出发重建 backward 可达子图，并为每个节点维护“尚未收到的下游梯度贡献数”。只有当某节点的输出梯度已经收齐所有贡献时，该节点才会进入 ready queue，等待其 \texttt{GradFn} 被调度执行。由此，系统第一次显式表示了 backward 执行中的一个关键时刻：某个节点的输出梯度已经 \emph{final-ready}。
+
+与之配套，算子 backward 逻辑被迁移到 \texttt{GradFn + BackwardContext} 体系中。\texttt{BackwardContext} 负责按值保存 backward 所需缓存，\texttt{GradFn} 只负责计算向输入传播的梯度贡献，而不再直接写父节点的 \texttt{grad}。所有梯度累加、贡献合并以及 ready 判定，都统一在 \texttt{AutogradEngine} 中完成。当前这套新语义已经覆盖基础算子（如 \texttt{add}、\texttt{mul}、\texttt{matmul}、\texttt{sum}、\texttt{mean}）、激活函数、损失函数、线性层、\texttt{MaxPool2D} 和 \texttt{Conv2D}。相应地，旧的 \texttt{setBackwardFn(...)} 兼容层、历史的 \texttt{parents\_} 边和 legacy reverse-topo 路径都已被移除。
+
+这一重构的直接价值在于，分布式运行时终于有了一个可以精确挂接的事件：当参数梯度变为 \texttt{parameter-ready} 时，就可以立即触发相应的 \texttt{bucket} 打包与异步归约，而不必把通信逻辑重新塞回每个层实现或 \texttt{Trainer} 中。
+
+\section{Autograd Hot Path 的性能压缩}
+
+完成结构性重构之后，系统还必须继续处理另一个现实问题：即使语义更清晰，执行引擎本身也可能成为新的框架层瓶颈。因此，后续工作又针对 \texttt{AutogradEngine} 的 hot path 做了进一步压缩，但这些优化仍然不改变梯度公式，只是尽量降低运行时管理开销。
+
+第一类优化是把一次 \texttt{backward()} 调用中可达子图的状态做局部稠密化索引。相比于依赖指针或 \texttt{shared\_ptr} 的查找结构，engine 会先收集本次 backward 涉及的节点，然后为它们分配本地连续索引，再通过 \texttt{states[index]} 直接访问状态。与之对应，\texttt{GradientContribution} 也不再携带 \texttt{shared\_ptr<Node>} 作为目标，而是直接记录一个稠密的 \texttt{target\_index}。
+
+第二类优化是减少小对象分配。对于生产路径中绝大多数算子，梯度贡献数目都比较小，因此系统使用固定容量的 inline 容器 \texttt{InlineContributionList<4>} 存储这些小列表，从而避免频繁的小块动态分配。
+
+第三类优化则聚焦于梯度合并本身。底层 \texttt{Matrix} 增加了 \texttt{addInPlace(...)} 原语，而 \texttt{Node::addGrad(...)} 现在只在第一次写入时物化梯度缓冲区，之后都在连续 buffer 上原地累加。与此同时，runtime 还显式区分了首次写入代价 \texttt{engine\_grad\_merge\_first\_write} 和后续累加代价 \texttt{engine\_grad\_merge\_accumulate}，以便区分剩余开销究竟来自 framework 逻辑还是大张量不可避免的内存流量。
+
+历史 profiling 显示，这些 hot path 优化是有实际效果的。在 \texttt{CNN + Tiny-ImageNet + 16 ranks MPI + overlap\_bucketed} 的参考配置下，\texttt{fwd\_bwd} 时间大约从 $753\,\mathrm{s}$ 下降到 $543\,\mathrm{s}$。与此同时，\texttt{engine\_grad\_merge\_accumulate} 已下降到约 $2.5\,\mathrm{s}$，而 \texttt{engine\_grad\_merge\_first\_write} 仍大约为 $45\,\mathrm{s}$。这说明 autograd runtime 曾经确实是一个可观的工程瓶颈，而在主要框架开销被压下去之后，残余成本更多开始反映张量写入与卷积 kernel 本身的真实代价。
+
+更重要的是，优化后的 profiling 热点再次集中到卷积路径本身，例如 \texttt{conv2d\_forward\_im2col}、\texttt{conv2d\_forward\_gemm}、\texttt{conv2d\_backward\_dX\_gemm}、\texttt{conv2d\_backward\_dW\_gemm} 和 \texttt{conv2d\_backward\_col2im}。换句话说，对 autograd engine 的整理并不是“把系统变复杂”，而是把框架层噪声削弱到足够低，使性能画像更真实地反映出卷积计算内核的极限。
+
 
 \addcontentsline{toc}{chapter}{Références}
 \begin{thebibliography}{11}
