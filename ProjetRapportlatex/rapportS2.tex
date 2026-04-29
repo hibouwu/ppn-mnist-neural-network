@@ -1,4 +1,5 @@
-\documentclass[a4paper,11pt,oneside]{report}
+% !TeX program = xelatex
+\documentclass[a4paper,11pt,oneside]{article}
 
 %%%%%%%%%%%%%%%%%%%%%
 % Encodage et langues
@@ -26,6 +27,7 @@
 \usepackage{booktabs}
 \usepackage{longtable}
 \usepackage{listings}
+\usepackage{array}
 \usepackage{xcolor}
 \usepackage{enumitem}
 \usepackage{fancyhdr}
@@ -51,7 +53,7 @@
 \newcommand{\smallO}[1]{\ensuremath{\mathop{}\mathopen{}o\mathopen{}\left(#1\right)}}
 
 \captionsetup[figure]{font=footnotesize, justification=justified, singlelinecheck=false, position=bottom}
-\captionsetup[table]{font=footnotesize, justification=justified, singlelinecheck=false, position=top}
+\captionsetup[table]{font=footnotesize, justification=centering, singlelinecheck=true, position=bottom}
 \urlstyle{same}
 \emergencystretch=1em
 
@@ -60,28 +62,44 @@
 \setstretch{1.2}
 \setlength{\parindent}{2em}
 \setlength{\parskip}{0pt}
-\renewcommand{\contentsname}{Sommaire}
-\renewcommand{\bibname}{Références}
+\renewcommand{\contentsname}{目录}
+\renewcommand{\bibname}{参考文献}
 
-\newcommand{\reporttype}{Rapport de projet}
-\newcommand{\reporttitletext}{MLP et moteur d'autodiff appliqués à MNIST}
-\newcommand{\reportshorttitle}{MLP et moteur d'autodiff}
-\newcommand{\reportauthors}{Jianye Shi, Hao Qian, Xiang Bian, Abdennour Boulmis}
+\newcommand{\reporttype}{项目报告}
+\newcommand{\reporttitletext}{应用于 MNIST 的 MLP 与自动微分引擎}
+\newcommand{\reportshorttitle}{MLP 与自动微分引擎}
+\newcommand{\reportinstitution}{Université de Versailles Saint-Quentin-en-Yvelines}
+\newcommand{\reportprogram}{Master CHPS -- UVSQ}
+\newcommand{\reportyear}{2025--2026}
+\newcommand{\reportheadertext}{Master CHPS -- UVSQ 2025 - 2026}
+\newcommand{\reportauthorsblock}{%
+  \begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.66\textwidth}@{}}
+    \textbf{Jianye Shi} \\
+    \href{mailto:jianye.shi@ens.uvsq.fr}{jianye.shi@ens.uvsq.fr} \\
+    \\[-0.2em]
+    \textbf{Hao Qian} \\
+    \href{mailto:hao.qian@ens.uvsq.fr}{hao.qian@ens.uvsq.fr} \\
+    \\[-0.2em]
+    \textbf{Xiang Bian} \\
+    \href{mailto:xiang.bian@ens.uvsq.fr}{xiang.bian@ens.uvsq.fr} \\
+    \\[-0.2em]
+    \textbf{Abdennour Boulmis} \\
+    \href{mailto:abdennour.boulmis@ens.uvsq.fr}{abdennour.boulmis@ens.uvsq.fr}
+  \end{tabular}%
+}
 \newcommand{\reportadvisor}{Aurélien Delval}
-\newcommand{\reportprogram}{Master 1 CHPS -- UVSQ}
-\newcommand{\reportyear}{Année universitaire 2025--2026}
-\newcommand{\reportdate}{4 avril 2026}
+\newcommand{\reportdate}{2026 年 4 月 29 日}
 
 %%%%%%%%%%%%%%%%%%%%%
 % En-têtes et pieds de page
 \fancyhf{}
-\fancyhead[L]{\textit{\reportshorttitle}}
-\fancyhead[R]{\nouppercase{\leftmark}}
+\fancyhead[L]{\textit{\reportheadertext}}
+\fancyhead[R]{\nouppercase{\rightmark}}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0pt}
 \setlength{\headheight}{17pt}
-\renewcommand{\chaptermark}[1]{\markboth{\thechapter.\ #1}{}}
+\renewcommand{\sectionmark}[1]{\markright{\thesection.\ #1}}
 \fancypagestyle{plain}{
   \fancyhf{}
   \fancyfoot[C]{\thepage}
@@ -94,147 +112,103 @@
 \hypersetup{pageanchor=false}
 \pagenumbering{gobble}
 \begin{titlepage}
-  \centering
-  \vspace*{0.9cm}
-  \includegraphics[width=0.38\textwidth]{Images/Logo_UVSQ.jpg}\par
-  \vspace{1.0cm}
-  {\Large \reportprogram\par}
+  \thispagestyle{empty}
+  \noindent
+  \begin{minipage}[t]{0.60\textwidth}
+    \vspace*{0pt}
+    {\Large\bfseries \reportinstitution\par}
+    \vspace{0.35cm}
+    {\normalsize Faculté des sciences et ingénierie\par}
+    \vspace{0.55cm}
+    {\color{black!55}\rule{0.76\textwidth}{0.8pt}\par}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.22\textwidth}
+    \vspace*{-0.2cm}
+    \raggedleft
+    \includegraphics[width=\textwidth]{Images/Logo_UVSQ.jpg}
+  \end{minipage}
+
+  \vspace{2.4cm}
+
+  {\Large\bfseries \reporttitletext\par}
   \vspace{0.45cm}
-  {\large \reportyear\par}
-  \vspace{2.8cm}
-  {\large \reporttype\par}
-  \vspace{0.6cm}
-  {\huge\bfseries \reporttitletext\par}
-  \vspace{3.2cm}
-  \begin{flushleft}
-    \textbf{Auteurs :}\par
-    \reportauthors\par
-    \vspace{0.75cm}
-    \textbf{Encadrant :}\par
-    \reportadvisor\par
-  \end{flushleft}
+  {\large\color{black!70} \reporttype\par}
+
+  \vspace{1.6cm}
+
+  \begin{minipage}[t]{0.58\textwidth}
+    \raggedright
+    {\small\scshape Auteurs\par}
+    \vspace{0.45cm}
+    {\normalsize \reportauthorsblock\par}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.32\textwidth}
+    \raggedright
+    {\small\scshape Encadrement\par}
+    \vspace{0.45cm}
+    {\normalsize\textbf{Aurélien Delval}\par}
+    \vspace{0.25cm}
+    {\small Enseignant-chercheur\par}
+  \end{minipage}
+
   \vfill
-  {\large \reportdate\par}
+  \noindent{\color{black!55}\rule{\textwidth}{0.8pt}\par}
+  \vspace{0.35cm}
+  \noindent
+  \begin{minipage}[t]{0.48\textwidth}
+    \raggedright
+    {\small \reportprogram}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.32\textwidth}
+    \raggedleft
+    {\small \reportdate}
+  \end{minipage}
 \end{titlepage}
 
 \clearpage
 \hypersetup{pageanchor=true}
 \pagenumbering{roman}
 \setcounter{page}{1}
-\chapter*{Résumé}
-\addcontentsline{toc}{chapter}{Résumé}
-Ce rapport présente les travaux du second semestre, prolongeant un premier prototype fondé sur un MLP, un moteur d'autodifférentiation en C++ et des optimisations matricielles validées sur MNIST. L'objectif du semestre 2 est d'élargir ce socle vers un pipeline d'entraînement plus réaliste et plus instrumenté. Les principales extensions portent sur l'introduction d'une architecture CNN configurable, la prise en charge du jeu de données Tiny-ImageNet, l'ajout d'un mode distribué par synchronisation de gradients sous MPI, ainsi que la génération d'artefacts d'exécution pour l'analyse de performance et la reproductibilité. Les développements réalisés montrent que le projet ne se limite plus à un démonstrateur pédagogique centré sur MLP/MNIST, mais constitue désormais une base expérimentale plus large pour l'étude de charges de travail visuelles, de mécanismes de synchronisation et de backends de calcul alternatifs. Le rapport précise enfin le statut actuel des fonctionnalités stabilisées, en qualification ou encore exploratoires.
-
-\bigskip
-\noindent\textbf{Mots-clés :} autodifférentiation, CNN, Tiny-ImageNet, MPI, C++, reproductibilité, profiling, optimisation
-
-\clearpage
 \tableofcontents
 \clearpage
 \pagenumbering{arabic}
 \setcounter{page}{1}
 \pagestyle{fancy}
 
-\chapter{Introduction générale}
-\section{Rappel du semestre 1}
-Le premier semestre du projet a permis d'établir un socle fonctionnel autour d'un Perceptron Multicouche (MLP) entraîné sur MNIST \cite{lecun1998}. Cette première étape a conduit à l'implémentation d'un moteur d'autodifférentiation en mode inverse, d'une représentation explicite du graphe de calcul, d'un noyau matriciel optimisable et d'une boucle d'entraînement complète en C++. Elle a également permis de valider la convergence du modèle sur une tâche de classification standard, puis de mettre en évidence l'importance des optimisations bas niveau, notamment via BLAS et OpenMP, sur le temps d'exécution.
+\section{引言}
 
-\section{Motivations et objectifs du semestre 2}
-Si cette première version constituait une base pédagogique solide, elle restait limitée à un cadre relativement simple : un modèle de type MLP, un jeu de données de petite taille et un scénario d'exécution essentiellement monoprocessus. Le second semestre vise donc à faire évoluer le projet vers un environnement plus proche d'un pipeline d'entraînement réaliste. Les objectifs principaux sont l'extension vers des architectures convolutionnelles configurables, l'intégration d'un jeu de données d'images plus exigeant avec Tiny-ImageNet, l'étude de la synchronisation de gradients dans un cadre distribué sous MPI, ainsi que la mise en place d'outils d'instrumentation et d'artefacts permettant une analyse plus rigoureuse des performances et de la reproductibilité.
+\subsection{项目背景与研究对象}
+神经网络系统的实现不仅涉及模型结构本身，也涉及训练运行时、数值计算内核以及数据输入路径等多个层面。以图像分类任务为载体，从零实现一套可训练的神经网络程序，有助于在统一代码基础上考察前向传播、反向传播、参数更新与实验执行流程之间的关系，并为后续的性能测量与实现比较提供可控环境。
 
-Dans cette perspective, le semestre 2 ne consiste pas à réécrire le projet initial, mais à prolonger l'infrastructure développée au semestre 1 pour en faire une base expérimentale plus large. Il s'agit à la fois d'augmenter la complexité des charges de travail traitées, de renforcer la dimension système du projet et de clarifier le statut des différentes fonctionnalités introduites, qu'elles soient stabilisées, en cours de qualification ou encore exploratoires.
+本报告讨论的对象是一个以 C++ 为基础实现的神经网络实验系统。该系统当前覆盖了多层感知机（MLP, multi-layer perceptron）与卷积神经网络（CNN, convolutional neural network）两类模型路径，同时包含自动微分运行时、矩阵乘法与卷积计算后端、数据加载接口，以及面向分布式训练实验的同步机制。本文关注的是这些组成部分在当前实现范围内的组织方式、扩展方向与实验用途，而非将其表述为通用深度学习框架或稳定完备的训练平台。
 
-\section{Organisation du rapport}
-Le rapport s'articule autour de cinq axes :
-\begin{enumerate}[label=\textbf{\arabic*.}, leftmargin=*, nosep]
-  \item \textbf{Fondements théoriques et périmètre} : rappel du cadre d'étude et des notions mobilisées par le projet.
-  \item \textbf{Conception et réalisation} : présentation des extensions logicielles introduites au second semestre.
-  \item \textbf{Protocole expérimental et résultats} : description des configurations d'essai, des métriques retenues et des observations obtenues.
-  \item \textbf{Organisation du projet} : synthèse de la conduite du développement et de la répartition des contributions.
-  \item \textbf{Conclusion et perspectives} : bilan du semestre 2, limites actuelles et pistes d'évolution.
-\end{enumerate}
-Des annexes techniques et un glossaire complètent enfin le document.
+\subsection{前期基础与本阶段扩展}
+前期工作已经完成了基于 MNIST \cite{lecun1998} 的多层感知机训练基础，包括反向模式自动微分、显式计算图、基础矩阵计算核心与完整训练循环。该部分工作提供了可运行的功能基线，也为后续比较不同计算实现、扩展卷积路径以及观察运行时开销提供了统一的实验起点。
 
-\chapter{GEMM矩阵乘法的优化}
+在此前基础上，本阶段将系统从单一的 MLP/MNIST 原型扩展为能够承载更多技术路径的实验对象。扩展内容主要包括：加入可配置的 CNN 路径，以支持卷积模型实验；围绕通用矩阵乘法（GEMM, general matrix multiplication）与卷积相关算子进行实现比较与优化；整理自动微分运行时，以便更清晰地区分框架层开销与算子层开销；引入 Tiny-ImageNet 数据集路径，用于评估当前实现对更高负载图像输入与训练流程的适配范围；并加入基于消息传递接口（MPI, message passing interface）的同步数据并行实验路径，用于考察分布式梯度同步在当前实现中的组织方式与边界。
 
-本章系统阐述矩阵乘法（GEMM，\textit{General Matrix Multiply}）的逐步优化历程。
-矩阵乘法是神经网络训练中最核心的计算操作，其性能直接决定了训练速度的上限。
-优化路径从分析OpenBLAS的多线程行为出发，经由OpenMP手动分块与打包实验，
-最终抵达具有自定义SIMD微内核的GotoBLAS架构，并在真实神经网络负载下与OpenBLAS进行全面对比。
+\subsection{报告范围与后文内容}
+本文后续内容围绕上述扩展依次展开。首先讨论 GEMM 相关实现及其比较方法，并据此说明后续实验中复用的矩阵计算配置；随后介绍卷积路径与 CNN 结构在当前代码中的实现范围；在此基础上，再说明 Tiny-ImageNet 数据集接入、输入管线与训练支撑代码的组织方式；最后讨论 MPI 分布式同步路径和自动微分运行时整理的相关内容。附录部分补充若干诊断实验与参数推导过程，用于支持正文中的实现分析与实验解释。
 
-\section{实验环境}
+\section{GEMM矩阵乘法的优化}
 
-\subsection{硬件平台}
+在当前系统中，GEMM（general matrix multiplication，通用矩阵乘法）是最核心的底层计算算子。它不仅出现在 MLP 的全连接层中，也被卷积路径中的 \texttt{im2col + matmul} 方案反复调用。因此，矩阵乘法实现的效率会直接影响单个算子的执行时间，并进一步影响后续 CNN、Tiny-ImageNet 和分布式训练实验中的总体耗时。
 
-\begin{table}[H]
-\centering
-\caption{GEMM实验硬件配置}
-\label{tab:gemm_hardware}
-\begin{tabular}{p{0.28\textwidth}p{0.62\textwidth}}
-\toprule
-\textbf{组件} & \textbf{规格} \\
-\midrule
-处理器 & AMD Ryzen 9 8940HX，x86\_64架构 \\
-物理核心/逻辑线程 & 16物理核心，32逻辑线程（每核2线程，SMT）\\
-实验限制 & 通过 \texttt{taskset -c 0-7} 限制到8个CPU，并通过 \texttt{lscpu -e=CPU,CORE,SOCKET,NODE} 验证其物理核心映射 \\
-缓存层次 & L1d 32 KiB/核，L2 1 MiB/核，L3 64 MiB（共享）\\
-运行频率 & 锁定在4.0 GHz（禁用Turbo Boost）\\
-内存 & 30 GiB \\
-\bottomrule
-\end{tabular}
-\end{table}
+本章围绕项目中实现或接入的多种 GEMM 路径展开，包括 \texttt{blas}（即项目中接入的 OpenBLAS 实现）、\texttt{omp}、\texttt{omp\_blocked}、\texttt{omp\_blocked\_packab}、\texttt{omp\_gotoblas\_avx2} 和 \texttt{omp\_gotoblas\_avx512}。这里的目的不只是对这些 backend（后端）做横向比较，而是借助 OpenMP 并行、cache blocking（缓存分块）、packing（数据打包）以及最终的 GotoBLAS 风格分层与 SIMD 微内核等手段，对当前设备上的 GEMM workload 做适配优化。
 
-\subsection{软件环境}
+具体而言，本章关注的问题包括：基础 OpenMP 并行能带来多少收益，cache blocking（缓存分块）与 packing（数据打包）是否能够改善访存行为，GotoBLAS 风格的分层结构在本项目的 workload（工作负载）上是否有效，以及 AVX2/AVX-512 微内核在不同矩阵形状和线程数下表现是否稳定。相关结果主要用于形成后续实验中复用的 \texttt{matmul} 实现配置。
 
-\begin{table}[H]
-\centering
-\caption{GEMM实验软件配置}
-\label{tab:gemm_software}
-\begin{tabular}{p{0.28\textwidth}p{0.62\textwidth}}
-\toprule
-\textbf{组件} & \textbf{版本/详情} \\
-\midrule
-操作系统 & Fedora Linux 42 \\
-编译器 & GCC 15.2.1，编译选项 \texttt{-O3 -march=native} \\
-BLAS库 & OpenBLAS（系统版本）\\
-并行模型 & OpenMP 5.0 \\
-向量指令集 & AVX2 / AVX-512（通过 \texttt{-march=native} 自动启用）\\
-\bottomrule
-\end{tabular}
-\end{table}
+\subsection{实验环境}
+除特别说明外，本章后续实验均使用附录~\ref{app:gemm_setup} 中列出的硬件环境、软件配置、测量协议和 CPU 绑定设置。GEMM 比较默认限制在 1 至 8 个物理线程，并启用 \texttt{OMP\_PROC\_BIND=true} 与 \texttt{OMP\_PLACES=cores}；只有用于诊断 SMT/超线程异常的对照实验会单独使用 16 线程配置。
 
-\subsection{测量协议}\label{subsec:gemm_protocol}
+\subsection{OpenBLAS多线程分析：超线程的代价}\label{sec:gemm_smt}
 
-为确保测量结果的可靠性，我们采用如下严格协议：
-\begin{itemize}
-    \item \textbf{预热（Warm-up）}：每组测试前执行5次预热迭代，以稳定指令缓存和数据缓存状态；
-    \item \textbf{计时}：程序内部循环2000次，使用 \texttt{std::chrono::high\_resolution\_clock} 精确计时；
-    \item \textbf{硬件计数器}：通过 \texttt{perf stat -r 3} 外部重复3次，采集指令数（Instructions）、
-          周期数（Cycles）、上下文切换（Context Switches）、CPU迁移（CPU Migrations）及缓存缺失（Cache Misses）；
-    \item \textbf{环境隔离}：关键批次之间重启系统，清空页缓存（\texttt{drop\_caches}），
-          通过 \texttt{cpupower} 锁定CPU频率，以减少系统状态异质性。
-          预热是稳定执行路径的主要机制；重启和清空页缓存仅用于降低系统整体状态带来的跨批次干扰。
-\end{itemize}
+本节比较 OpenBLAS 与基础 OpenMP GEMM 实现在 1 至 16 线程下的扩展性，观察对象是超线程（SMT）引入的调度、同步和资源竞争成本。
 
-需特别指出：\texttt{perf} 的 \texttt{:u}（用户态）修饰符会排除内核态上下文切换，
-因此本文统一使用无修饰符的 \texttt{context-switches} 捕获完整调度事件。
-此外，AMD uncore L3事件以system-wide方式采集，短窗口下易受后台进程干扰，故不用于定量比较；
-本文改用per-task的 \texttt{cache-misses} 与 \texttt{cache-references} 作为聚合性内存压力指标。
-\texttt{cache-misses} 仅用于不同配置间的相对比较，不用于精确区分L1/L2/L3来源。
-
-\paragraph{CPU余量与实验隔离。}
-本报告将GEMM实验限制在可控的CPU核心预算内，不占满全部逻辑线程，
-以为操作系统、OpenMP运行时、\texttt{perf}采集及后台服务保留余量，
-减少线程迁移、中断和非受控资源竞争。
-这一设置也便于区分两类配置：一类是限制在已验证物理核心预算内的推荐配置，
-另一类是16线程SMT/超线程压力测试配置，用于分析过度并行带来的调度与同步开销。
-
-\section{OpenBLAS多线程分析：超线程的代价}\label{sec:gemm_smt}
-
-在进行底层优化之前，我们首先系统研究了OpenBLAS的GEMM与OpenMP的GEMM基础并行实现（未进行除omp外任何优化）在1至16线程下的扩展性，
-以理解超线程（SMT）对GEMM计算任务的性能的具体影响。
-
-\subsection{初步观察}
+\subsubsection{初步观察}
 
 图~\ref{fig:blas1_scaling}展示了未绑定CPU核心时两种实现的线程扩展性。
 
@@ -262,41 +236,38 @@ OMP在64×64上执行时间从8.97~$\mu$s增至73.00~$\mu$s（退化\textbf{8.1�
     \label{fig:blas1_scaling}
 \end{center}
 
-\subsection{16线程异常的解释}
+\subsubsection{16线程异常的解释}
 
 针对OpenBLAS在128×128及以上矩阵中的16线程异常，本文的解释是：OpenBLAS的高性能内核（GotoBLAS风格实现）通常已能充分占用物理核心的FMA单元及SIMD寄存器；
 而SMT（超线程技术）不增加新的物理执行单元，两个逻辑核心共享同一套资源，因此16线程在8个物理核心上通常难以带来额外收益，反而会放大资源竞争。
 对小矩阵而言，计算量本就有限，线程在barrier处的自旋等待占比进一步上升，于是同步与调度开销更容易主导总成本；
 附录~\ref{app:smt_diagnosis}中的对照实验为这一解释提供了量化支持。
 
-其中，最直接的证据来自亲和性对照实验（实验B，OpenBLAS、16线程、128×128、5000次迭代）：绑定核心后，指令数从13.45\,B降至4.05\,B（$-69.9\%$），context switches从2{,}013降至14（$-99.3\%$），缓存缺失标准差改善约22倍。这说明调度/迁移与同步等待开销是当前最一致的主导解释，但尚不能完全排除内存带宽竞争等其他因素。
+其中，最直接的证据来自亲和性对照实验（实验B，OpenBLAS、16线程、128×128、5000次迭代）：绑定核心后，指令数从13.45\,B降至4.05\,B（$-69.9\%$），context switches从2{,}013降至14（$-99.3\%$），缓存缺失标准差改善约22倍。按这组数据，正文将16线程异常主要归因于调度/迁移与同步等待开销。
 
-附录中的另外两组结果主要起补充作用：实验A显示OMP在128×128时的每操作指令数（Instr/Op）为0.587，而1024×1024仅为0.128，说明小矩阵下固定同步开销占比会显著放大；相关的上下文切换对比见附录实验A中的图~\ref{fig:cs_comparison}。实验C则表明16线程配置在500次迭代时缓存缺失变异系数高达30.3\%，到2000次迭代降至1.4\%，说明标准2000次窗口已能提供较稳定的统计基础。本文中的IPC用作异常诊断信号，与执行时间、指令数和调度事件结合解读，不直接用于排序OMP与BLAS的优劣。
+附录中的另外两组结果主要起补充作用：实验A显示 OMP 在 128×128 时的每操作指令数（Instr/Op）为 0.587，而 1024×1024 为 0.128，小矩阵下固定同步开销占比更高；相关的上下文切换对比见附录实验A中的图~\ref{fig:cs_comparison}。实验C则表明 16 线程配置在 500 次迭代时缓存缺失变异系数为 30.3\%，到 2000 次迭代降至 1.4\%，支持正文采用 2000 次标准窗口。本文中的 IPC 用作异常诊断信号，与执行时间、指令数和调度事件结合解读。
 
-\subsection{结论：限制到物理核心，强制绑定}
+\subsubsection{结论：限制到物理核心，强制绑定}
 
 综合上述结果，16线程配置在两类实现上均不适合作为推荐配置。
-对于OpenBLAS而言，亲和性对照实验表明绑定线程可显著降低调度事件和同步等待相关指令，支持将线程数控制在物理核心预算以内。
+对于OpenBLAS而言，亲和性对照实验表明绑定线程会降低调度事件和同步等待相关指令，支持将线程数控制在物理核心预算以内。
 对于基础OpenMP而言，OMP 64×64的极端退化说明小矩阵过度并行风险较高，其成因可能涉及多种实现因素。
 
 \textbf{因此，后续所有实验均限制在1至8个物理线程，并强制启用 \texttt{OMP\_PROC\_BIND=true} 与 \texttt{OMP\_PLACES=cores}。}
 这一选择同时为系统和测量工具保留CPU余量。
 
-图~\ref{fig:blas2_scaling}展示了施加CPU亲和性约束后的完整线程扩展性对比；
-各实现均趋于稳定，BLAS在8线程下成为各矩阵尺寸的最优配置。
+图~\ref{fig:blas2_scaling}展示了施加 CPU 亲和性约束后的线程扩展性对比。
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.90\textwidth]{../output/ExperienceGEMM/BLAS2/scaling_plot_advanced.png}
-    \caption{施加CPU亲和性约束后（BLAS2）的线程扩展性对比。
-             各实现均趋于稳定，BLAS在8线程下为所有矩阵尺寸的最优选择。}
+    \caption{施加 CPU 亲和性约束后（BLAS2）的线程扩展性对比。
+             在图中覆盖的 $64\times64$ 至 $512\times512$ 方阵上，并在 8 个物理线程配置下，\texttt{blas} 相对于同图中的其他实现给出最低测得时间。}
     \label{fig:blas2_scaling}
 \end{figure}
 
 \begin{table}[H]
 \centering
-\caption{施加亲和性约束后各矩阵尺寸的最优配置（OpenBLAS）}
-\label{tab:blas_optimal}
 \begin{tabular}{lrrl}
 \toprule
 \textbf{矩阵尺寸} & \textbf{最优配置} & \textbf{性能 ($\mu$s)} & \textbf{相比单线程加速} \\
@@ -307,55 +278,40 @@ OMP在64×64上执行时间从8.97~$\mu$s增至73.00~$\mu$s（退化\textbf{8.1�
 512×512 & BLAS 8线程  & 1428.53 & $3.3\times$  \\
 \bottomrule
 \end{tabular}
+\caption{施加亲和性约束后各矩阵尺寸的最优配置（OpenBLAS）}
+\label{tab:blas_optimal}
 \end{table}
 
-\section{OpenMP分块与打包技术}
+\subsection{OpenMP分块与打包技术}
 
-在理解OpenBLAS行为的基础上，我们转向自主实现的OpenMP GEMM，
-系统探索\textbf{分块（Blocking）}和\textbf{数据打包（Packing）}技术对性能的影响。
-这一系列实验旨在通过实践理解GotoBLAS架构的核心思想。
+在 OpenBLAS 基线之后，本文继续比较自主实现的 OpenMP GEMM，并检查 \textbf{分块（Blocking）}与\textbf{数据打包（Packing）}在当前代码路径中的收益范围。
 
-\subsection{基础分块：\texttt{omp\_blocked}}
+\subsubsection{基础分块：\texttt{omp\_blocked}}
 基础 \texttt{omp} 实现采用 $ikj$ 循环顺序后，内层对 row-major 存储的 $B[k,j]$ 已经是连续访问，因此其局部性并不差。
 \texttt{omp\_blocked} 在此基础上加入 cache blocking，将 $j/k$ 方向的计算重组为由 \texttt{MATMUL\_BLOCK\_SIZE} 控制的 tile，
 并扫描 $\{32,48,64\}$ 三种块大小，在矩阵尺寸 64 至 512、线程数 1 至 8 的范围内进行测试。
 
 需要说明的是，实现中的并行任务并不直接等同于缓存块大小；为避免小矩阵下任务数不足，代码还额外计算了行方向的任务粒度。
 
-我们通过暴力枚举的方式测试了所有的分块大小，线程和矩阵大小的配置，
-结果表明，$256\times256$ 至 $512\times512$ 下 tile=64 通常较优，$64\times64$ 对块大小基本不敏感；
-但整体上，\texttt{omp\_blocked} 并未超过朴素 \texttt{omp}。这说明在当前实现中，仅加入 cache blocking 并不足以转化为实际性能收益：
-虽然它在理论上改善了访问顺序与局部性，但这些收益被额外的块边界循环、任务管理以及实现开销所抵消，因此不仅尚未接近高性能 BLAS，也未能优于现有的基础 OpenMP 版本。
+我们枚举了块大小、线程数和矩阵尺寸。结果表明，$256\times256$ 至 $512\times512$ 下 tile=64 通常较优，$64\times64$ 对块大小基本不敏感；但整体上，\texttt{omp\_blocked} 仍未超过朴素 \texttt{omp}。按当前实现，cache blocking 改善的访问顺序和局部性被块边界循环、任务管理和实现开销抵消了。
 
-\subsection{带打包的分块：\texttt{omp\_blocked\_packed}与\texttt{omp\_blocked\_packab}}
+\subsubsection{带打包的分块：\texttt{omp\_blocked\_packb}与\texttt{omp\_blocked\_packab}}
 
-基础分块只改变循环遍历顺序，并不改变矩阵在内存中的布局。因此，当内层计算反复访问同一块 $A$ 或 $B$ 面板时，
-仍可能受到步长访问、边界判断、TLB 压力以及缓存行利用率不足的影响。打包（packing）的目标，是在计算前将即将复用的面板复制到连续缓冲区，
-使后续计算面对规则、紧凑的内存布局。这一步本身有复制成本，但如果面板会被多次复用，连续访问带来的预取、缓存和向量化收益可能抵消该成本。
+基础分块只改变循环遍历顺序，不改变矩阵在内存中的布局。当内层计算反复访问同一块 $A$ 或 $B$ 面板时，仍会受到步长访问、边界判断、TLB 压力和缓存行利用率的影响。packing 的做法是在计算前把即将复用的面板复制到连续缓冲区，代价是多一次复制，收益是后续访问更规则。
 
-\texttt{omp\_blocked\_packed} 首先对 $B$ 的当前面板进行打包。这样做并不是改变 GEMM 的数学计算，而是改变内层循环看到的数据布局：
-原本来自全局矩阵的访问被转换为对连续 packed buffer 的访问，从而减少不规则寻址，并改善硬件预取器和缓存行利用率。
+\texttt{omp\_blocked\_packb} 首先对 $B$ 的当前面板进行打包。内层循环随后直接访问连续 packed buffer，从而减少不规则寻址，并改善硬件预取器和缓存行利用率。
 
-\texttt{omp\_blocked\_packab} 在此基础上进一步对 $A$ 面板进行打包，使 $A$ 与 $B$ 两侧输入都以更规则的形式进入内层计算。
-实验中分别扫描 \texttt{PACK\_M}、\texttt{PACK\_N} 与 \texttt{PACK\_K}，其中 \texttt{PACK\_K} 控制归约维度面板大小，
-对 L2 复用和打包成本之间的平衡最敏感。
+\texttt{omp\_blocked\_packab} 在此基础上进一步对 $A$ 面板进行打包，使 $A$ 与 $B$ 都以连续面板进入内层计算。实验中分别扫描 \texttt{PACK\_M}、\texttt{PACK\_N} 与 \texttt{PACK\_K}，其中 \texttt{PACK\_K} 对 L2 复用和打包成本的平衡最敏感。
 
-我们依旧通过暴力枚举的方式测试了所有的分块大小，线程和矩阵大小的配置，
-实验结果表明，A+B 双打包在较大矩阵上比单纯分块更稳定，尤其当 \texttt{PACK\_K} 位于 32 至 64 附近时表现较好。
-这说明 packing 已经开始改善数据供给路径。
+我们同样枚举了分块大小、线程数和矩阵尺寸。结果表明，A+B 双打包在较大矩阵上比单纯分块更稳定，\texttt{PACK\_K} 位于 32 至 64 附近时更常进入较优区域。正文据此保留 packing 路径进入后续实现比较。
 
-\section{GotoBLAS架构}\label{sec:gotoblas_arch}
+\subsection{GotoBLAS架构}\label{sec:gotoblas_arch}
 
-前述分块与打包实验已经改善了多线程性能，但与OpenBLAS相比仍有明显差距。
-下一步的关键在于将分块与打包进一步下沉到寄存器级计算组织，也就是引入面向SIMD寄存器优化的微内核。
+前述 blocked / packed OpenMP 路径仍落后于 OpenBLAS。后续实现采用 GotoBLAS 风格组织：三层 blocking、packed panels 和 SIMD micro-kernel。参数搜索围绕 $(M_r,N_r,K_c,M_c,N_c)$ 展开，并以项目中的 GEMM workload 为筛选对象。
 
-GotoBLAS（由Kazushige Goto开创，现由OpenBLAS继承）的核心创新在于
-将GEMM分解为\textbf{层次化缓存感知分块}，并在最内层使用\textbf{手工汇编SIMD微内核}，
-将L1/L2缓存复用最大化的同时保持寄存器级别的计算密度。
+\subsubsection{三层分块模型}
 
-\subsection{三层分块模型}
-
-GotoBLAS将 $C = A \cdot B$（规模 $M \times K \times N$）分解为三层嵌套循环，
+GotoBLAS将 $C = A \cdot B$（规模 $M \times K \times N$）分解为三层嵌套循环及最内层微内核，
 每层对应一个缓存层级：
 
 \begin{enumerate}
@@ -376,35 +332,24 @@ GotoBLAS将 $C = A \cdot B$（规模 $M \times K \times N$）分解为三层嵌�
     \label{fig:gotoblas_overview}
 \end{figure}
 
-缓存块参数通过以下原则推导：
-$M_c \times K_c \times 8$字节的A面板目标适配L1缓存（32~KiB/核）；
-$K_c \times N_c \times 8$字节的B面板目标适配L2缓存（1~MiB/核）。
-本实现的默认参数为$K_c=384$，$M_c$有效行数=64（倍率8，基于$M_r=8$），$N_c=448$，
-这些参数通过实验调优进一步验证（见第~\ref{sec:avx2_tuning}节）。
+缓存块参数按面板容量估算：$A$ 面板 $M_c \times K_c \times 4$ 字节对应 L1（32~KiB/核），$B$ 面板 $K_c \times N_c \times 4$ 字节对应 L2（1~MiB/核）。当前默认参数为 $K_c=384$、$M_c$ 有效行数 $=64$（倍率 8，基于 $M_r=8$）、$N_c=448$；这些参数在第~\ref{sec:avx2_tuning}节中继续做实验筛选。
 
-\subsection{微内核设计}\label{subsec:microkernel}
+\subsubsection{微内核设计}\label{subsec:microkernel}
 
-微内核是性能的核心。对于当前的AVX2单精度实现，$N_r$取8的倍数更容易匹配YMM寄存器的向量宽度，并减少N方向的边界处理。
-这是因为此时 float 的元素字节数为 $S_{\text{data}}=4$ 字节，而AVX2的YMM寄存器宽度为256位，
-因此每个YMM寄存器可同时处理8个\texttt{float}（$4 /times 8 /times 8 = 256$），
-沿N方向按8列或其倍数组织便于我的向量化实现。
+当前 AVX2 单精度微内核沿 $N$ 方向按 8 列组织，以匹配 YMM 向量宽度并减少边界处理。对 \texttt{float32} 路径而言，256 位 YMM 寄存器一次可覆盖 8 个 \texttt{float}，因此本实现优先筛选 $N_r$ 为 8 倍数的形状。
 
-\section{GotoBLAS单线程调优：AVX2微内核筛选}\label{sec:avx2_tuning}
+\subsection{GotoBLAS单线程调优：AVX2微内核筛选}\label{sec:avx2_tuning}
 
-理论上的参数仅为起点，实际最优参数因工作负载形状和缓存行为而异，必须通过系统实验搜索确定。
-但暴力搜索空间过大（我们要考虑6个不同的参数，一共有6个参数相乘个组合），因此需要合理的搜索策略和代表性工作负载来引导调优过程。
-本节描述针对神经网络GEMM形状的单线程调优方法论及主要结果。
+参数搜索以项目中的神经网络 GEMM 形状为对象。由于 $(M_r,N_r,K_c,M_c,N_c)$ 的组合空间过大，本文采用分阶段筛选：先缩减候选，再对保留形状做单线程实验。
 
-\subsection{对Nr和Mr的搜索策略}
+\subsubsection{对Nr和Mr的搜索策略}
 
-为避免对 $(M_r,N_r)$ 与缓存块参数进行完全暴力搜索，本文先依据 AVX2 \texttt{float32} 的向量宽度、吞吐隐藏条件与寄存器预算，对微内核形状进行预筛选。最终保留的候选集合为 $\{(8,8),(12,8),(13,8),(4,16),(5,16),(6,16)\}$，详细推导见附录~\ref{app:avx2_tuning}。
+为避免对 $(M_r,N_r)$ 与缓存块参数进行完全暴力搜索，本文先依据 AVX2 \texttt{float32} 的向量宽度、吞吐隐藏条件与寄存器预算，对微内核形状进行预筛选。最终保留的候选集合为 $\{(8,8),(12,8),(13,8),(4,16),(5,16),(6,16)\}$，详细推导见附录~\ref{app:blocked_size_tuning}。
 
 因此为了做性能对比，本项目实现的AVX2微内核列举如下：
 
 \begin{table}[H]
 \centering
-\caption{已实现的GotoBLAS AVX2微内核}
-\label{tab:kernels_avx2}
 \begin{tabular}{lrrl}
 \toprule
 \textbf{内核名称} & $M_r$ & $N_r$ & \textbf{主要特点} \\
@@ -417,16 +362,16 @@ $K_c \times N_c \times 8$字节的B面板目标适配L2缓存（1~MiB/核）。
 \texttt{avx2\_6x16} & 6  & 16 & 中等$M$，宽N \\
 \bottomrule
 \end{tabular}
+\caption{已实现的GotoBLAS AVX2微内核}
+\label{tab:kernels_avx2}
 \end{table}
 
-\subsection{$k_c$ 的缓存模型和搜索策略}
+\subsubsection{$k_c$ 的缓存模型和搜索策略}
 
-在保留的6种 AVX2 微内核形状上，本文不再对 $K_c$ 做无约束暴力枚举，而是先依据当前 AVX2 \texttt{float32} 路径下的 L1 容量、对齐粒度与 page-footprint / TLB 约束，对每个 $(M_r,N_r)$ 生成一组离散 $K_c$ 候选。正文只给出最终进入第一轮单线程筛选的候选集合，完整推导见附录~\ref{app:blocked_size_tuning}。
+在保留的 6 种 AVX2 微内核形状上，本文先依据当前 AVX2 \texttt{float32} 路径下的 L1 容量、对齐粒度与 page-footprint / TLB 约束，对每个 $(M_r,N_r)$ 生成一组离散 $K_c$ 候选。正文只给出进入第一轮单线程筛选的候选集合，完整推导见附录~\ref{app:blocked_size_tuning}。
 
 \begin{table}[H]
 \centering
-\caption{各 AVX2 微内核形状对应的第一轮 $K_c$ 候选}
-\label{tab:kc_candidates}
 \begin{tabular}{l l}
 \toprule
 \textbf{内核形状} & \textbf{$K_c$ 候选集合} \\
@@ -439,17 +384,17 @@ $K_c \times N_c \times 8$字节的B面板目标适配L2缓存（1~MiB/核）。
 \texttt{6x16} & $\{128,160,224\}$ \\
 \bottomrule
 \end{tabular}
+\caption{各 AVX2 微内核形状对应的第一轮 $K_c$ 候选}
+\label{tab:kc_candidates}
 \end{table}
 
-\subsection{$m_c$ 与 $n_c$ 的候选结果}
+\subsubsection{$m_c$ 与 $n_c$ 的候选结果}
 
 在给定 $(M_r,N_r,K_c)$ 后，$M_c$ 与 $N_c$ 的基础候选同样先由 cache 尺度关系生成，再用 page-footprint / TLB 约束做一次裁剪。第一轮 coarse screening 覆盖全部保留的 $(M_r,N_r,K_c)$ 组合；在此基础上，本文仅对单线程结果中更有竞争力的 5 组 \texttt{KernelShape/Kc} 继续做第二轮精筛。正文直接给出第二轮实际使用的更密搜索网格，详细生成过程见附录~\ref{app:blocked_size_tuning}。
 
 \begin{table}[H]
 \centering
-\caption{第二轮精筛使用的 $M_c/N_c$ 候选网格}
-\label{tab:mc_nc_round2}
-\begin{tabular}{lllp{0.22\textwidth}p{0.22\textwidth}r}
+\begin{tabular}{lll l p{0.22\textwidth} p{0.22\textwidth} r}
 \toprule
 \textbf{内核} & \textbf{$M_r$} & \textbf{$N_r$} & \textbf{$K_c$} & \textbf{$M_c$ 候选} & \textbf{$N_c$ 候选} & \textbf{组合数} \\
 \midrule
@@ -460,45 +405,17 @@ $K_c \times N_c \times 8$字节的B面板目标适配L2缓存（1~MiB/核）。
 \texttt{4x16} & 4 & 16 & 320 & $\{96,128,160\}$      & $\{384,448,512,576\}$ & 12 \\
 \bottomrule
 \end{tabular}
+\caption{第二轮精筛使用的 $M_c/N_c$ 候选网格}
+\label{tab:mc_nc_round2}
 \end{table}
 
-因此，第二轮总候选数为 $16+12+20+15+12=75$。这些组合并非从零重新扩展搜索面，而是在第一轮已知优胜区域附近做局部加密，用于提高单线程 blocked-size 结论的稳定性。
+因此，第二轮总候选数为 $16+12+20+15+12=75$。这些组合围绕第一轮已知优胜区域做局部加密，用于提高单线程 blocked-size 结论的稳定性。
 
-\subsection{测试工作负载}
+\subsubsection{测试工作负载与搜索协议}
 
-参照项目MLP和CNN的实际层形状，定义了4个代表性工作负载族（Workload Family）：
+单线程调优所使用的代表性工作负载，以及两轮参数搜索的具体组织方式见附录~\ref{app:gemm_setup}。正文以下内容只保留筛选结果与由此得到的配置选择。
 
-\begin{table}[H]
-\centering
-\caption{单线程调优使用的代表性工作负载（batch=32）}
-\label{tab:tuning_workloads}
-\begin{tabular}{llrrr}
-\toprule
-\textbf{工作负载族} & \textbf{来源层} & $M$ & $K$ & $N$ \\
-\midrule
-fc\_forward\_mainstream & MLP FC1（hidden=128） & 32 & 784 & 128 \\
-fc\_head\_small\_n      & MLP FC2（output）      & 32 & 128 & 10  \\
-conv\_dx\_skinny\_k     & CNN Conv2 backward     & 3200 & 16 & 150 \\
-fc\_wide\_output        & MLP FC1（hidden=256）  & 32 & 784 & 256 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{两轮搜索策略}
-
-\textbf{第一轮（全局候选筛选）}：
-对所有6种AVX2内核，在各工作负载上扫描多个$(M_c, N_c, K_c)$组合（共272个候选）。
-每候选运行1000次取中位时间，并辅以5次\texttt{perf stat}采样记录硬件计数器。
-采用分阶段扫描策略：先固定$M_c, N_c$扫$K_c$，再固定最优$K_c$扫$M_c$，最后精扫$N_c$，
-使得性能变化可明确归因于单一参数轴。
-
-\textbf{第二轮（局部精细化）}：
-保留第一轮中在主流FC形状上表现最佳的5个\texttt{KernelShape/Kc}组合：
-\texttt{8x8/Kc=288}、\texttt{8x8/Kc=384}、\texttt{4x16/Kc=192}、
-\texttt{4x16/Kc=256}、\texttt{4x16/Kc=320}，
-在其最优区域周围加密$M_c, N_c$搜索网格（每行约75个组合），进一步精确定位最优参数。
-
-\subsection{调优结果}
+\subsubsection{调优结果}
 
 图~\ref{fig:avx2_heatmap}展示了第一轮搜索结果的热图，
 颜色越深（绿色）代表与最优自定义实现的差距越小。
@@ -514,8 +431,6 @@ fc\_wide\_output        & MLP FC1（hidden=256）  & 32 & 784 & 256 \\
 
 \begin{table}[H]
 \centering
-\caption{AVX2单线程调优：各工作负载族的最佳配置及与OpenBLAS单线程的对比}
-\label{tab:avx2_tuning_results}
 \begin{tabular}{p{0.24\textwidth}lrrrrrr}
 \toprule
 \textbf{工作负载族} & \textbf{最优内核} & $M_c$ & $N_c$ & $K_c$ &
@@ -529,6 +444,8 @@ conv\_dx (b32)    & 8x8  & 160 & 640 & 288 & 744.3 & 647.3 & $-13\%$ \\
 fc\_wide (b32)    & 4x16 & 128 & 768 & 256 & 136.5 & 122.2 & $-10\%$ \\
 \bottomrule
 \end{tabular}
+\caption{AVX2单线程调优：各工作负载族的最佳配置及与OpenBLAS单线程的对比}
+\label{tab:avx2_tuning_results}
 \end{table}
 
 结果揭示了两类性能差距：
@@ -541,40 +458,40 @@ fc\_wide (b32)    & 4x16 & 128 & 768 & 256 & 136.5 & 122.2 & $-10\%$ \\
 极小的$N$无法形成有效的$N_r$寄存器tile，导致大量边界处理开销。
 OpenBLAS对退化形状有专用代码路径，而本实现尚未针对此类形状优化。
 
-\subsection{最终AVX2配置与AVX-512简介}\label{sec:avx512_brief}
+\subsubsection{最终AVX2配置与AVX-512简介}\label{sec:avx512_brief}
 
-综合单线程调优结果，选定如下固定配置用于多线程实验：
+综合单线程调优结果，后续多线程实验固定使用如下 AVX2 配置：
 \[
 \texttt{avx2\_8x8},\quad K_c = 384,\quad M_c = 64,\quad N_c = 448
 \]
-其中$M_c=64$为有效行数（即$M_c$倍率$\times M_r = 8 \times 8$）。
-这是在多个工作负载族上性能均衡的保守选择。
+其中$M_c=64$为有效行数（代码常量 \texttt{kCacheBlockM}$=8$，有效值$= \texttt{kCacheBlockM} \times M_r = 8 \times 8 = 64$）。
+该配置来自前述 workload 集合上的单线程筛选结果。
 
-AVX-512微内核（ZMM寄存器，512位，每次处理8个double）同样经过两阶段调优。
+AVX-512微内核同样面向当前项目统一的 \texttt{float32}/\texttt{Scalar=float} 数据路径进行调优。对于 512 位的 ZMM 寄存器，这意味着单个向量可容纳 16 个 \texttt{float}；在 \texttt{avx512\_8x32} 这种 $N_r=32$ 的微内核中，N 方向通常以两个 ZMM 向量分块处理。
 \texttt{avx512\_8x32}（$M_r=8, N_r=32$）在单次FMA中可积累 $8 \times 32 = 256$ 个元素，
 理论峰值FLOP/周期是AVX2 8×8内核的两倍。
-最终选定：$\texttt{avx512\_8x32},\ K_c=160,\ M_c=64,\ N_c=448$（$M_c$有效行数为64）。
+最终选定：$\texttt{avx512\_8x32},\ K_c=160,\ M_c=64,\ N_c=448$（$M_c$有效行数为64；$K_c=160$为实验调优值，通过 \texttt{MATMUL\_KC=160} 在运行时传入，与 AVX2 路径的编译常量 \texttt{kCacheBlockK}$=384$ 性质不同）。
 AVX2 blocked-size 候选集合的详细推导见附录~\ref{app:blocked_size_tuning}。
 
-\section{GotoBLAS多线程并行策略与参数调优}\label{sec:gotoblas_mt}
+\subsection{GotoBLAS多线程并行策略与参数调优}\label{sec:gotoblas_mt}
 
-单线程调优确定了最优内核形状和块参数。进入多线程场景后，当前实现一方面继续使用运行时给定的$M_c, N_c, K_c$作为缓存分块参数，另一方面在并行调度层额外引入了随线程数变化的任务粒度。也就是说，代码并不是简单按固定$M_c$把工作平均切开，而是在$ic/M$维上根据线程数计算更细的\texttt{task\_m}，以便在小规模矩阵下产生更多任务，减少线程空闲。
+单线程调优确定了最优内核形状和块参数。进入多线程场景后，当前实现继续使用运行时给定的 $M_c, N_c, K_c$ 作为缓存分块参数，并在并行调度层引入随线程数变化的任务粒度：代码在 $ic/M$ 维上根据线程数计算更细的 \texttt{task\_m}，以便在小规模矩阵下产生更多任务，减少线程空闲。
 
-\subsection{线程感知块参数调优}
+\subsubsection{线程感知块参数调优}
 
 在当前代码中，线程感知主要体现在调度粒度而非缓存块参数本身。也就是说，进入并行区后程序会根据线程数计算更细的 \texttt{task\_m}，而强扩展性实验本身只使用最终选定的固定 blocked-size 配置，不再展开其中间调参与推理过程。
 
-本文后续强扩展性实验采用的固定配置为：AVX2 路径使用 $\texttt{avx2\_8x8},\ K_c=384,\ M_c=8,\ N_c=448$，AVX-512 路径使用 $\texttt{avx512\_8x32},\ K_c=160,\ M_c=8,\ N_c=448$。图~\ref{fig:mc_nc_heatmap_t4} 仅作为代表性示意，说明在当前线程感知调度下，$M_c$ 是更敏感的主导变量，而 $N_c$ 更接近宽平台参数。
+本文后续强扩展性实验采用的固定配置为：AVX2 路径使用 $\texttt{avx2\_8x8},\ K_c=384,\ M_c=64,\ N_c=448$，AVX-512 路径使用 $\texttt{avx512\_8x32},\ K_c=160,\ M_c=64,\ N_c=448$。其中 $M_c=64$ 为有效行数（代码常量 \texttt{kCacheBlockM}$=8$，有效值$= 8 \times M_r = 8 \times 8 = 64$）。图~\ref{fig:mc_nc_heatmap_t4} 中热图的横轴对应 \texttt{kCacheBlockM} 取值，高性能区域集中在 \texttt{kCacheBlockM}$=8$（即有效 $M_c=64$）一行，而 $N_c$ 方向表现为相对平坦的平台。
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.84\textwidth]{../Docs/report/image-3.png}
-    \caption{线程感知 $M_c/N_c$ 调优的代表性热图（$T=4$，\texttt{fc\_wide\_output\_nn}）。
-             可以看到高性能区域主要集中在 $M_c=8$ 一行，而 $N_c$ 方向表现为相对平坦的平台。}
+    \caption{线程感知 \texttt{kCacheBlockM}/$N_c$ 调优的代表性热图（$T=4$，\texttt{fc\_wide\_output\_nn}）。
+             高性能区域主要集中在 \texttt{kCacheBlockM}$=8$（有效 $M_c=64$）一行，而 $N_c$ 方向表现为相对平坦的平台。}
     \label{fig:mc_nc_heatmap_t4}
 \end{figure}
 
-\subsection{强扩展性实验（Strong Scaling）}
+\subsubsection{强扩展性实验（Strong Scaling）}
 
 以固定问题规模、变化线程数（$T \in \{1,2,4,8\}$）的强扩展性实验，
 对比了AVX2 GotoBLAS、AVX-512 GotoBLAS与OpenBLAS三种实现，
@@ -582,8 +499,6 @@ AVX2 blocked-size 候选集合的详细推导见附录~\ref{app:blocked_size_tun
 
 \begin{table}[H]
 \centering
-\caption{强扩展性实验：各线程数下的几何平均GFLOPS（跨9个工作负载）}
-\label{tab:strong_scaling}
 \begin{tabular}{lrrrrrr}
 \toprule
 \textbf{实现} & \multicolumn{4}{c}{\textbf{几何平均GFLOPS}} & \textbf{8T加速比} & \textbf{8T并行效率} \\
@@ -595,40 +510,19 @@ AVX512 GotoBLAS  & 27.6 & 45.0 & 67.4 & 89.4  & $3.23\times$ & $40.4\%$ \\
 OpenBLAS         & 43.4 & 67.5 & 101.1 & 118.2 & $2.72\times$ & $34.0\%$ \\
 \bottomrule
 \end{tabular}
+\caption{强扩展性实验：各线程数下的几何平均GFLOPS（跨9个工作负载）}
+\label{tab:strong_scaling}
 \end{table}
 
-从结果看，OpenBLAS在几何平均意义下仍保持最高绝对性能，但两条 GotoBLAS 路径的8线程加速比均达到 $3.23\times$，高于 OpenBLAS 的 $2.72\times$，说明其并行扩展性更好；同时，AVX-512 GotoBLAS 的整体表现也始终略优于 AVX2 GotoBLAS。按8线程逐形状看，GotoBLAS 相对 OpenBLAS 的优势仍明显依赖问题形状：256×256方阵与 $3200\times16\times150$ 的极瘦 $K$ 形状更有竞争力，而 512×512 方阵、$3200\times150\times16$ 以及 $32\times784\times128$ 等形状仍由 OpenBLAS 占优。
+表~\ref{tab:strong_scaling} 的统计口径是 9 个 fixed-config workload 的几何平均。按这一口径，8 线程下 AVX2 和 AVX512 GotoBLAS 的 speedup 均为 $3.23\times$，OpenBLAS 为 $2.72\times$。逐 workload 的结果则来自 fixed-config strong-scaling comparison：在多数 workload 上，OpenBLAS 的绝对 GFLOPS 更高；GotoBLAS 路径主要用于比较 blocking、packing 和 OpenMP 组织，并在部分方阵和少数卷积相关 GEMM 形状上保持竞争力。
 
-\begin{table}[H]
-\centering
-\caption{8线程下各工作负载的性能赢家}
-\label{tab:winners_8t}
-\begin{tabular}{p{0.20\textwidth}lrrrrl}
-\toprule
-\textbf{工作负载族} & \textbf{形状} ($M{\times}K{\times}N$) &
-\textbf{AVX2} & \textbf{AVX512} & \textbf{OpenBLAS} & \textbf{最佳差距} & \textbf{赢家} \\
- & & \textbf{(G)} & \textbf{(G)} & \textbf{(G)} & & \\
-\midrule
-方阵 256×256     & 256×256×256    & 297.6 & 333.7 & 261.2 & +28\% & \textbf{AVX512} \\
-conv\_dx\_skinny & 3200×16×150    & 132.0 & 135.7 & 102.9 & +28\% & \textbf{AVX512} \\
-方阵 512×512     & 512×512×512    & 353.8 & 394.3 & 436.3 & $-10\%$ & OpenBLAS \\
-conv\_fwd medium & 3200×150×16    & 192.3 & ---   & 222.0 & $-13\%$ & OpenBLAS \\
-fc\_forward      & 32×784×128     & 83.5  & 101.9 & 156.2 & $-35\%$ & OpenBLAS \\
-\bottomrule
-\end{tabular}
-\end{table}
+\subsection{Unrolled+Prefetch实现思路}
 
-\section{Unrolled+Prefetch实现思路}
+在 AVX2 GotoBLAS 与 AVX-512 微内核完成基础调优后，代码又增加了一条 \textbf{unrolled+prefetch} 路径。该路径保留原有 blocked+packed 结构，只在 \texttt{src/gemm/GEMMGotoBLAS.cpp} 的最内层执行阶段加入循环展开（如 \texttt{GEMM\_UNROLL\_4}）和 \texttt{\_\_builtin\_prefetch}。它作用于 packed $A/B$ 面板的连续访问路径，统计范围仍与前文相同。
 
-在完成 AVX2 GotoBLAS 与 AVX-512 微内核的基础调优之后，本文进一步尝试了一条 \textbf{unrolled+prefetch} 路径。它并不改变前文的 blocked GEMM 总体结构，也不重新定义 $(M_r,N_r,K_c,M_c,N_c)$ 的分块语义；其核心目标是在保持 packed-panel 数据流不变的前提下，通过更激进的内层展开和显式软件预取，进一步改善流水线利用率与数据供给。
+\subsection{固定方阵上的线程扩展补充实验}
 
-这一实现思路直接体现在当前 \texttt{src/gemm/GEMMGotoBLAS.cpp} 中。首先，packed $A$ 与 packed $B$ 的 $k$ 方向主循环继续沿用 rank-1 update 形式，但在微内核内部加入了编译器引导的循环展开（如 \texttt{GEMM\_UNROLL\_4}），以减少分支与循环控制开销，并提高 FMA 指令的连续发射密度。其次，代码在 packed panel 的 $k$ 方向迭代中显式调用 \texttt{\_\_builtin\_prefetch}，对未来若干步将访问的 packed $A/B$ 数据做 L1 预取；在 packing 循环中也保留了相同思路，使数据在进入微内核前就尽量处于更有利的缓存状态。
-
-因此，\textbf{unrolled+prefetch} 可以理解为建立在现有 GotoBLAS 路径之上的一次局部执行优化：分块层次、打包方式和微内核形状仍然由前文参数决定，而新增的展开与预取主要作用于 packed 数据已经连续化之后的最内层执行阶段。它的收益理论上更依赖于两个前提：一是 packed panel 的访问顺序已经足够规则，显式预取不会被随机 stride 抵消；二是问题规模足够大，使得减少循环控制开销和改善 L1 数据供给能够转化为稳定的吞吐提升。后文中若将该路径单独列出，可将其理解为“在 GotoBLAS blocked+packed 框架上进一步加入 loop unrolling 与 software prefetch”的实现变体。
-
-\section{固定方阵上的线程扩展补充实验}
-
-除前述真实工作负载外，本文还对 64×64、128×128、256×256 和 512×512 四组固定方阵做了多实现线程扩展补充实验。该实验由脚本 \texttt{scripts/ExperienceGEMM/find\_optimal\_threads.sh} 统一驱动，对 \texttt{blas}、\texttt{omp}、\texttt{omp\_blocked}、\texttt{omp\_blocked\_packab}、\texttt{omp\_gotoblas\_avx2}、\texttt{omp\_gotoblas\_avx512}与\texttt{omp\_unroll\_prefetch} 七种实现进行同口径测量；而 \texttt{scripts/ExperienceGEMM/find\_optimal\_threads\_avx512.sh} 则用于对 AVX-512 路径做单独复查。图~\ref{fig:scaling_4way_all_impls} 只展示 1--8 个物理线程范围内的结果。
+除前述项目 workload 外，本文还对 64×64、128×128、256×256 和 512×512 四组固定方阵做了多实现线程扩展补充实验。该实验由脚本 \texttt{scripts/ExperienceGEMM/find\_optimal\_threads.sh} 统一驱动，测量 \texttt{blas}、\texttt{omp}、\texttt{omp\_blocked}、\texttt{omp\_blocked\_packab}、\texttt{omp\_gotoblas\_avx2} 与 \texttt{omp\_gotoblas\_avx512} 六种实现；另由 \texttt{scripts/ExperienceGEMM/find\_optimal\_threads\_avx512.sh} 单独采集 unroll+prefetch 路径的数据，在绘图时以 \texttt{omp\_unroll\_prefetch} 为标签合并到同一图中。图~\ref{fig:scaling_4way_all_impls} 只展示 1--8 个物理线程范围内的结果。
 
 \begin{figure}[H]
     \centering
@@ -637,16 +531,16 @@ fc\_forward      & 32×784×128     & 83.5  & 101.9 & 156.2 & $-35\%$ & OpenBLAS
     \label{fig:scaling_4way_all_impls}
 \end{figure}
 
-从结果看，64×64 下 OpenBLAS 基本保持单线程路径，线程数变化对其影响很小，而各类 OpenMP 路径只有在 4--8 线程附近才接近其性能；进入 128×128 至 512×512 后，GotoBLAS 两条路径都呈现出比基础 \texttt{omp}、\texttt{omp\_blocked} 与 \texttt{omp\_blocked\_packab} 更好的扩展趋势。与此同时，AVX-512 路径整体上通常略优于 AVX2 路径，但这种优势并不总是压倒性的；对当前平台而言，真正决定胜负的仍是矩阵规模与问题形状，而不是仅仅从 ISA 名称出发做静态判断。
+图~\ref{fig:scaling_4way_all_impls} 显示，64×64 下 OpenBLAS 基本保持单线程路径，线程数变化对其影响较小，各类 OpenMP 路径在 4--8 线程附近才接近其性能；128×128 至 512×512 的区间里，GotoBLAS 两条路径的时间曲线下降更快。AVX-512 路径整体上通常略优于 AVX2 路径，这一观察限定在该图覆盖的固定方阵与 1--8 线程范围内。
 
 
-\chapter{卷积的优化}
+\section{卷积的优化}
 
-前一章讨论了 CNN 主线是如何在现有框架中接入的；但当网络从 MLP 过渡到卷积结构之后，真正的工程挑战并不只在于“能不能算”，而在于“能不能在更真实的训练规模下高效地算”。本章因此不再局限于卷积公式本身，而是围绕当前 CNN 训练主线上的几个关键瓶颈展开：同步数据并行中的梯度通信、自动求导运行时的执行成本，以及在这些框架层开销下降之后重新暴露出来的卷积算子热点。
+本章只讨论三个对当前训练时间占比有直接影响的实现：CNN reference 卷积路径、MPI 梯度同步和 autodiff runtime。
 
-\section{卷积层的实现方式}
+\subsection{卷积层的实现方式}
 
-\texttt{Conv2DLayer} 的核心设计是将卷积计算转换为矩阵乘法，而不是直接编写四重或五重嵌套循环的朴素卷积。具体来说，当前实现采用 \texttt{im2col} 技术，将输入特征图中每个滑动窗口展开为一行，从而把卷积前向传播改写成一次标准 GEMM：
+\texttt{Conv2DLayer} 在 reference backend 中把卷积前向改写为 \texttt{im2col} 后的一次 GEMM：
 \[
 \texttt{im2col}(X) \in \mathbb{R}^{(N \cdot H_{out} \cdot W_{out}) \times (C_{in}\cdot k_H \cdot k_W)},
 \]
@@ -657,28 +551,50 @@ W \in \mathbb{R}^{C_{out} \times (C_{in}\cdot k_H \cdot k_W)},
 Y = \texttt{im2col}(X)\cdot W^T + b.
 \]
 
-这种写法的关键价值在于，卷积层并不需要自行维护一套全新的高性能乘法内核，而是可以直接复用项目中已经存在的 \texttt{MathOps::matmul} 路径。换句话说，卷积计算被约化为“先做数据重排，再调用成熟的矩阵乘法实现”。这既降低了实现复杂度，也为后续卷积优化与 GEMM 优化之间建立了直接联系。
+这一选择复用了 \texttt{MathOps::matmul} 路径。在当前实现中，卷积成本分布在 \texttt{im2col}、GEMM、输出重排、\texttt{dW/dX} 和 \texttt{col2im} 这些阶段上。本节分析仅针对这条 \texttt{im2col/GEMM/col2im} 链路。
 
-与此同时，这种实现选择也决定了后续性能分析的关注点。当前卷积路径的成本并不只来自“卷积公式”本身，而是来自 \texttt{im2col}、GEMM、以及 backward 中的 \texttt{col2im} 和梯度矩阵乘法等一整条链路。因此，后文讨论的卷积热点、autograd hot path 以及 CPU backend 限制，都应理解为对这条 \texttt{im2col/GEMM/col2im} 实现路径的分析，而不是对抽象卷积算子做脱离实现的理论讨论。
+\subsection{卷基层并行化与优化策略}
 
-\chapter{CNN架构的实现}
+若使用默认的 \texttt{reference} CPU backend，卷积层走 \texttt{im2col + GEMM}；若显式选择 \texttt{--conv\_backend onednn}，则走 oneDNN primitives；仓库中还保留了受宏和环境变量控制的实验性 cuDNN forward/backward 分支。本节只讨论 reference CPU 路径，不把 oneDNN 或实验性 GPU 分支并入同一结论。
 
-本项目在原有 MLP 训练框架之上加入了一条面向图像结构的 CNN 主线。这里的实现目标并不是一开始就追求 ResNet 级别的高度模块化或复杂组件，而是在尽量少改动现有系统的前提下，使卷积网络能够复用既有的自动求导、优化器、数据加载与训练循环。基于这一原则，当前实现选择了一套接近 LeNet-5 的最小 CNN 结构，并围绕 \texttt{Conv2D}、\texttt{MaxPool2D} 与网络抽象接口做增量扩展。
+本节依赖两类证据：reference backend 的 \texttt{PROFILE\_OPS} 计时项，以及 \texttt{tests/test\_conv2d\_backend\_benchmark.cpp} 提供的 forward、forward+backward 和 mini-CNN train step 对照。这里不尝试给出 oneDNN 与 cuDNN 的统一结论。
 
-\section{整体实现思路}
+\subsubsection{并行化切分策略}
 
-CNN 的接入遵循“最小侵入”原则。训练器、损失函数、优化器以及底层 \texttt{Node}/\texttt{Matrix} 计算框架尽量保持不变，仅在网络抽象层引入统一接口 \texttt{NeuralNetwork}，使原有的 \texttt{MLPNetwork} 与新增的 \texttt{LeNetNetwork} 都能够被同一套训练逻辑调用。这样做的直接好处是：一方面避免为 CNN 重写训练主循环，另一方面也保证了 MLP 与 CNN 在参数管理、反向传播和优化步骤上的一致性。
+当前 reference 路径按输出元素切分。前向中，\texttt{im2col} 按样本和输出空间位置展开，输出重排与 bias 累加按样本和输出通道组织；反向中，\texttt{grad\_reshape}、\texttt{dW} 和 \texttt{dX} 延续同一组织方式，\texttt{col2im} 在每个样本私有的输入梯度区域内散射累加。GEMM 本体继续委托给底层 \texttt{matmul} 路径，以避免跨线程写冲突。对于较小输入、较小 batch 或较小通道数，OpenMP 调度、barrier 和线程迁移的固定成本会更显眼。
 
-从软件分层上看，当前实现仍然沿用原有的三层结构：底层是 \texttt{Matrix} 提供的矩阵存储与矩阵乘法，中间层是 \texttt{Node}/\texttt{MathOps} 提供的计算图与自动求导，上层则是在此基础上新增 \texttt{Conv2DLayer}、\texttt{MaxPool2DLayer} 和 \texttt{LeNetNetwork}。因此，CNN 并不是独立于现有框架重新实现的一套系统，而是建立在既有 autodiff 引擎之上的结构扩展。
+\subsubsection{实现细节与工程取舍}
 
-\section{LeNet 风格网络结构}
+reference 路径的代码调整集中在三点：\texttt{im2col/col2im} 的循环顺序按 \texttt{Matrix} 行主序组织；反向传播显式保存 \texttt{cols}、形状元数据和必要 context；OpenMP 循环统一采用 \texttt{schedule(static)}，并且只在 \texttt{CNN\_PARALLEL=1} 时开启。前向、反向公式和现有 autodiff、optimizer 流程不变。
 
-当前 CNN 主线采用一套适配 MNIST 的 LeNet 风格结构。输入仍保持与原项目一致的扁平形式，即每个样本先以 $(N,784)$ 进入网络；进入 CNN 后，再在前向传播内部解释为 $(N,1,28,28)$ 的单通道图像。网络主体由两层卷积、两层池化和三层全连接组成，如表~\ref{tab:cnn_architecture} 所示。
+\subsubsection{实验协议与对照设置}
+
+当前仓库已经为卷积路径保留了较明确的 profiling 与 benchmark 入口。例如，reference backend 会分别记录 \texttt{conv2d\_forward\_im2col}、\texttt{conv2d\_forward\_gemm}、\texttt{conv2d\_forward\_bias\_reshape}、\texttt{conv2d\_backward\_grad\_reshape}、\texttt{conv2d\_backward\_dW\_gemm}、\texttt{conv2d\_backward\_dX\_gemm} 与 \texttt{conv2d\_backward\_col2im} 等分项计时；另有 \texttt{tests/test\_conv2d\_backend\_benchmark.cpp} 用于对 reference 与 oneDNN backend 做 forward、forward+backward 以及 mini-CNN train step 级别的对照。
+
+实验协议固定硬件、线程数、输入形状和 batch 配置，并分别观察 \texttt{im2col}、卷积 GEMM、\texttt{col2im} 与 backward 相关阶段耗时。只看 GEMM 不足以区分计算、重排和调度开销。
+
+\subsubsection{结果分析：范围与边界}
+
+\texttt{PROFILE\_OPS} 计数项和 backend benchmark 的统计口径是整条 \texttt{im2col/GEMM/post-process/col2im} 链路。在较小问题规模下，这套协议主要暴露 OpenMP 调度的固定成本；在更重的配置下，benchmark 会分别给出 \texttt{conv2d\_forward\_im2col}、\texttt{conv2d\_forward\_gemm}、\texttt{conv2d\_backward\_dX\_gemm}、\texttt{conv2d\_backward\_dW\_gemm} 和 \texttt{conv2d\_backward\_col2im} 等计时项。
+
+\subsubsection{小结}
+
+本节结论限定在默认的 reference CPU backend。证据来自 \texttt{PROFILE\_OPS} 和 \texttt{tests/test\_conv2d\_backend\_benchmark.cpp}；分析对象是 \texttt{im2col}、GEMM、\texttt{col2im} 以及 backward 相关阶段。
+
+\section{CNN架构的实现}
+
+本章说明当前 CNN 路径如何接入现有训练框架。代码通过 \texttt{NeuralNetwork} 接口复用训练器、优化器、自动求导和数据加载；新增部分集中在 \texttt{Conv2D}、\texttt{MaxPool2D} 和 \texttt{CNNNetwork}。
+
+\subsection{整体实现思路}
+
+CNN 的接入保持原有训练器、损失函数、优化器以及 \texttt{Node}/\texttt{Matrix} 计算框架不变，只在网络抽象层增加统一接口 \texttt{NeuralNetwork}，让 \texttt{MLPNetwork} 与 \texttt{CNNNetwork} 共用训练逻辑。软件分层也保持原状：底层是 \texttt{Matrix} 与矩阵乘法，中间层是 \texttt{Node}/\texttt{MathOps}，上层新增 \texttt{Conv2DLayer}、\texttt{MaxPool2DLayer} 和 \texttt{CNNNetwork}。
+
+\subsection{LeNet 风格网络结构}
+
+当前 CNN 路径采用一套适配 MNIST 的 LeNet 风格结构。每个样本先以 $(N,784)$ 进入网络，再在前向传播内部解释为 $(N,1,28,28)$ 的单通道图像。网络主体由两层卷积、两层池化和三层全连接组成，如表~\ref{tab:cnn_architecture} 所示。
 
 \begin{table}[H]
 \centering
-\caption{当前 CNN 主线的网络结构}
-\label{tab:cnn_architecture}
 \begin{tabular}{p{0.06\textwidth}p{0.28\textwidth}p{0.20\textwidth}p{0.20\textwidth}p{0.12\textwidth}}
 \toprule
 \textbf{\#} & \textbf{层} & \textbf{输入} & \textbf{输出} & \textbf{参数量} \\
@@ -695,11 +611,13 @@ CNN 的接入遵循“最小侵入”原则。训练器、损失函数、优化�
 10 & Linear $84 \rightarrow 10$ & $(N,84)$ & $(N,10)$ & 850 \\
 \bottomrule
 \end{tabular}
+\caption{当前 CNN 路径的网络结构}
+\label{tab:cnn_architecture}
 \end{table}
 
-整套网络总计约 $61706$ 个可训练参数。与更深的现代 CNN 相比，这个规模并不大，但对于当前项目而言已经足以体现卷积、池化、特征展平以及分类头之间的基本协作关系，也能够在 MNIST 和后续更复杂图像任务上作为卷积主线的起点。
+整套网络总计约 $61706$ 个可训练参数。这个规模对应当前的 MNIST CNN 路径，并覆盖卷积、池化、特征展平和分类头四类计算。
 
-\section{前向数据流与形状传播}
+\subsection{前向数据流与形状传播}
 
 该网络的前向数据流可以概括为：
 \[
@@ -715,111 +633,141 @@ CNN 的接入遵循“最小侵入”原则。训练器、损失函数、优化�
 \rightarrow \text{Logits}.
 \]
 
-这里一个重要实现选择是：项目没有单独引入 \texttt{Tensor4D} 之类的新数据结构，而是继续使用统一的 \texttt{Matrix} 作为底层存储。也就是说，逻辑上的四维张量 $(N,C,H,W)$ 在内存中仍被展平为二维矩阵 \texttt{Matrix(N, C*H*W)}，再通过形状参数解释其语义。对某个元素 $(n,c,h,w)$，其线性索引可写为
+这里的实现选择是继续使用统一的 \texttt{Matrix} 作为底层存储，而不单独引入 \texttt{Tensor4D}。\texttt{Matrix} 的标量类型在整个项目中统一为 \texttt{float}（单精度32位，由 \texttt{tensor.hpp} 中的 \texttt{using Scalar = float} 定义），前向、反向和 GEMM 路径均以此为准。逻辑上的四维张量 $(N,C,H,W)$ 在内存中展平为二维矩阵 \texttt{Matrix(N, C*H*W)}，再通过形状参数解释其语义。对某个元素 $(n,c,h,w)$，其线性索引可写为
 \[
 \texttt{idx} = c \times H \times W + h \times W + w.
 \]
 这样做的优点是避免重写一套新的底层张量存储与算子系统，并使卷积层可以直接复用现有矩阵运算接口；代价则是每一层都需要显式传递形状信息，并在实现中谨慎处理 reshape 与索引。
 
-\section{池化层与全连接分类头}
+\subsection{池化层与全连接分类头}
 
-\texttt{MaxPool2DLayer} 负责在空间维度上做下采样。当前实现选择最大池化而非平均池化，原因是最大池化更符合经典 LeNet 风格主线，也更容易在保持显著局部响应的同时降低后续计算量。实现上，池化层在前向时记录每个窗口中最大值的位置，以便反向传播时将梯度准确散射回输入张量对应位置。由于池化层本身不含可训练参数，因此它只影响特征形状与梯度流向，而不引入额外权重更新。
+\texttt{MaxPool2DLayer} 负责空间下采样。当前实现使用最大池化；前向阶段记录每个窗口中最大值的位置，反向阶段把梯度散射回对应输入位置。池化层本身不含可训练参数。
 
-在两次卷积和池化之后，特征图尺寸从 $(N,1,28,28)$ 逐步变为 $(N,16,5,5)$。随后网络在 \texttt{forward()} 中直接执行展平操作，将其改写为 $(N,400)$，并送入三层全连接分类头。这里没有再额外定义一个单独的 \texttt{FlattenLayer} 类，而是把展平看作网络内部的一步简单 reshape。这个决定同样体现了“最小实现”的总体思路：只有在真正需要独立语义或复杂状态时才新增类，否则优先复用现有结构。
+两次卷积和池化之后，特征图尺寸从 $(N,1,28,28)$ 变为 $(N,16,5,5)$。随后网络在 \texttt{forward()} 中直接执行展平，把它改写为 $(N,400)$，再送入三层全连接分类头。展平在网络内部作为一步 reshape 处理。
 
-\section{接口抽象与代码组织}
+\subsection{接口抽象与代码组织}
 
-为了使训练器能够同时支持 MLP 与 CNN，代码中增加了一个非常精简的网络抽象接口 \texttt{NeuralNetwork}，其职责只有两项：执行前向传播，以及返回全部可训练参数。于是，\texttt{MLPNetwork} 与 \texttt{LeNetNetwork} 都可以通过同一接口被优化器和训练器消费，而训练循环不必关心底层到底是全连接网络还是卷积网络。
+为使训练器同时支持 MLP 与 CNN，代码中增加了精简的网络抽象接口 \texttt{NeuralNetwork}，职责只有两项：执行前向传播，以及返回全部可训练参数。\texttt{MLPNetwork} 与 \texttt{CNNNetwork} 因而可以共用同一套训练循环。
 
 从文件组织上看，CNN 相关增量主要集中在以下几部分：
 \begin{itemize}
     \item \texttt{include/conv2d\_layer.hpp} 与 \texttt{src/conv2d\_layer.cpp}：卷积层实现；
     \item \texttt{include/maxpool2d\_layer.hpp} 与 \texttt{src/maxpool2d\_layer.cpp}：池化层实现；
-    \item \texttt{include/cnn\_network.hpp} 与 \texttt{src/cnn\_network.cpp}：LeNet 风格 CNN 主体；
+    \item \texttt{include/cnn\_network.hpp} 与 \texttt{src/cnn\_network.cpp}：LeNet 风格 CNN 主体（\texttt{CNNNetwork}）；
+    \item \texttt{include/resnet\_network.hpp} 与 \texttt{src/resnet\_network.cpp}：带残差连接的 \texttt{ResNetNetwork}，支持可配置的 BasicBlock 堆叠，通过 \texttt{--model resnet} 调用；
     \item \texttt{include/neural\_network.hpp}：统一网络接口；
-    \item \texttt{src/main.cpp}：加入 \texttt{--model cnn} 等命令行入口。
+    \item \texttt{src/main.cpp}：加入 \texttt{--model cnn} / \texttt{--model resnet} 等命令行入口。
 \end{itemize}
 
-相比完全重构训练框架，这种改动规模是受控的。原有的损失函数、优化器、训练器、自动求导节点和矩阵库都被完整保留，只是在其上增加了新的层类型与新的网络组合方式。这也是为什么当前 CNN 主线能够较快接入，并进一步成为后续性能分析与卷积优化实验的基础。
+CNN 相关改动主要是新增层类型和网络组合方式；原有损失函数、优化器、训练器、自动求导节点和矩阵库保持不变。后文卷积优化和训练 profile 也沿用同一训练框架。
 
-\section{设计取舍与当前边界}
+\subsection{设计取舍与当前边界}
 
-当前 CNN 架构实现的重点是“先打通主线，再逐步扩展能力”。因此，它有几个很明确的设计取舍。第一，数据表示上坚持复用 \texttt{Matrix}，避免引入新的张量基类；第二，网络结构上采用固定成员组合，而不是动态层列表；第三，卷积实现上优先走 \texttt{im2col + matmul} 的工程可复用途径，而不是一开始就为每类卷积写专门 kernel。
+当前 CNN 架构采用三项固定取舍：底层继续复用 \texttt{Matrix}；网络结构使用固定成员组合；卷积实现优先走 \texttt{im2col + matmul} 路径。当前实验路径仍以 LeNet 风格 CNN 为主。代码中已包含 \texttt{ResNetNetwork}（\texttt{BasicBlock} 堆叠，可配置深度），但报告没有展开系统性超参调优或基准测试；BatchNorm 等组件也尚未接入。输入表示足以覆盖当前卷积网络，高维张量算子的通用表示仍未单独展开。
 
-这些选择让系统在复杂度和可维护性之间取得了较合适的平衡，但边界也同样清楚。当前主线仍以 LeNet 风格 CNN 为主，尚未引入 BatchNorm、残差连接或更强的模块化 block 体系；输入表示虽然足以支撑当前卷积网络，但对更一般的高维张量算子还不够自然；而卷积层虽然已经可用，其性能又会明显受到 \texttt{im2col} 重排和后续 GEMM 路径的影响。正因为如此，CNN 架构的实现既是功能扩展的一步，也是后续“卷积优化”章节成立的前提。
+\begin{table}[h]
+\centering
+\begin{tabular}{lcc}
+\hline
+模型 & 训练轮数 & 测试准确率 \\
+\hline
+MLP & 1 & 80.10\% \\
+MLP & 3 & 87.12\% \\
+MLP & 5 & 89.00\% \\
+CNN & 1 & 88.82\% \\
+\hline
+\end{tabular}
+\caption{CNN 与 MLP 在 MNIST 上的测试准确率对比（batch=256，seed=42）}
+\label{tab:cnn_mlp_acc}
+\end{table}
 
-\chapter{Tiny-ImageNet数据集迁移与后续方向}
+在这组 batch=256、seed=42 的粗粒度对比中，CNN 训练 1 个 epoch 达到 88.82\%，接近 MLP 训练 5 个 epoch 的 89.00\%。该表用于说明 CNN 主路径已经可运行，并在该设置下达到与 MLP 相近的 MNIST 精度水平。注：MLP 实测耗时数据存在统计波动（3 epoch 比 1 epoch 更快），此处仅引用准确率列。
 
-随着分布式训练和 CNN 主线逐步成形，实验对象也从早期的 MNIST 转向了更接近真实图像任务的 \texttt{Tiny-ImageNet}。这一迁移并不是简单地“换一个数据集看看效果”，而是因为 MNIST 本身过于简单，已经不足以充分暴露卷积网络、分布式同步与输入流水线之间的真实性能矛盾。
+\section{Tiny-ImageNet数据集迁移与后续方向}
 
-\section{为什么从 MNIST 迁移到 Tiny-ImageNet}
+在 CNN 路径和分布式训练接入后，实验对象从 MNIST 扩展到 \texttt{Tiny-ImageNet}。这一迁移对应三类代码路径：JPEG 解码、卷积训练和 MPI 同步。
 
-MNIST 是一个非常合适的教学型数据集：图像规模小、类别数少、输入单通道、训练成本低，非常适合验证 MLP、损失函数和自动求导是否正确。但从系统优化的角度看，它也正因为过于简单，而难以充分体现分布式训练的挑战。例如，在 MNIST 上，输入解码与数据流几乎没有压力，模型规模也较小，卷积计算与梯度同步都不够“重”，因此许多真实瓶颈不会充分暴露。
+\subsection{为什么从 MNIST 迁移到 Tiny-ImageNet}
 
-相比之下，\texttt{Tiny-ImageNet} 具有 200 个类别，训练集每类 500 张图像，验证集每类 50 张图像，输入为彩色图像，任务复杂度和数据规模都显著高于 MNIST。按当前数据组织方式计，训练集约为 100000 张图像，验证集约为 10000 张图像，测试集约为 10000 张图像。这样的任务规模更容易把卷积计算、内存重排、JPEG 解码、mini-batch 装配以及分布式同步之间的相互影响体现出来，因此也更适合作为当前阶段的主实验平台。
+MNIST 足以验证 MLP、loss 和 autodiff，但它不会像 Tiny-ImageNet 那样真正覆盖 JPEG 图像加载、CNN 路径和 MPI 路径。在当前仓库中，\texttt{Tiny-ImageNet} 提供约 100000 张训练图像，以及来自 \texttt{val} 目录的约 10000 张评估图像。因此，代码当前实际使用的是 \texttt{train} 和 \texttt{val} 两个 split，而没有在主路径中接入独立的 \texttt{test} split。
 
-\section{迁移后的现状与限制}
+\subsection{迁移后的现状与限制}
 
-围绕 \texttt{Tiny-ImageNet}，项目已经对数据加载逻辑和训练循环做了相应适配，使 CNN 模型能够正确处理新的输入格式和类别规模。但从当前结果看，这条主线仍然处在“能跑通并可分析”的阶段，而非“训练质量和系统效率都已成熟”的阶段。
+\texttt{Tiny-ImageNet} 分支目前已经接入加载逻辑和训练循环。本节提到的评估对应 \texttt{train + val} 训练/评估路径。
 
-一方面，在最近的 CPU 分布式实验中，单个 epoch 仍然可能达到约十分钟量级，具体时间会随 MPI 规模、本地 batch 大小和梯度同步模式变化而波动。另一方面，当前 CNN 配置在收敛性上也仍不理想，训练若干 epoch 后测试精度依然偏低。这表明问题并不只来自实现性能，也与模型结构、超参数和训练策略本身有关。
+\begin{table}[h]
+\centering
+\begin{tabular}{ccccc}
+\hline
+Epoch & 训练损失 & 训练准确率 & 测试准确率 & 每轮耗时 (s) \\
+\hline
+1  & 5.276 & 0.87\%  & 1.54\%  & 181.3 \\
+5  & 4.497 & 7.69\%  & 8.46\%  & 180.0 \\
+10 & 3.830 & 16.56\% & 11.56\% & 180.9 \\
+20 & 2.910 & 30.96\% & 9.49\%  & 180.3 \\
+30 & 2.308 & 41.50\% & 7.77\%  & 179.5 \\
+40 & 2.010 & 47.33\% & 7.24\%  & 179.8 \\
+\hline
+\end{tabular}
+\caption{Tiny-ImageNet 40 epoch 训练曲线摘要（world\_size=4，batch=128，per\_param 同步）}
+\label{tab:tiny_imagenet_curve}
+\end{table}
 
-\section{后续工作的两条主线}
+表~\ref{tab:tiny_imagenet_curve} 显示，训练准确率持续上升至 47\%，但测试准确率在第 5 epoch 后即开始回落，第 40 epoch 仅 7.24\%，表明在当前 LeNet 风格 CNN 结构和无数据增强的配置下，模型在 Tiny-ImageNet 上出现严重过拟合。
 
-基于当前分析，后续工作大体可以沿两条互补路线继续推进。
+\subsection{当前范围与后续方向}
 
-第一条路线是系统侧的进一步加速，重点仍然放在卷积主路径上，尤其是 \texttt{im2col/col2im}、卷积 backward 以及卷积与 GEMM 之间的数据重排成本。前文的 profiling 已经说明：当通信和 engine 开销被压下去之后，真正主导总时间的正是这些卷积相关 kernel。
+后续工作分成系统侧和模型侧两部分：系统侧继续观察 \texttt{im2col/col2im}、卷积 backward 以及卷积与 GEMM 之间的数据重排成本；模型侧继续调整 CNN 架构、超参数和训练配置。
 
-第二条路线则是模型侧的改进，包括 CNN 架构本身的增强、超参数调优以及训练配置调整。只有在系统效率和模型质量两方面同时推进，当前项目才能既在工程上给出可信的性能结论，也在学习任务上获得更有说服力的最终结果。
+\section{输入管线与实验自动化支撑}
 
-\chapter{输入管线与实验自动化支撑}
+\subsection{从矩阵式加载到 \texttt{BatchSource} 抽象}
 
-除了卷积、分布式同步和自动求导运行时本身之外，当前项目还有两类并不直接体现为单个算子公式、但对整条训练主线能否稳定推进非常关键的工程能力：其一是面向 \texttt{Tiny-ImageNet} 的输入管线改造，其二是围绕超参数搜索与实验记录建立的自动化脚本和元数据输出。这两部分共同决定了系统是否能够从“能跑单个实验”进一步提升为“能稳定组织一批正式实验并保留复现实验证据”。
+MNIST 路径先把数据加载成完整矩阵，再由 \texttt{DataLoader} 按索引切分 batch。对于 \texttt{Tiny-ImageNet}，仓库在 \texttt{DataLoader} 与底层数据源之间引入了 \texttt{BatchSource} 抽象。这个接口暴露样本数、输入与目标维度，以及根据一组索引装载 batch 的操作。
 
-\section{从矩阵式加载到 \texttt{BatchSource} 抽象}
+\subsection{Tiny-ImageNet 的流式 JPEG 解码}
 
-在早期的 MNIST 路径中，数据天然适合以矩阵形式整体载入内存：输入可以直接表示为一个大的 \texttt{Matrix}，标签也可以表示为对应的目标矩阵，再由 \texttt{DataLoader} 在样本维上做索引切片。这种方式对 MNIST 足够直接，也有利于快速验证 MLP 与基础训练循环的正确性。
+在 MNIST 路径中，\texttt{BatchSource} 可以退化成从已加载矩阵中复制若干行。对于 \texttt{Tiny-ImageNet}，\texttt{TinyImageNetDataset::prepareStreaming()} 会准备来自 \texttt{train} 和 \texttt{val} 的样本，再由 \texttt{TinyImageNetDataset} 提供 \texttt{BatchSource}，在训练循环请求 mini-batch 时按需读取并解码 JPEG 图像。当前加载方式是按 batch 流式解码。
 
-但当实验对象迁移到 \texttt{Tiny-ImageNet} 之后，这种“先把全部数据组织成两个大矩阵、训练时再切 batch”的模式就不再理想。原因在于 \texttt{Tiny-ImageNet} 的原始输入并不是规则的小型灰度矩阵，而是目录结构下的大量 JPEG 彩色图像。若仍然沿用完全相同的装载方式，不仅初始化阶段会更重，也会让输入路径缺乏进一步工程化的空间。
+\subsection{损失函数、优化器与训练循环}
 
-为此，当前代码在 \texttt{DataLoader} 与底层数据源之间加入了一个更通用的抽象，即 \texttt{BatchSource}。这一接口并不要求数据预先以整块矩阵形式常驻内存，而是只要求数据源能够回答三个问题：样本总数是多少、输入列数是多少、目标列数是多少，以及在给定一组样本索引时，如何把这些样本装载进 batch buffer。也就是说，\texttt{DataLoader} 不再关心数据究竟来自内存中的矩阵，还是来自文件系统中的图像，只关心“给我这一批索引，我该如何得到一个 batch”。
+在当前主训练入口中，损失函数固定为 \texttt{CrossEntropyLoss}：模型前向输出类别 logits，损失层在内部执行数值稳定的 softmax 与交叉熵计算，并返回整个 batch 的标量 loss。代码中也保留了 \texttt{MSELoss} 实现，当前 CNN 分类路径使用的是 \texttt{CrossEntropyLoss}。
 
-\section{Tiny-ImageNet 的流式 JPEG 解码}
+优化器方面，仓库当前实现了 \texttt{SGD}、\texttt{MomentumSGD} 和 \texttt{AdamW} 三条路径。图~\ref{fig:optimizer_compare} 汇总了 \texttt{output/compare\_opt} 下三种优化器 run 在 MNIST MLP 上的 20 epoch 训练曲线。
 
-在 MNIST 路径上，\texttt{BatchSource} 可以退化为一个非常简单的 \texttt{MatrixBatchSource}：当 \texttt{DataLoader} 给出一组样本索引时，数据源只需要把这些行从已有矩阵中拷贝到 \texttt{batch\_x} 和 \texttt{batch\_y} 中即可。这个实现仍然会产生 batch 级复制，但它已经把“batch 组织逻辑”和“底层数据来源”解耦开了。
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.92\textwidth]{../output/compare_opt/optimizer_compare.png}
+\caption{三种优化器在 MNIST MLP（20 epoch）上的训练/测试损失与准确率对比。SGD 最终测试准确率 96.52\%，MomentumSGD 98.27\%，AdamW 98.03\%。}
+\label{fig:optimizer_compare}
+\end{figure}
 
-真正重要的变化出现在 \texttt{Tiny-ImageNet} 路径。当前实现不再要求训练开始前就把全部 JPEG 图像统一解码为常驻矩阵，而是通过 \texttt{TinyImageNetDataset} 提供面向训练集和测试集的 \texttt{BatchSource}，在训练循环需要某个 mini-batch 时，按索引读取并解码对应图像。换句话说，图像数据在当前主线中是以 batch 为粒度被流式装载的，而不是一次性全部解码进内存。对当前项目而言，这一改动的意义并不只是“节省内存”这么简单，更关键的是它让 \texttt{Tiny-ImageNet + CNN} 这条更真实的数据集主线，在现有 CPU 框架内具备了可运行性和后续可优化性。
+它们都可以由命令行直接选择。\texttt{MomentumSGD} 维护 velocity，并可按配置启用 Nesterov 与 weight decay；\texttt{AdamW} 维护一阶、二阶矩估计，并采用 decoupled weight decay。
 
-与此同时，\texttt{DataLoader} 本身也已经具备一些基础工程化处理。例如，训练循环会复用 \texttt{batch\_x} 与 \texttt{batch\_y} 这两个 batch buffer，而不是每一步都重新创建主 batch 矩阵；\texttt{DataLoader} 内部还维护统一的样本索引序列，并支持基于随机数生成器的 shuffle。这样做虽然还没有达到完整的高性能输入流水线，但至少已经避免了最粗糙的“每步新建全部 batch 容器”的开销。
+训练配置在构图完成后根据命令行参数选择优化器，并在每个训练 step 中先调用 \texttt{optimizer\_.zeroGrad()} 清空梯度，再在 backward 与可能的分布式同步完成后，按全局 batch 大小做缩放并执行 \texttt{optimizer\_.step(...)}。梯度求和、跨 rank 平均和参数更新在当前实现中按阶段组织。
 
-\section{当前输入管线的边界}
+\texttt{Trainer::runEpoch(...)} 统一承担训练与评估两条路径：它从 \texttt{DataLoader} 取出 batch，包装为输入节点，执行 \texttt{model.forward(x)} 和 \texttt{lossFn.forward(preds, y)}，然后在训练模式下触发 backward、梯度同步和参数更新；在评估模式下只执行 forward 与 loss 统计。准确率计算对 logits 和 one-hot 目标分别取 \texttt{argmax}，统计 top-1 正确样本数。
 
-应当指出，当前输入管线虽然已经完成了从 MNIST 到 \texttt{Tiny-ImageNet} 的关键升级，但它还不是一个完全成熟的工业级图像加载系统。第一，\texttt{DataLoader::nextBatchInto(...)} 目前仍会在每一步构造 \texttt{batch\_indices}，这意味着索引层面还有小块分配和复制；第二，\texttt{Tiny-ImageNet} 路径虽然已经支持按 batch 流式解码 JPEG，但还没有进一步加入异步 prefetch、decode overlap、缓存策略或更完整的数据增强；第三，MNIST 路径本身仍以物理拷贝为主，而不是零拷贝 view。
+\texttt{DataLoader} 会复用 \texttt{batch\_x} 与 \texttt{batch\_y} 两个 batch buffer，并维护统一的样本索引序列与 shuffle 逻辑。
 
-因此，这一部分在报告中的合适表述应当是：当前项目已经完成了“从教学型矩阵数据集到真实图像数据集输入抽象”的关键迁移，但更进一步的 I/O 与预处理优化仍是后续工作的重要方向。也正因为如此，输入管线不应被简单当作外围脚本，而应被视为当前训练系统主线的一部分。
+\subsection{当前输入管线的边界}
 
-\section{HPO 脚本与 \texttt{run\_meta.json}}
+\texttt{DataLoader::nextBatchInto(...)} 目前仍会在每一步构造 \texttt{batch\_indices}。\texttt{Tiny-ImageNet} 路径还没有引入异步预取、解码重叠、缓存或更完整的数据增强；MNIST 路径当前仍然基于物理拷贝，view 尚未接入。
 
-除了输入管线，另一项值得单独说明的工程能力是实验自动化。当前项目并不完全依赖手工修改参数、手工执行训练、手工记录结果的方式，而是已经具备一套面向 CNN 训练的 HPO 与实验脚本。其中一个典型入口是基于 Optuna 的超参数搜索脚本，它能够围绕学习率、batch size、初始化方式等配置组织多轮试验，并将每个 run 的结果写回统一目录结构。
+\subsection{HPO 脚本与 \texttt{run\_meta.json}}
 
-更重要的是，这条实验脚本路径已经开始输出结构化元数据。以 \texttt{run\_meta.json} 为例，脚本会记录 run id、可执行文件路径、数据目录、trial 数量、epoch 数、随机种子、study 名称、评价指标、MPI 相关配置等信息。这样做的价值在于：一次实验的结果不再只是终端里的一串日志，而是带有最基本复现信息和实验上下文的文件化记录。
+HPO 路径会输出 \texttt{run\_meta.json}、\texttt{trials.csv} 和 \texttt{best.txt}。在当前仓库中，\texttt{run\_meta.json} 记录的字段包括执行二进制、数据目录、trial 数、epoch 数、seed、study 名称以及 MPI 配置。
 
-与之配套，HPO 路径还会输出诸如 \texttt{trials.csv}、\texttt{best.txt} 等产物，用于保留各 trial 的结果与最终最佳配置。对于课程项目而言，这种做法已经明显超出了“截图保存最好结果”的水平；而对于后续更系统的性能分析或模型调参工作，它也提供了一个比较自然的自动化基础。
+\subsection{HPO 产物的覆盖范围}
 
-\section{实验自动化的意义与当前局限}
-
-从整体工程角度看，\texttt{run\_meta.json} 这类元数据输出与 HPO 脚本的意义主要体现在两个方面。第一，它提高了实验的可复现性，使得后续分析者能够追溯某个结果对应的配置、执行入口和实验组织方式；第二，它为未来统一训练 artifact、profile 输出和 qualification 结果留下了接口，使“训练结果”逐步从一次性日志演化为一组可以被脚本处理、汇总和比较的标准化文件。
-
-不过，当前这套能力也还存在边界。首先，\texttt{run\_meta.json} 主要集中在 HPO/实验脚本路径中，并不是所有普通训练 run 都默认具备同等级别的完整元数据；其次，HPO 侧虽然已经具备较好的批量实验组织能力，但它与主训练路径的全部 artifact 体系还没有完全统一；最后，它更多解决的是“如何组织和记录实验”，而不是自动给出完整报告、图表或正式 benchmark 结论。
-
-因此，当前较准确的总结应当是：项目已经开始具备实验自动化和结构化元数据记录能力，这使其工程完成度明显高于单纯的手工训练脚本；但要进一步把这些能力收敛成统一的实验追踪体系，仍需要后续继续打通 HPO、常规训练、qualification 和 profiling 输出之间的关系。
+这些文件覆盖 HPO 路径。当前仓库中保留的 HPO run 目录并不完全一致，因此本节只把这些文件作为 HPO 路径的产物说明；普通训练 run 还没有统一的实验追踪输出。
 
 
-\chapter{MPI}
+\section{MPI}
 
-\section{同步数据并行与梯度聚合}
+\subsection{同步数据并行与梯度聚合}
 
-当前分布式训练采用经典的同步数据并行（synchronous data parallelism）方案。每个 MPI 进程，也就是每个 \texttt{rank}，都维护一份完整的模型参数副本；在数据侧，每个 rank 基于 \texttt{rank} 和 \texttt{world\_size} 构造自己的逻辑分片，仅在本地 shard 上执行前向与反向传播。
+当前分布式训练采用同步数据并行（synchronous data parallelism）。每个 MPI 进程，也就是每个 \texttt{rank}，都维护一份完整的模型参数副本；在数据侧，每个 rank 基于 \texttt{rank} 和 \texttt{world\_size} 构造自己的逻辑分片，仅在本地 shard 上执行前向与反向传播。
 
 设第 $r$ 个 rank 在某一步处理的本地 mini-batch 大小为 $B_r$，其在本地 backward 结束后得到的梯度和为 $g_r$。在同步数据并行中，各 rank 首先通过全局归约得到梯度总和：
 \[
@@ -841,73 +789,95 @@ g_{\mathrm{global}}
 \]
 其中 $\theta$ 表示模型参数，$\eta$ 表示学习率。由于所有 rank 在每一步都使用同一个聚合梯度，因此各参数副本在更新后仍保持严格一致。
 
-这个训练语义本身并不复杂，难点在于如何组织梯度同步。最朴素的实现方式，是在每个参数完成本地梯度计算后，在 backward 末尾逐参数调用阻塞式 \texttt{MPI\_Allreduce} 做全局同步。当前代码中，这一基线模式对应 \texttt{Grad Sync Mode = per\_param}。从数学上看，它完全正确；但从系统角度看，逐参数做小规模集体通信会引入大量调用开销，通信粒度也过碎，不利于后续优化。
+难点在于如何组织梯度同步。最朴素的实现方式，是在每个参数完成本地梯度计算后，在 backward 末尾逐参数调用阻塞式 \texttt{MPI\_Allreduce} 做全局同步。当前代码中，这一基线模式对应 \texttt{Grad Sync Mode = per\_param}。从系统角度看，逐参数做小规模集体通信会引入大量调用开销，通信粒度也过碎，不利于后续优化。
 
-\section{从逐参数同步到梯度 Bucketing}
+\subsection{从逐参数同步到梯度 Bucketing}
 
-为降低通信侧的固定开销，系统首先在保持训练语义完全不变的前提下，引入了基于 \texttt{bucket} 的梯度同步。其核心思想是：不再对每个参数单独发起一次归约，而是按照参数在 \texttt{trainable\_params\_} 中的顺序，将多个参数梯度打包到连续缓冲区中，再以 \texttt{bucket} 为单位调用 \texttt{MPI\_Allreduce}。
+为降低通信侧的固定开销，系统首先引入了基于 \texttt{bucket} 的梯度同步：梯度按照参数在 \texttt{trainable\_params\_} 中的顺序打包到连续缓冲区，再以 \texttt{bucket} 为单位调用 \texttt{MPI\_Allreduce}。
 
-在实现上，\texttt{BucketManager} 负责建立一份静态分区。每个参数都会被映射到某个 \texttt{bucket}，并记录该参数在连续缓冲区中的偏移量和长度。这里采用了两个简单但重要的约束：其一，单个参数不会被切分到多个 \texttt{bucket} 中；其二，特别大的参数可以独占一个 \texttt{bucket}。这样可以让后续的打包（pack）、归约和解包（unpack）逻辑保持简单且稳定。
+在实现上，\texttt{BucketManager} 负责建立静态分区。每个参数都会被映射到某个 \texttt{bucket}，并记录该参数在连续缓冲区中的偏移量和长度。这里采用两个约束：单个参数不会被切分到多个 \texttt{bucket} 中；特别大的参数可以独占一个 \texttt{bucket}。这样可以让后续的打包（pack）、归约和解包（unpack）逻辑保持简单。
 
-在 \texttt{non-overlap, bucketed} 模式下，梯度同步仍然发生在整个 backward 完成之后，只是同步单位从“参数”变成了“梯度桶”。也就是说，系统先将多个参数梯度复制到连续的 \texttt{bucket} buffer 中，再对每个 \texttt{bucket} 调用一次 \texttt{MPI\_Allreduce}，最后把结果写回各参数的梯度缓冲区。应当强调的是，这一步优化并没有改变前文给出的更新公式；被改变的只是通信前梯度的组织方式。因此，它可以被看作一种纯工程层的通信粒度优化。
+在 \texttt{non-overlap, bucketed} 模式下，梯度同步仍然发生在整个 backward 完成之后，只是同步单位从“参数”变成了“梯度桶”。系统先将多个参数梯度复制到连续的 \texttt{bucket} buffer 中，再对每个 \texttt{bucket} 调用一次 \texttt{MPI\_Allreduce}，最后把结果写回各参数的梯度缓冲区。这里调整的是通信前梯度的组织方式和同步粒度。
 
-\section{通信与计算的重叠}
+\subsection{通信与计算的重叠}
 
-当 bucketing 稳定之后，下一步优化不再满足于“把很多小通信并成少数大通信”，而是进一步尝试将通信时间隐藏到 backward 计算过程中。为此，系统引入了 \texttt{overlap, bucketed} 模式：当某个参数梯度已经完全可用，并且其所属 \texttt{bucket} 中所有活跃参数都已经就绪时，该 \texttt{bucket} 的归约便可以提前发起，而不需要等整个 backward 全部完成。
+当 bucketing 稳定后，系统又增加了 \texttt{overlap, bucketed} 模式。其触发条件是：某个参数梯度已经可用，且所属 \texttt{bucket} 的活跃参数全部就绪；满足后即可在 backward 过程中提前发起该 \texttt{bucket} 的归约。实现上，这一路径把阻塞式 \texttt{MPI\_Allreduce} 换成 \texttt{MPI\_Iallreduce}，并由 \texttt{BucketedOverlapRuntime} 负责 \texttt{beginStep(...)}、\texttt{onParameterGradReady(...)}、\texttt{onBackwardComplete()} 与 \texttt{finalizeAndGetGlobalBatch()}。三种模式共享同一训练语义：每个 rank 都使用全局平均梯度更新参数，差别在同步粒度和归约发起时机。
 
-这一过程的关键机制是将阻塞式 \texttt{MPI\_Allreduce} 替换为异步的 \texttt{MPI\_Iallreduce}。在实现上，\texttt{DistributedContext} 除了提供传统阻塞式 collective 之外，也提供了异步请求封装以及 \texttt{wait}/\texttt{waitAll} 等等待原语；更上层则由显式运行时 \texttt{BucketedOverlapRuntime} 管理每一步训练的生命周期，包括 \texttt{beginStep(...)}、\texttt{onParameterGradReady(...)}、\texttt{onBackwardComplete()} 与 \texttt{finalizeAndGetGlobalBatch()} 等阶段。
+\subsection{MPI 扩展性实验}
 
-从运行时语义看，\texttt{overlap, bucketed} 模式比单纯的 \texttt{bucketed} 模式多了一项关键能力：它能够识别“某个参数梯度现在已经 final-ready，因此其所属 \texttt{bucket} 可以立刻发起归约”这一中间事件。于是，部分梯度通信可以在后续卷积层仍在反向传播时就已经进行，从而实现计算与通信的部分重叠。与此同时，为了保证数学结果与基线完全一致，在执行 \texttt{optimizer\_.step()} 之前，运行时仍会显式等待所有异步请求完成，并确保所有 \texttt{bucket} 已经正确解包回参数梯度。
+表~\ref{tab:mpi_scaling} 展示了 MNIST CNN 在 \texttt{local\_batch=64}、\texttt{seed=42} 下随进程数变化的运行结果。这里固定的是每个 rank 的 \texttt{local\_batch}，因此 \texttt{global\_batch} 会随 \texttt{np} 增大。
 
-因此，\texttt{per\_param}、\texttt{bucketed} 与 \texttt{overlap\_bucketed} 三种模式虽然在执行组织上不同，但都共享同一个核心语义：每个 rank 最终都依据全局平均梯度同步更新参数。差别不在优化规则，而在同步流程的粒度控制与对通信开销的隐藏能力。
+\begin{table}[h]
+\centering
+\begin{tabular}{cccccc}
+\hline
+进程数 & local\_batch & global\_batch & 测试准确率 & 耗时 (s) & 相对加速比 \\
+\hline
+1 & 64 & 64  & 93.79\% & 31.66 & 1.00$\times$ \\
+2 & 64 & 128 & 91.93\% & 19.49 & 1.62$\times$ \\
+4 & 64 & 256 & 88.63\% & 11.98 & 2.64$\times$ \\
+\hline
+\end{tabular}
+\caption{MNIST CNN（1 epoch，local\_batch=64，seed=42）的多进程扩展结果}
+\label{tab:mpi_scaling}
+\end{table}
 
-\section{工程结果：瓶颈从通信转向卷积计算}
+进程数从 1 增至 4 时，耗时从 31.66s 降至 11.98s，加速比为 2.64$\times$。该表中的准确率变化同时受到 \texttt{global\_batch} 增大和每个 epoch 更新步数减少的影响。
 
-在当前主线的历史 profiling 记录中，分布式优化已经能够明显改变时间分布。针对 \texttt{Tiny-ImageNet} 上一个三层卷积 CNN 配置，在 \texttt{world\_size = 16}、\texttt{batch\_size = 64}、\texttt{Grad Sync Mode = overlap\_bucketed} 且 \texttt{bucket\_size\_bytes = 4 MiB} 的条件下，一次 epoch 的总时间大约为 $630\,\mathrm{s}$，其中 \texttt{fwd\_bwd} 约为 $543\,\mathrm{s}$，\texttt{sync\_total} 约为 $59\,\mathrm{s}$。
+\subsection{Profile结果：通信与卷积热点}
 
-这些数据说明，通信已经不再吞掉绝大多数训练时间；但它们同时也表明，经过前述的同步优化后，系统的主要瓶颈并没有消失，而是转移到了 CNN 本身的计算路径上。更具体地说，热点越来越集中在卷积相关操作以及伴随的内存重排上，而不再只是 MPI 集体通信。
+当前仓库中的 \texttt{mnist\_sync\_bucketed} 与 \texttt{mnist\_sync\_overlap\_bucketed} 目录可用于展示 \texttt{fwd\_bwd}、\texttt{sync\_total} 与 \texttt{sync\_wait} 等时间项的记录方式。对应 \texttt{metrics.csv} 记录的 \texttt{world\_size} 均为 4；\texttt{bucketed} 的 \texttt{batch\_size} 为 128，\texttt{overlap\_bucketed} 的 \texttt{batch\_size} 为 256。严格的同步模式性能比较需要匹配配置的独立 benchmark。
 
-需要说明的是，上述数值目前应被理解为历史 profiling 记录，而不是已经重新资格验证（requalify）后的最终 benchmark 结论。也就是说，这些结果足以支撑工程分析和瓶颈判断，但还不能单独作为“overlap 一定带来稳定 benchmark 收益”的最终论证。因此，本章对它们的使用方式主要是诊断性的：它们说明系统优化已经把问题从通信侧推向了卷积算子侧，这恰恰为后续卷积内核优化提供了目标。
+\begin{table}[h]
+\centering
+\begin{tabular}{lccc}
+\hline
+同步模式 & fwd\_bwd (s) & sync\_total (s) & sync\_wait (s) \\
+\hline
+bucketed         & 7.57 & 1.60 & 1.60 \\
+overlap\_bucketed & 8.25 & 1.09 & 0.97 \\
+\hline
+\end{tabular}
+\caption{\texttt{mnist\_sync\_*} profile 产物中的时间项示例摘录}
+\label{tab:mpi_profile}
+\end{table}
 
-\section{Autograd 从隐式 backward 到显式执行引擎}
+\texttt{overlap\_bucketed} 当前按 correctness-only 路径报告；本节的 profile 结果用于定位通信与等待相关时间项。在更大规模任务中，通信时间占比可能上升；重叠收益需要在匹配模型、batch、\texttt{world\_size} 和同步策略的独立 benchmark 中验证。
 
-仅仅优化分布式通信还不够，因为通信是否能够与计算重叠，直接取决于系统能否精确判断“某个参数梯度在什么时刻真正可用”。这一点恰好暴露了原始 autodiff 实现的结构性限制。
+当前 profiling 产物和输出格式覆盖 \texttt{data}、\texttt{fwd\_bwd}、\texttt{sync} 和 \texttt{optimizer} 这些时间项；本节使用这些时间项说明 MPI profile 记录了哪些阶段。
 
-最初版本的自动求导采用了一种非常直接的做法：每个算子在 forward 时构造自己的输出 \texttt{Node}，并通过 \texttt{setBackwardFn(...)} 给该节点绑定一个闭包式的 \texttt{backwardFn}。这个 lambda 会捕获 backward 所需的 forward 状态，例如输入矩阵、broadcast 信息、\texttt{im2col} 缓存或池化索引等；训练时，\texttt{loss\_node->backward()} 则按照拓扑逆序依次执行这些局部 backward 逻辑。
+\subsection{Autograd 从隐式 backward 到显式执行引擎}
 
-这种设计在项目早期足够有效，因为它可以比较快地打通 MLP、激活函数、损失函数乃至后续 CNN 层的反向传播。但它的问题并不在于梯度公式错误，而在于运行时语义过于粗糙。在旧模型中，一个局部 backward 计算出梯度贡献后，会立刻通过 \texttt{addGrad(...)} 写入父节点的梯度缓冲区。从数学角度看这当然是对的；但从运行时角度看，系统实际上无法区分“这只是某个节点输出梯度的一部分贡献”还是“这是最后一笔贡献，因此该梯度已经 final-ready”。
+通信重叠依赖一个更细的 runtime 事件：参数梯度何时真正就绪。旧版 autodiff 采用 \texttt{setBackwardFn(...)} 绑定闭包式 \texttt{backwardFn}；训练时，\texttt{loss\_node->backward()} 按拓扑逆序执行这些局部 backward。局部 backward 完成后，梯度贡献会立即写入父节点缓冲区。这个语义可以完成梯度累加，但不会显式给出 final-ready 时刻。参数梯度就绪、profiling hook 和 \texttt{bucket} 全部就绪这些事件因此没有独立状态；\texttt{bucketed overlap} 和参数级 ready hook 需要更明确的调度信息。
 
-于是，像参数梯度何时可以触发通信、何时可以触发 profiling、何时一个 \texttt{bucket} 中的所有参数都已经就绪，这些对 distributed overlap 至关重要的问题，在旧框架里都没有显式表达。对传统的“等整个 backward 完成后再统一同步”的训练方式而言，这一限制还可以容忍；但对 \texttt{bucketed overlap}、参数级 ready hook、乃至更复杂计算图的调度，这种模糊语义会直接变成架构障碍。
+\subsection{显式 Engine 的结构重构}
 
-\section{显式 Engine 的结构重构}
+为此，项目把 backward 调度集中到 \texttt{AutogradEngine}。节点保留现有外部接口，但内部补充了 \texttt{requires\_grad}、\texttt{is\_leaf}、\texttt{is\_parameter}、按需分配的 \texttt{grad}、显式输入依赖列表 \texttt{inputs}、可选的 \texttt{GradFn} 和按值保存的 \texttt{BackwardContext}。 \texttt{AutogradEngine} 从 loss 节点重建 backward 可达子图，维护每个节点尚未收齐的梯度贡献数；当某节点输出梯度收齐后，再把对应 \texttt{GradFn} 放入 ready queue 执行。本文把该节点的输出梯度记为 \emph{final-ready}。
 
-为解决上述问题，项目将 backward 从“节点各自携带匿名闭包并被被动调用”的模式，重构为“由中央执行引擎显式调度”的模式。新的设计并不改变梯度公式本身，而是引入更明确的 autograd 元数据与执行状态。
+与之配套，算子 backward 逻辑被迁移到 \texttt{GradFn + BackwardContext} 体系中。\texttt{BackwardContext} 负责按值保存 backward 所需缓存，\texttt{GradFn} 只负责计算向输入传播的梯度贡献，不再直接写父节点的 \texttt{grad}。所有梯度累加、贡献合并以及 ready 判定，都统一在 \texttt{AutogradEngine} 中完成。当前这套新语义已经覆盖基础算子（如 \texttt{add}、\texttt{mul}、\texttt{matmul}、\texttt{sum}、\texttt{mean}）、激活函数、损失函数、线性层、\texttt{MaxPool2D} 和 \texttt{Conv2D}。旧的 \texttt{setBackwardFn(...)} 兼容层、历史的 \texttt{parents\_} 边和 legacy reverse-topo 路径都已被移除。
 
-在这一版本中，\texttt{Node} 虽然保留了原有外部接口，但内部增加了更清晰的语义信息，例如 \texttt{requires\_grad}、\texttt{is\_leaf}、\texttt{is\_parameter}、按需延迟分配的 \texttt{grad}、显式输入依赖列表 \texttt{inputs}、可选的 \texttt{GradFn}，以及按值保存的 \texttt{BackwardContext}。只有真正需要梯度的输出节点才会构造这些 backward 状态，因此常量路径不会再平白携带无用的反向信息。
+这次重构把 \texttt{parameter-ready} 事件显式化了。分布式 runtime 因而可以在不修改各层 backward 公式的前提下，挂接 \texttt{bucket} 的打包和异步 allreduce。
 
-\texttt{Node::backward()} 也不再直接执行旧式 reverse-topo lambda 链，而是将责任交给 \texttt{AutogradEngine}。该引擎从 loss 节点出发重建 backward 可达子图，并为每个节点维护“尚未收到的下游梯度贡献数”。只有当某节点的输出梯度已经收齐所有贡献时，该节点才会进入 ready queue，等待其 \texttt{GradFn} 被调度执行。由此，系统第一次显式表示了 backward 执行中的一个关键时刻：某个节点的输出梯度已经 \emph{final-ready}。
+\subsection{Autograd 热路径的性能压缩}
 
-与之配套，算子 backward 逻辑被迁移到 \texttt{GradFn + BackwardContext} 体系中。\texttt{BackwardContext} 负责按值保存 backward 所需缓存，\texttt{GradFn} 只负责计算向输入传播的梯度贡献，而不再直接写父节点的 \texttt{grad}。所有梯度累加、贡献合并以及 ready 判定，都统一在 \texttt{AutogradEngine} 中完成。当前这套新语义已经覆盖基础算子（如 \texttt{add}、\texttt{mul}、\texttt{matmul}、\texttt{sum}、\texttt{mean}）、激活函数、损失函数、线性层、\texttt{MaxPool2D} 和 \texttt{Conv2D}。相应地，旧的 \texttt{setBackwardFn(...)} 兼容层、历史的 \texttt{parents\_} 边和 legacy reverse-topo 路径都已被移除。
+完成这次重构后，\texttt{AutogradEngine} 的优化继续限定在运行时管理开销。
 
-这一重构的直接价值在于，分布式运行时终于有了一个可以精确挂接的事件：当参数梯度变为 \texttt{parameter-ready} 时，就可以立即触发相应的 \texttt{bucket} 打包与异步归约，而不必把通信逻辑重新塞回每个层实现或 \texttt{Trainer} 中。
-
-\section{Autograd Hot Path 的性能压缩}
-
-完成结构性重构之后，系统还必须继续处理另一个现实问题：即使语义更清晰，执行引擎本身也可能成为新的框架层瓶颈。因此，后续工作又针对 \texttt{AutogradEngine} 的 hot path 做了进一步压缩，但这些优化仍然不改变梯度公式，只是尽量降低运行时管理开销。
-
-第一类优化是把一次 \texttt{backward()} 调用中可达子图的状态做局部稠密化索引。相比于依赖指针或 \texttt{shared\_ptr} 的查找结构，engine 会先收集本次 backward 涉及的节点，然后为它们分配本地连续索引，再通过 \texttt{states[index]} 直接访问状态。与之对应，\texttt{GradientContribution} 也不再携带 \texttt{shared\_ptr<Node>} 作为目标，而是直接记录一个稠密的 \texttt{target\_index}。
+第一类优化是把一次 \texttt{backward()} 调用中可达子图的状态做局部稠密化索引。相比于依赖指针或 \texttt{shared\_ptr} 的查找结构，engine 会先收集本次 backward 涉及的节点，然后为它们分配本地连续索引，再通过 \texttt{states[index]} 直接访问状态。\texttt{GradientContribution} 对应地直接记录稠密的 \texttt{target\_index}。
 
 第二类优化是减少小对象分配。对于生产路径中绝大多数算子，梯度贡献数目都比较小，因此系统使用固定容量的 inline 容器 \texttt{InlineContributionList<4>} 存储这些小列表，从而避免频繁的小块动态分配。
 
 第三类优化则聚焦于梯度合并本身。底层 \texttt{Matrix} 增加了 \texttt{addInPlace(...)} 原语，而 \texttt{Node::addGrad(...)} 现在只在第一次写入时物化梯度缓冲区，之后都在连续 buffer 上原地累加。与此同时，runtime 还显式区分了首次写入代价 \texttt{engine\_grad\_merge\_first\_write} 和后续累加代价 \texttt{engine\_grad\_merge\_accumulate}，以便区分剩余开销究竟来自 framework 逻辑还是大张量不可避免的内存流量。
 
-历史 profiling 显示，这些 hot path 优化是有实际效果的。在 \texttt{CNN + Tiny-ImageNet + 16 ranks MPI + overlap\_bucketed} 的参考配置下，\texttt{fwd\_bwd} 时间大约从 $753\,\mathrm{s}$ 下降到 $543\,\mathrm{s}$。与此同时，\texttt{engine\_grad\_merge\_accumulate} 已下降到约 $2.5\,\mathrm{s}$，而 \texttt{engine\_grad\_merge\_first\_write} 仍大约为 $45\,\mathrm{s}$。这说明 autograd runtime 曾经确实是一个可观的工程瓶颈，而在主要框架开销被压下去之后，残余成本更多开始反映张量写入与卷积 kernel 本身的真实代价。
-
-更重要的是，优化后的 profiling 热点再次集中到卷积路径本身，例如 \texttt{conv2d\_forward\_im2col}、\texttt{conv2d\_forward\_gemm}、\texttt{conv2d\_backward\_dX\_gemm}、\texttt{conv2d\_backward\_dW\_gemm} 和 \texttt{conv2d\_backward\_col2im}。换句话说，对 autograd engine 的整理并不是“把系统变复杂”，而是把框架层噪声削弱到足够低，使性能画像更真实地反映出卷积计算内核的极限。
+当前 profiling 将结论限定在已观测路径：\texttt{AutogradEngine} runtime 占比下降，热点集中到 \texttt{conv2d\_forward\_im2col}、\texttt{conv2d\_forward\_gemm}、\texttt{conv2d\_backward\_dX\_gemm}、\texttt{conv2d\_backward\_dW\_gemm} 和 \texttt{conv2d\_backward\_col2im}。
 
 
-\addcontentsline{toc}{chapter}{Références}
+\addcontentsline{toc}{section}{参考文献}
 \begin{thebibliography}{11}
+
+\bibitem{lecun1998}
+Yann LeCun, Léon Bottou, Yoshua Bengio, and Patrick Haffner.
+``Gradient-based learning applied to document recognition.''
+\textit{Proceedings of the IEEE}, 86(11):2278--2324, 1998.
 
 \bibitem{blas}
 Jack J. Dongarra et al.
@@ -916,12 +886,111 @@ Jack J. Dongarra et al.
 
 \end{thebibliography}
 
-\chapter*{Glossaire}
-\addcontentsline{toc}{chapter}{Glossaire}
+\section*{Glossaire}
+\addcontentsline{toc}{section}{Glossaire}
 
 \appendix
 
-\chapter{16线程配置下的调度与同步开销诊断}\label{app:smt_diagnosis}
+\section{GEMM实验环境、工作负载与搜索协议}\label{app:gemm_setup}
+
+\subsection{实验环境}
+
+\subsubsection{硬件平台}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{p{0.28\textwidth}p{0.62\textwidth}}
+\toprule
+\textbf{组件} & \textbf{规格} \\
+\midrule
+处理器 & AMD Ryzen 9 8940HX，x86\_64架构 \\
+物理核心/逻辑线程 & 16物理核心，32逻辑线程（每核2线程，SMT）\\
+实验限制 & 通过 \texttt{taskset -c 0-7} 限制到8个CPU，并通过 \texttt{lscpu -e=CPU,CORE,SOCKET,NODE} 验证其物理核心映射 \\
+缓存层次 & L1d 32 KiB/核，L2 1 MiB/核，L3 64 MiB（共享）\\
+运行频率 & 锁定在4.0 GHz（禁用Turbo Boost）\\
+内存 & 30 GiB \\
+\bottomrule
+\end{tabular}
+\caption{GEMM实验硬件配置}
+\label{tab:gemm_hardware}
+\end{table}
+
+\subsubsection{软件环境}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{p{0.28\textwidth}p{0.62\textwidth}}
+\toprule
+\textbf{组件} & \textbf{版本/详情} \\
+\midrule
+操作系统 & Fedora Linux 42 \\
+编译器 & GCC 15.2.1，编译选项 \texttt{-O3 -march=native} \\
+BLAS库 & OpenBLAS（系统版本）\\
+并行模型 & OpenMP 5.0 \\
+向量指令集 & AVX2 / AVX-512（通过 \texttt{-march=native} 自动启用）\\
+\bottomrule
+\end{tabular}
+\caption{GEMM实验软件配置}
+\label{tab:gemm_software}
+\end{table}
+
+\subsubsection{测量协议}\label{subsec:gemm_protocol}
+
+测量协议如下：
+\begin{itemize}
+    \item \textbf{预热（Warm-up）}：每组测试前执行5次预热迭代，以稳定指令缓存和数据缓存状态；
+    \item \textbf{计时}：程序内部循环2000次，使用 \texttt{std::chrono::high\_resolution\_clock} 精确计时；
+    \item \textbf{硬件计数器}：通过 \texttt{perf stat -r 3} 外部重复3次，采集指令数（Instructions）、
+          周期数（Cycles）、上下文切换（Context Switches）、CPU迁移（CPU Migrations）及缓存缺失（Cache Misses）；
+    \item \textbf{环境隔离}：关键批次之间重启系统，清空页缓存（\texttt{drop\_caches}），
+          通过 \texttt{cpupower} 锁定CPU频率，以减少系统状态异质性。
+          预热是稳定执行路径的主要机制；重启和清空页缓存仅用于降低系统整体状态带来的跨批次干扰。
+\end{itemize}
+
+需特别指出：\texttt{perf} 的 \texttt{:u}（用户态）修饰符会排除内核态上下文切换，
+因此本文统一使用无修饰符的 \texttt{context-switches} 捕获完整调度事件。
+此外，AMD uncore L3事件以system-wide方式采集，短窗口下易受后台进程干扰，故不用于定量比较；
+本文改用per-task的 \texttt{cache-misses} 与 \texttt{cache-references} 作为聚合性内存压力指标。
+\texttt{cache-misses} 仅用于不同配置间的相对比较，不用于精确区分L1/L2/L3来源。
+
+\paragraph{CPU余量与实验隔离。}
+GEMM 实验限制在可控的 CPU 核心预算内，不占满全部逻辑线程，以给操作系统、OpenMP 运行时、\texttt{perf} 采集和后台服务保留余量，减少线程迁移、中断和非受控资源竞争。本文据此区分两类配置：一类是限制在已验证物理核心预算内的推荐配置，另一类是 16 线程 SMT/超线程压力测试配置。
+
+\subsection{单线程调优使用的工作负载}
+
+参照项目 MLP 和 CNN 的实际层形状，定义了 4 个代表性工作负载族（Workload Family）：
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llrrr}
+\toprule
+\textbf{工作负载族} & \textbf{来源层} & $M$ & $K$ & $N$ \\
+\midrule
+fc\_forward\_mainstream & MLP FC1（hidden=128） & 32 & 784 & 128 \\
+fc\_head\_small\_n      & MLP FC2（output）      & 32 & 128 & 10  \\
+conv\_dx\_skinny\_k     & CNN Conv2 backward     & 3200 & 16 & 150 \\
+fc\_wide\_output        & MLP FC1（hidden=256）  & 32 & 784 & 256 \\
+\bottomrule
+\end{tabular}
+\caption{单线程调优使用的代表性工作负载（batch=32）}
+\label{tab:tuning_workloads}
+\end{table}
+
+\subsection{两轮搜索协议}
+
+\textbf{第一轮（全局候选筛选）}：
+对所有 6 种 AVX2 内核，在各工作负载上扫描多个 $(M_c, N_c, K_c)$ 组合（共 272 个候选）。
+每候选运行 1000 次取中位时间，并辅以 5 次 \texttt{perf stat} 采样记录硬件计数器。
+采用分阶段扫描策略：先固定 $M_c, N_c$ 扫 $K_c$，再固定最优 $K_c$ 扫 $M_c$，最后精扫 $N_c$，
+使得性能变化可明确归因于单一参数轴。
+
+\textbf{第二轮（局部精细化）}：
+保留第一轮中在主流 FC 形状上表现最佳的 5 个 \texttt{KernelShape/Kc} 组合：
+\texttt{8x8/Kc=288}、\texttt{8x8/Kc=384}、\texttt{4x16/Kc=192}、
+\texttt{4x16/Kc=256}、\texttt{4x16/Kc=320}，
+在其最优区域周围加密 $M_c, N_c$ 搜索网格（每行约 75 个组合），进一步精确定位最优参数。
+
+\section{16线程配置下的调度与同步开销诊断}\label{app:smt_diagnosis}
 
 本附录给出第~\ref{sec:gemm_smt}节中三组对照实验的完整数据与推理，
 提供16线程异常现象各项解释的量化支撑。
@@ -934,8 +1003,6 @@ Jack J. Dongarra et al.
 
 \begin{table}[h]
 \centering
-\caption{矩阵规模对单位操作指令开销的影响（OMP，16 线程）}
-\label{tab:instr_per_op}
 \begin{tabular}{llll}
 \toprule
 矩阵尺寸 & 16 线程总指令数 & 估算 Instr/Op & 观察 \\
@@ -944,9 +1011,11 @@ $128\times128$   & 438.7 B & 0.587 & 同步/等待开销占比较高 \\
 $1024\times1024$ & 132.6 B & 0.128 & 计算占比较高 \\
 \bottomrule
 \end{tabular}
+\caption{矩阵规模对单位操作指令开销的影响（OMP，16 线程）}
+\label{tab:instr_per_op}
 \end{table}
 
-可以看到，$128\times128$ 的 Instr/Op 约为 $1024\times1024$ 的 4.5 倍。小矩阵的计算量下降后，线程同步、barrier 等固定开销在总成本中的比例明显升高。因此，该实验为后文理解小矩阵多线程异常提供了规模效应上的解释；16 线程相对 8 线程的全部指令数增长仍需结合 OpenBLAS 128$\times$128 亲和性实验分析。
+$128\times128$ 的 Instr/Op 约为 $1024\times1024$ 的 4.5 倍。小矩阵的计算量下降后，线程同步、barrier 等固定开销在总成本中的比例更高。该实验为后文理解小矩阵多线程异常提供了规模效应上的解释；16 线程相对 8 线程的全部指令数增长仍需结合 OpenBLAS 128$\times$128 亲和性实验分析。
 
 \begin{figure}[H]
     \centering
@@ -960,12 +1029,10 @@ $1024\times1024$ & 132.6 B & 0.128 & 计算占比较高 \\
 
 \paragraph{实验 B：CPU亲和性对OpenBLAS 128$\times$128 16线程异常的影响}
 
-实验环境与第~\ref{sec:gemm_smt}节第一部分保持一致。该实验直接针对 OpenBLAS 的异常配置展开，对比“自由调度（默认）”与“绑定核心（\texttt{OMP\_PROC\_BIND=true, OMP\_PLACES=cores}）”两种条件下，在 OpenBLAS、16 线程、$128\times128$ 矩阵、5000 次迭代中的关键指标。与实验 A 不同，这里的诊断对象是 OpenBLAS 本身，因此更接近正文中对 16 线程异常来源的核心判断。
+实验环境与第~\ref{sec:gemm_smt}节第一部分保持一致。该实验直接针对 OpenBLAS 的异常配置展开，对比“自由调度（默认）”与“绑定核心（\texttt{OMP\_PROC\_BIND=true, OMP\_PLACES=cores}）”两种条件下，在 OpenBLAS、16 线程、$128\times128$ 矩阵、5000 次迭代中的关键指标。这里的诊断对象是 OpenBLAS 本身，对应正文中对 16 线程异常来源的分析。
 
 \begin{table}[H]
 \centering
-\caption{CPU亲和性对16线程性能的影响（128×128矩阵，5000次迭代）}
-\label{tab:affinity_effect}
 \begin{tabular}{lrrl}
 \toprule
 \textbf{指标} & \textbf{自由调度} & \textbf{绑定核心} & \textbf{变化幅度} \\
@@ -975,18 +1042,18 @@ $1024\times1024$ & 132.6 B & 0.128 & 计算占比较高 \\
 缓存缺失标准差   & $1.32\%$ & $0.06\%$    & 稳定约22倍 \\
 \bottomrule
 \end{tabular}
+\caption{CPU亲和性对16线程性能的影响（128×128矩阵，5000次迭代）}
+\label{tab:affinity_effect}
 \end{table}
 
-可以看到，施加 CPU 亲和性约束后，指令数从 13.45\,B 降至 4.05\,B，上下文切换从 2{,}013 降至 14，缓存缺失标准差也改善约 22 倍。这更符合这样一种解释：当线程调度与迁移被收紧后，同步和自旋等待相关的额外指令显著减少，私有缓存工作集的复用也更稳定。因而，对于 OpenBLAS $128\times128$ 的 16 线程异常，当前证据更支持调度/迁移与同步等待是最一致的主导解释；当然，现有数据仍未形式化排除内存带宽竞争等其他因素。就本文的实验范围而言，启用 \texttt{OMP\_PROC\_BIND} 是有效的缓解措施。
+施加 CPU 亲和性约束后，指令数从 13.45\,B 降至 4.05\,B，上下文切换从 2{,}013 降至 14，缓存缺失标准差也改善约 22 倍。按这组数据，OpenBLAS $128\times128$ 的 16 线程异常主要对应调度/迁移与同步等待开销；在本文的实验范围内，\texttt{OMP\_PROC\_BIND} 可以作为缓解措施。
 
 \paragraph{实验 C：测量窗口稳定性对结果波动的影响}
 
-实验环境与第~\ref{sec:gemm_smt}节第一部分保持一致。该实验用于检查测量窗口长度是否会明显影响结果稳定性，因此固定 OMP、16 线程、$128\times128$ 矩阵，在 500 次和 2000 次迭代窗口下各运行 3 次，并比较缓存缺失的变异系数（CV）。这里讨论的是方法学上的稳定性问题，结论主要用于支持正文采用 2000 次标准窗口，不直接外推到 OpenBLAS 其他配置的行为解释。
+实验环境与第~\ref{sec:gemm_smt}节第一部分保持一致。该实验用于检查测量窗口长度对结果稳定性的影响，因此固定 OMP、16 线程、$128\times128$ 矩阵，在 500 次和 2000 次迭代窗口下各运行 3 次，并比较缓存缺失的变异系数（CV）。这里讨论的是方法学上的稳定性问题，结论主要用于支持正文采用 2000 次标准窗口。
 
 \begin{table}[H]
 \centering
-\caption{迭代窗口大小对测量稳定性的影响（OMP，16线程，128×128）}
-\label{tab:window_stability}
 \begin{tabular}{lrl}
 \toprule
 \textbf{窗口大小} & \textbf{缓存缺失 CV} & \textbf{状态} \\
@@ -995,21 +1062,23 @@ $1024\times1024$ & 132.6 B & 0.128 & 计算占比较高 \\
 2000次迭代 & $1.4\%$  & 标准窗口较稳定   \\
 \bottomrule
 \end{tabular}
+\caption{迭代窗口大小对测量稳定性的影响（OMP，16线程，128×128）}
+\label{tab:window_stability}
 \end{table}
 
-从结果看，在 OMP $128\times128$、16 线程配置下，2000 次窗口将缓存缺失 CV 从 30.3\% 降至 1.4\%，明显降低了短窗口下的随机波动，因此作为标准测量窗口是合理的。对于其他配置中仍然出现的高方差，仍需结合调度事件、CPU 迁移和实现差异分别解释。这一方法学实验只支持窗口稳定性的判断。
+在 OMP $128\times128$、16 线程配置下，2000 次窗口将缓存缺失 CV 从 30.3\% 降至 1.4\%，短窗口随机波动随之下降，因此作为标准测量窗口是合理的。对于其他配置中仍然出现的高方差，仍需结合调度事件、CPU 迁移和实现差异分别解释。这一方法学实验只支持窗口稳定性的判断。
 
-\chapter{AVX2 blocked-size 候选集合的推导}\label{app:blocked_size_tuning}
+\section{AVX2 blocked-size 候选集合的推导}\label{app:blocked_size_tuning}
 
 本附录补充正文中 $(M_r,N_r,K_c,M_c,N_c)$ 搜索空间缩减的依据。
 
-\section{$m_r$ 与 $n_r$ 的实现相关推导}
+\subsection{$m_r$ 与 $n_r$ 的实现相关推导}
 
 当前微内核在每次 $p$ 迭代中执行
 $
 C_r(i,:) \leftarrow C_r(i,:) + A_r(i,p)\,B_r(p,:),
 $
-其中 $0 \le i < m_r$。这里 $B_r(p,:)$ 被一次性装入一个 AVX2 向量寄存器，$A_r(i,p)$ 则通过标量广播参与 FMA。语义上的 $m_r \times n_r$ 小块没有变化；变化的是寄存器表示法，SIMD lane 对应的是 $n_r$ 维度，而不是某些论文示例中更常见的 $m_r$ 维度。因此，寄存器方向的变化不能被表述为 $m_r$ 与 $n_r$ 的互换。
+其中 $0 \le i < m_r$。这里 $B_r(p,:)$ 被一次性装入一个 AVX2 向量寄存器，$A_r(i,p)$ 则通过标量广播参与 FMA。语义上的 $m_r \times n_r$ 小块保持不变；SIMD lane 对应的是 $n_r$ 维度，寄存器方向因此与部分论文示例不同。
 
 令 $N_{\text{vec}}$ 表示一个向量寄存器可容纳的标量数。对 AVX2 \texttt{float32}，有
 $
@@ -1037,13 +1106,13 @@ $
 $
 m_r \in \{8,9,10,11,12,13\}.
 $
-当 $n_r = 16$，即 $t = 2$ 时，吞吐下界给出 $m_r \cdot 16 \ge 64 \Rightarrow m_r \ge 4$。乐观寄存器预算变为 $2m_r + 1 + \delta \le 16$，更保守的预算写法则为 $2m_r + 2 + \delta \le 16$。因此，$n_r = 16$ 时的可行 $m_r$ 区间会明显缩小；若取稳妥候选，则可写成
+当 $n_r = 16$，即 $t = 2$ 时，吞吐下界给出 $m_r \cdot 16 \ge 64 \Rightarrow m_r \ge 4$。乐观寄存器预算变为 $2m_r + 1 + \delta \le 16$，更保守的预算写法则为 $2m_r + 2 + \delta \le 16$。按这组约束，$n_r = 16$ 时的可行 $m_r$ 区间更窄；若取稳妥候选，则可写成
 $
 m_r \in \{4,5,6\},
 $
 而 $m_r = 7$ 只在“$n_r = 16$ 且仅保留 1 个 $B$ 向量临时寄存器”的较乐观预算下才可能保留。
 
-综上，本节给出的可行域不再是统一的 $m_r \le 13$，而是依赖 $n_r/8$ 的分情况约束：
+本节给出的可行域按 $n_r/8$ 分情况约束：
 
 $$
 \left\{
@@ -1065,11 +1134,11 @@ $
 \{(8,8),(12,8),(13,8),(4,16),(5,16),(6,16)\}.
 $
 
-\section{$k_c$ 的缓存模型与候选生成}
+\subsection{$k_c$ 的缓存模型与候选生成}
 
 \subsection*{B.2.1 基于 L1 的 $k_c$ 候选中心}
 
-在给定 $(m_r,n_r)$ 后，$k_c$ 的角色是确定 packed $A_r \in \mathbb{R}^{m_r \times k_c}$ 与 $B_r \in \mathbb{R}^{k_c \times n_r}$ 的深度。本文不直接把某个解析式解释为唯一最优值，而是先依据 L1 侧的面板占用关系构造候选中心，再结合对齐与 page-footprint 约束得到离散候选集合。
+在给定 $(m_r,n_r)$ 后，$k_c$ 的角色是确定 packed $A_r \in \mathbb{R}^{m_r \times k_c}$ 与 $B_r \in \mathbb{R}^{k_c \times n_r}$ 的深度。本文先依据 L1 侧的面板占用关系构造候选中心，再结合对齐与 page-footprint 约束得到离散候选集合。
 
 对 AVX2 \texttt{float32}，若以 cache line 为基本单位并记 L1 每路对应 1024B，则可把 $A_r$ 与 $B_r$ 面板的近似 set 压力分别写成与 $m_r k_c$、$n_r k_c$ 成正比的量。简化后，$A_r$ 方向的可用 set 预算上界可写为
 $
@@ -1080,7 +1149,7 @@ $
 k_c^{\text{center}} \approx \frac{1024\,C_{A_r}^{\max}}{m_r}.
 $
 
-这里的 $k_c^{\text{center}}$ 只承担当前硬件上的候选中心角色。不能直接照搬的是依赖 LRU 年龄顺序的叙述，因为当前微内核在每个 $p$ 迭代中先读取 $B_r(p,:)$，后广播 $A_r(:,p)$ 的标量；因此，L1 模型在本文中用于给出中心值与离散候选的生成起点，而不是唯一最优值。
+$k_c^{\text{center}}$ 在本文中只作为当前硬件上的候选中心。当前微内核在每个 $p$ 迭代中先读取 $B_r(p,:)$，后广播 $A_r(:,p)$ 的标量；因此，L1 模型在本文中的作用是给出中心值与离散候选的生成起点。
 
 \subsection*{B.2.2 基于 TLB / page-footprint 的 $k_c$ 约束}
 
@@ -1092,7 +1161,7 @@ $$
 \frac{k_c n_r S_{\text{data}}}{P} \lesssim E_{B_r,\mathrm{TLB}},
 $$
 
-这类弱裁剪通常只起提醒作用，因此本文采用更强的宏面板级裁剪。为把 TLB 层实例化为可执行规则，这里暂定使用 $m_c=128$、$n_c=512$ 作为 provisional panel volumes；它们只服务于当前轮次的 TLB-aware pruning，不代表最终 blocking 结论。对 $P=4096$，有
+这类弱裁剪在本文中只作为提醒，因此后续改用宏面板级裁剪。为把 TLB 层实例化为可执行规则，这里暂定使用 $m_c=128$、$n_c=512$ 作为 provisional panel volumes；它们只服务于当前轮次的 TLB-aware pruning。对 $P=4096$，有
 
 $$
 \operatorname{pages}(A_c) \approx \left\lceil \frac{m_c k_c S_{\text{data}}}{P} \right\rceil
@@ -1130,8 +1199,6 @@ $$
 
 \begin{table}[H]
 \centering
-\caption{$k_c$ 候选的生成与 TLB 裁剪结果}
-\label{tab:appendix_kc_candidates}
 \begin{tabular}{lcccl}
 \toprule
 \textbf{$(m_r,n_r)$} & $C_{A_r}^{\max}$ & $k_c^{\text{center}}$ & \textbf{$\mathcal{K}_{\mathrm{L1}}$} & \textbf{$\mathcal{K}_{\mathrm{pruned}}$} \\
@@ -1144,6 +1211,8 @@ $(5,16)$  & 1 & 204.8 & $\{160,192,256\}$ & $\{160,192,256\}$ \\
 $(6,16)$  & 1 & 170.7 & $\{128,160,224\}$ & $\{128,160,224\}$ \\
 \bottomrule
 \end{tabular}
+\caption{$k_c$ 候选的生成与 TLB 裁剪结果}
+\label{tab:appendix_kc_candidates}
 \end{table}
 
 这些 $\mathcal{K}_{\mathrm{pruned}}(m_r,n_r)$ 构成第一轮 $k_c$ 搜索候选。它们来自“当前硬件上的中心值 + 32 对齐 + 有限比例邻域”，再经一层 page-footprint / TLB 过滤；例如 $1.25$ 比例产生的 $k_c=480$ 在 $(8,8)$ 这一行中因 provisional $A_c$ 页数达到 60、超过有效 L1 DTLB 预算 54 而被剔除。
@@ -1162,13 +1231,13 @@ $$
 \right.
 $$
 
-\section{单线程基础 $m_c/n_c$ 候选生成}
+\subsection{单线程基础 $m_c/n_c$ 候选生成}
 
 \subsection*{B.3.1 基于 cache 的 $m_c/n_c$ 约束}
 
-在当前实现中，$m_c$ 与 $n_c$ 不是脱离前文分块层次的全局参数，而是建立在已经筛出的 $(m_r,n_r,k_c)$ 候选之上：一旦给定微内核形状和沿 $k$ 方向的面板深度，$m_c$ 决定 $A_c \in \mathbb{R}^{m_c \times k_c}$ 的私有工作集高度，$n_c$ 决定 $B_c \in \mathbb{R}^{k_c \times n_c}$ 的共享工作集宽度。因此，本节的目标不是解释固定默认值，而是把 cache / TLB 约束推进成单线程或弱并行情形下的基础候选集合。
+$m_c$ 与 $n_c$ 建立在已经筛出的 $(m_r,n_r,k_c)$ 候选之上：给定微内核形状和沿 $k$ 方向的面板深度后，$m_c$ 决定 $A_c \in \mathbb{R}^{m_c \times k_c}$ 的私有工作集高度，$n_c$ 决定 $B_c \in \mathbb{R}^{k_c \times n_c}$ 的共享工作集宽度。本节据此把 cache / TLB 约束推进成单线程或弱并行情形下的基础候选集合。
 
-$A_c$ 在当前实现中更接近线程私有工作集；$B_c$ 则对应在当前实现的多线程路径中更容易成为共享读取对象的面板，因此本节仍先以单线程基础候选的角色讨论其体积。两者的字节规模分别为
+$A_c$ 在当前实现中按线程私有工作集处理，$B_c$ 对应多线程路径中的共享读取面板，因此本节先按单线程基础候选讨论其体积。两者的字节规模分别为
 
 $$
 |A_c| = m_c k_c S_{\text{data}},
@@ -1184,7 +1253,7 @@ m_c k_c S_{\text{data}} \lesssim \rho_A S_{\text{private}},
 k_c n_c S_{\text{data}} \lesssim \rho_B S_{\text{shared}}.
 $$
 
-其中 $\rho_A,\rho_B \in (0,1)$ 不是硬件给定常数，而是用于保留冲突、代码和其他工作集余量的建模系数；这类关系式给出的是 $m_c^{\max}$ 与 $n_c^{\max}$ 的基础尺度上界，而不是唯一取值。对当前机器，单线程基础建模中取每核私有 L2 容量 $S_{\text{private}}=1\text{ MiB}$；为避免把完整 LLC 容量直接投影到单个 $B_c$ 面板上，取一个保守的 effective shared-cache budget $\rho_B S_{\text{shared}} = 1\text{ MiB}$。这里的 $1\text{ MiB}$ 不是硬件共享缓存总量，而只是第一轮基础候选生成中施加在单个 $B_c$ 面板上的保守有效预算。再令 $\rho_A = 1/4$，则有
+其中 $\rho_A,\rho_B \in (0,1)$ 是用于保留冲突、代码和其他工作集余量的建模系数；这些关系式给出 $m_c^{\max}$ 与 $n_c^{\max}$ 的基础尺度上界。对当前机器，单线程基础建模中取每核私有 L2 容量 $S_{\text{private}}=1\text{ MiB}$；为限制单个 $B_c$ 面板的预算，再取保守的 effective shared-cache budget $\rho_B S_{\text{shared}} = 1\text{ MiB}$。再令 $\rho_A = 1/4$，则有
 
 $$
 m_c^{\max}(k_c) \approx \frac{\rho_A S_{\text{private}}}{k_c S_{\text{data}}}
@@ -1218,7 +1287,7 @@ $$
 \frac{k_c n_c S_{\text{data}}}{P} \lesssim E_{B,\text{TLB}}.
 $$
 
-这些式子并不是精确硬约束，因为当前代码并不控制 huge page、STLB、NUMA 归属或线程绑定；在本节中，它们只承担对 cache 生成候选做第二层 pruning 的作用，而不是新的中心值来源。对当前机器，取 $P=4096$、L1 DTLB 条目数 72、L2 DTLB 条目数 3072，并采用保守的有效预算 $E_{A,\text{eff}}=54$ 与 $E_{B,\text{eff}}=192$；其中 $192$ 不是 L2 DTLB 的硬件条目数，而只是第一轮单线程基础候选生成中用于抑制过宽 $B_c$ 的保守有效预算。则
+这些式子在本节中承担第二层 pruning 的作用。当前代码没有控制 huge page、STLB、NUMA 归属或线程绑定，因此这里仍按近似约束处理。对当前机器，取 $P=4096$、L1 DTLB 条目数 72、L2 DTLB 条目数 3072，并采用保守的有效预算 $E_{A,\text{eff}}=54$ 与 $E_{B,\text{eff}}=192$；其中 $192$ 用于第一轮单线程基础候选生成时抑制过宽 $B_c$。则
 
 $$
 \operatorname{pages}(A_c) \approx \frac{m_c k_c}{1024},
@@ -1226,7 +1295,7 @@ $$
 \operatorname{pages}(B_c) \approx \frac{k_c n_c}{1024}.
 $$
 
-于是，本节使用的 TLB-aware pruning 规则为：若某个 $m_c$ 候选使 $\operatorname{pages}(A_c) > 54$，则将其从 $\mathcal{M}_{\text{cache}}$ 中剔除；若某个 $n_c$ 候选使 $\operatorname{pages}(B_c) > 192$，则将其从 $\mathcal{N}_{\text{cache}}$ 中剔除。这里的 $E_{B,\text{eff}}$ 明显小于硬件 L2 DTLB 容量，其作用是把过宽的 $B_c$ 面板在第一轮基础搜索中先裁掉。
+于是，本节使用的 TLB-aware pruning 规则为：若某个 $m_c$ 候选使 $\operatorname{pages}(A_c) > 54$，则将其从 $\mathcal{M}_{\text{cache}}$ 中剔除；若某个 $n_c$ 候选使 $\operatorname{pages}(B_c) > 192$，则将其从 $\mathcal{N}_{\text{cache}}$ 中剔除。这里的 $E_{B,\text{eff}}$ 小于硬件 L2 DTLB 容量，用于在第一轮基础搜索中先裁掉过宽的 $B_c$ 面板。
 
 \subsection*{B.3.3 综合 cache 与 TLB 约束的单线程基础候选生成}
 
@@ -1254,8 +1323,6 @@ $$
 
 \begin{table}[H]
 \centering
-\caption{第一轮单线程基础候选中的 $M_c/N_c$ 裁剪结果}
-\label{tab:appendix_round1_pruned}
 \begin{tabular}{lclclcl}
 \toprule
 \textbf{$(m_r,n_r,k_c)$} & $m_c^{\max}$ & \textbf{$\mathcal{M}_{\text{cache}}$} & \textbf{$\mathcal{M}_{\text{pruned}}$} & $n_c^{\max}$ & \textbf{$\mathcal{N}_{\text{cache}}$} & \textbf{$\mathcal{N}_{\text{pruned}}$} \\
@@ -1279,17 +1346,17 @@ $(6,16,160)$  & $409.6$ & $\{192,288,384\}$  & $\{192,288\}$  & $1638.4$ & $\{76
 $(6,16,224)$  & $292.6$ & $\{128,192,288\}$  & $\{128,192\}$  & $1170.3$ & $\{576,832,1152\}$    & $\{576,832\}$ \\
 \bottomrule
 \end{tabular}
+\caption{第一轮单线程基础候选中的 $M_c/N_c$ 裁剪结果}
+\label{tab:appendix_round1_pruned}
 \end{table}
 
-表~\ref{tab:appendix_round1_pruned} 给出的 $\mathcal{M}_{\text{pruned}}$ 与 $\mathcal{N}_{\text{pruned}}$ 构成了单线程或弱并行情形下的基础候选集合。它们体现的是“cache 先给基础尺度，TLB 再裁掉偏大的点”这一两层结构，而不是对 $m_c / n_c$ 的最终定值。后续实验再讨论这些基础候选如何进一步收缩。
+表~\ref{tab:appendix_round1_pruned} 给出的 $\mathcal{M}_{\text{pruned}}$ 与 $\mathcal{N}_{\text{pruned}}$ 构成了单线程或弱并行情形下的基础候选集合。它们对应“cache 先给基础尺度，TLB 再裁掉偏大的点”这一两层结构。后续实验再讨论这些基础候选如何进一步收缩。
 
 第一轮单线程 coarse screening 覆盖了全部保留的 $(m_r,n_r,k_c)$ 组合；在此基础上，只对局部优胜的 5 组 \texttt{KernelShape/Kc} 继续做第二轮精筛。第二轮使用的更密 $M_c/N_c$ 网格如表~\ref{tab:appendix_round2_grids} 所示。
 
 \begin{table}[H]
 \centering
-\caption{第二轮精筛使用的 $M_c/N_c$ 候选网格}
-\label{tab:appendix_round2_grids}
-\begin{tabular}{lllp{0.23\textwidth}p{0.23\textwidth}r}
+\begin{tabular}{lll l p{0.23\textwidth} p{0.23\textwidth} r}
 \toprule
 \textbf{内核} & \textbf{$m_r$} & \textbf{$n_r$} & \textbf{$k_c$} & \textbf{$M_c$ 候选} & \textbf{$N_c$ 候选} & \textbf{组合数} \\
 \midrule
@@ -1300,8 +1367,10 @@ $(6,16,224)$  & $292.6$ & $\{128,192,288\}$  & $\{128,192\}$  & $1170.3$ & $\{57
 \texttt{4x16} & 4 & 16 & 320 & $\{96,128,160\}$ & $\{384,448,512,576\}$ & 12 \\
 \bottomrule
 \end{tabular}
+\caption{第二轮精筛使用的 $M_c/N_c$ 候选网格}
+\label{tab:appendix_round2_grids}
 \end{table}
 
-因此，第二轮总候选数为 $16+12+20+15+12=75$。这些组合的作用不是重新扩大搜索面，而是在第一轮已知优胜区域附近补足中间点，从而提高单线程 blocked-size 结论的稳定性。
+因此，第二轮总候选数为 $16+12+20+15+12=75$。这些组合在第一轮已知优胜区域附近补足中间点，从而提高单线程 blocked-size 结论的稳定性。
 
 \end{document}
