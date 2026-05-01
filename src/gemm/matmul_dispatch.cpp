@@ -112,8 +112,65 @@ size_t minz(size_t a, size_t b) {
 }
 
 #ifndef BLOCK_SIZE
-#define BLOCK_SIZE 64
+#define BLOCK_SIZE 128
 #endif
+
+namespace {
+
+constexpr size_t kDefaultBlockedBlockSize = 128;
+constexpr size_t kDefaultPackBBlockSize = 48;
+constexpr size_t kDefaultPackABMc = 32;
+constexpr size_t kDefaultPackABNc = 128;
+constexpr size_t kDefaultPackABKc = 16;
+
+size_t default_block_size_for_impl(MatmulImpl impl) {
+    switch (impl) {
+        case MatmulImpl::OmpBlockedPackB:
+            return kDefaultPackBBlockSize;
+        case MatmulImpl::OmpBlocked:
+            return kDefaultBlockedBlockSize;
+        default:
+            return static_cast<size_t>(BLOCK_SIZE);
+    }
+}
+
+size_t default_mc_for_impl(MatmulImpl impl) {
+    switch (impl) {
+        case MatmulImpl::OmpBlockedPackAB:
+            return kDefaultPackABMc;
+        case MatmulImpl::OmpGotoBlasAvx2:
+        case MatmulImpl::OmpGotoBlasAvx512:
+            return gotoblas_default_mc();
+        default:
+            return default_block_size_for_impl(impl);
+    }
+}
+
+size_t default_nc_for_impl(MatmulImpl impl) {
+    switch (impl) {
+        case MatmulImpl::OmpBlockedPackAB:
+            return kDefaultPackABNc;
+        case MatmulImpl::OmpGotoBlasAvx2:
+        case MatmulImpl::OmpGotoBlasAvx512:
+            return gotoblas_default_nc();
+        default:
+            return default_block_size_for_impl(impl);
+    }
+}
+
+size_t default_kc_for_impl(MatmulImpl impl) {
+    switch (impl) {
+        case MatmulImpl::OmpBlockedPackAB:
+            return kDefaultPackABKc;
+        case MatmulImpl::OmpGotoBlasAvx2:
+        case MatmulImpl::OmpGotoBlasAvx512:
+            return gotoblas_default_kc();
+        default:
+            return default_block_size_for_impl(impl);
+    }
+}
+
+}  // namespace
 
 MatmulImpl parse_impl_env() {
     const char* v = std::getenv("MATMUL_IMPL");
@@ -152,7 +209,7 @@ MatmulImpl current_impl() {
 size_t parse_block_size_env() {
     const char* v = std::getenv("MATMUL_BLOCK_SIZE");
     if (!v || !*v) {
-        return static_cast<size_t>(BLOCK_SIZE);
+        return default_block_size_for_impl(current_impl());
     }
 
     char* end = nullptr;
@@ -163,9 +220,9 @@ size_t parse_block_size_env() {
             warned = true;
             std::cerr << "[WARN] MATMUL_BLOCK_SIZE invalide ('" << v
                       << "'). Utilisation de la valeur par defaut "
-                      << BLOCK_SIZE << ".\n";
+                      << default_block_size_for_impl(current_impl()) << ".\n";
         }
-        return static_cast<size_t>(BLOCK_SIZE);
+        return default_block_size_for_impl(current_impl());
     }
 
     return static_cast<size_t>(parsed);
@@ -178,19 +235,19 @@ size_t current_block_size() {
 
 size_t current_mc_block_size() {
     static const size_t bs = parse_positive_size_env_with_alias(
-        "MATMUL_MC", "MATMUL_PACK_M", current_block_size());
+        "MATMUL_MC", "MATMUL_PACK_M", default_mc_for_impl(current_impl()));
     return bs;
 }
 
 size_t current_nc_block_size() {
     static const size_t bs = parse_positive_size_env_with_alias(
-        "MATMUL_NC", "MATMUL_PACK_N", current_block_size());
+        "MATMUL_NC", "MATMUL_PACK_N", default_nc_for_impl(current_impl()));
     return bs;
 }
 
 size_t current_kc_block_size() {
     static const size_t bs = parse_positive_size_env_with_alias(
-        "MATMUL_KC", "MATMUL_PACK_K", current_block_size());
+        "MATMUL_KC", "MATMUL_PACK_K", default_kc_for_impl(current_impl()));
     return bs;
 }
 

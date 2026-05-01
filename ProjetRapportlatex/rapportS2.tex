@@ -28,10 +28,15 @@
 \usepackage{longtable}
 \usepackage{listings}
 \usepackage{array}
+\usepackage{tikz}
+\usetikzlibrary{positioning,calc}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
 \usepackage{xcolor}
 \usepackage{enumitem}
 \usepackage{fancyhdr}
 \usepackage{setspace}
+\usepackage{titlesec}
 
 % Rendre les listes moins "visuelles" et plus compactes (réduit la fatigue à la lecture)
 \setlist[itemize]{label=\textendash, leftmargin=*, nosep}
@@ -52,22 +57,43 @@
 \newcommand{\bigO}[1]{\ensuremath{\mathop{}\mathopen{}O\mathopen{}\left(#1\right)}}
 \newcommand{\smallO}[1]{\ensuremath{\mathop{}\mathopen{}o\mathopen{}\left(#1\right)}}
 
-\captionsetup[figure]{font=footnotesize, justification=justified, singlelinecheck=false, position=bottom}
+\captionsetup[figure]{font=footnotesize, justification=centering, singlelinecheck=true, position=bottom}
 \captionsetup[table]{font=footnotesize, justification=centering, singlelinecheck=true, position=bottom}
 \urlstyle{same}
 \emergencystretch=1em
 
 \setcounter{tocdepth}{3}
 \setcounter{secnumdepth}{3}
-\setstretch{1.2}
+\setstretch{1.0}
 \setlength{\parindent}{2em}
 \setlength{\parskip}{0pt}
-\renewcommand{\contentsname}{目录}
-\renewcommand{\bibname}{参考文献}
+\renewcommand{\contentsname}{Table des matières}
+\renewcommand{\bibname}{Références}
 
-\newcommand{\reporttype}{项目报告}
-\newcommand{\reporttitletext}{应用于 MNIST 的 MLP 与自动微分引擎}
-\newcommand{\reportshorttitle}{MLP 与自动微分引擎}
+\titleformat{\section}
+  {\normalfont\fontsize{18pt}{24pt}\selectfont\bfseries}
+  {\thesection}
+  {0.8em}
+  {}
+\titlespacing*{\section}{0pt}{1.8em}{0.8em}
+
+\titleformat{\subsection}
+  {\normalfont\fontsize{14pt}{19pt}\selectfont\bfseries}
+  {\thesubsection}
+  {0.7em}
+  {}
+\titlespacing*{\subsection}{0pt}{1.2em}{0.5em}
+
+\titleformat{\subsubsection}
+  {\normalfont\fontsize{12pt}{16pt}\selectfont\bfseries}
+  {\thesubsubsection}
+  {0.6em}
+  {}
+\titlespacing*{\subsubsection}{0pt}{0.9em}{0.35em}
+
+\newcommand{\reporttype}{Rapport de projet}
+\newcommand{\reporttitletext}{MLP pour MNIST et moteur de\\différentiation automatique}
+\newcommand{\reportshorttitle}{MLP et moteur de différentiation automatique}
 \newcommand{\reportinstitution}{Université de Versailles Saint-Quentin-en-Yvelines}
 \newcommand{\reportprogram}{Master CHPS -- UVSQ}
 \newcommand{\reportyear}{2025--2026}
@@ -88,12 +114,11 @@
   \end{tabular}%
 }
 \newcommand{\reportadvisor}{Aurélien Delval}
-\newcommand{\reportdate}{2026 年 4 月 29 日}
+\newcommand{\reportdate}{29 avril 2026}
 
 %%%%%%%%%%%%%%%%%%%%%
 % En-têtes et pieds de page
 \fancyhf{}
-\fancyhead[L]{\textit{\reportheadertext}}
 \fancyhead[R]{\nouppercase{\rightmark}}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
@@ -131,9 +156,13 @@
 
   \vspace{2.4cm}
 
-  {\Large\bfseries \reporttitletext\par}
-  \vspace{0.45cm}
-  {\large\color{black!70} \reporttype\par}
+  \begin{center}
+    {\fontsize{22pt}{28pt}\selectfont\bfseries \reporttitletext\par}
+    \vspace{0.45cm}
+    {\Large\color{black!70} \reporttype\par}
+    \vspace{0.35cm}
+    {\normalsize\textit{\reportheadertext}\par}
+  \end{center}
 
   \vspace{1.6cm}
 
@@ -177,370 +206,178 @@
 \pagenumbering{arabic}
 \setcounter{page}{1}
 \pagestyle{fancy}
+\thispagestyle{plain}
 
-\section{引言}
+\section{Introduction}
 
-\subsection{项目背景与研究对象}
-神经网络系统的实现不仅涉及模型结构本身，也涉及训练运行时、数值计算内核以及数据输入路径等多个层面。以图像分类任务为载体，从零实现一套可训练的神经网络程序，有助于在统一代码基础上考察前向传播、反向传播、参数更新与实验执行流程之间的关系，并为后续的性能测量与实现比较提供可控环境。
+\subsection{Contexte du projet et objet d'étude}
+La mise en oeuvre d'un système de réseaux de neurones ne se limite pas à l'architecture du modèle. Elle couvre aussi le runtime d'entraînement, les noyaux de calcul numérique et le pipeline d'entrée. Pour une tâche de classification d'images, développer depuis zéro un programme de réseau de neurones entraînable permet d'étudier, sur une base de code unique, les relations entre propagation avant, rétropropagation, mise à jour des paramètres et exécution expérimentale, tout en conservant un environnement maîtrisé pour les mesures de performance et les comparaisons d'implémentation.
 
-本报告讨论的对象是一个以 C++ 为基础实现的神经网络实验系统。该系统当前覆盖了多层感知机（MLP, multi-layer perceptron）与卷积神经网络（CNN, convolutional neural network）两类模型路径，同时包含自动微分运行时、矩阵乘法与卷积计算后端、数据加载接口，以及面向分布式训练实验的同步机制。本文关注的是这些组成部分在当前实现范围内的组织方式、扩展方向与实验用途，而非将其表述为通用深度学习框架或稳定完备的训练平台。
+Le présent rapport porte sur un système expérimental de réseaux de neurones implémenté en C++. Le système couvre actuellement deux familles de modèles, les perceptrons multicouches (MLP, multi-layer perceptron) et les réseaux convolutifs (CNN, convolutional neural network), ainsi qu'un runtime de différentiation automatique, des backends de multiplication de matrices et de convolution, une interface de chargement des données et un mécanisme de synchronisation pour les expériences d'entraînement distribué. L'analyse porte sur l'organisation de ces composants dans le périmètre actuel, leurs axes d'extension et leur usage expérimental, sans les présenter comme un framework générique de deep learning ni comme une plateforme d'entraînement stabilisée et exhaustive.
 
-\subsection{前期基础与本阶段扩展}
-前期工作已经完成了基于 MNIST \cite{lecun1998} 的多层感知机训练基础，包括反向模式自动微分、显式计算图、基础矩阵计算核心与完整训练循环。该部分工作提供了可运行的功能基线，也为后续比较不同计算实现、扩展卷积路径以及观察运行时开销提供了统一的实验起点。
+\subsection{Base initiale et extensions de cette étape}
+Le travail préparatoire a déjà établi une base d'entraînement de perceptron multicouche sur MNIST \cite{lecun1998}, incluant la différentiation automatique en mode reverse, un graphe de calcul explicite, un noyau élémentaire de calcul matriciel et une boucle d'entraînement complète. Cet ensemble fournit une base fonctionnelle exécutable et sert de point de départ commun pour comparer plusieurs implémentations de calcul, étendre le chemin convolutif et observer les coûts du runtime.
 
-在此前基础上，本阶段将系统从单一的 MLP/MNIST 原型扩展为能够承载更多技术路径的实验对象。扩展内容主要包括：加入可配置的 CNN 路径，以支持卷积模型实验；围绕通用矩阵乘法（GEMM, general matrix multiplication）与卷积相关算子进行实现比较与优化；整理自动微分运行时，以便更清晰地区分框架层开销与算子层开销；引入 Tiny-ImageNet 数据集路径，用于评估当前实现对更高负载图像输入与训练流程的适配范围；并加入基于消息传递接口（MPI, message passing interface）的同步数据并行实验路径，用于考察分布式梯度同步在当前实现中的组织方式与边界。
+Sur cette base, cette étape élargit le système, initialement limité à un prototype MLP/MNIST, en un support expérimental capable d'accueillir davantage de variantes techniques. Les extensions principales sont les suivantes : ajout d'un chemin CNN configurable pour les expériences sur modèles convolutifs ; comparaison et optimisation d'implémentations autour de la multiplication de matrices générale (GEMM, general matrix multiplication) et des opérateurs liés à la convolution ; réorganisation du runtime de différentiation automatique afin de distinguer plus clairement les coûts du framework et ceux des opérateurs ; intégration d'un chemin Tiny-ImageNet pour évaluer l'adaptation de l'implémentation actuelle à des entrées image plus lourdes et à une chaîne d'entraînement plus exigeante ; enfin, ajout d'un chemin expérimental de parallélisme de données synchrone fondé sur MPI (message passing interface) afin d'examiner l'organisation et les limites de la synchronisation distribuée des gradients dans l'implémentation actuelle.
 
-\subsection{报告范围与后文内容}
-本文后续内容围绕上述扩展依次展开。首先讨论 GEMM 相关实现及其比较方法，并据此说明后续实验中复用的矩阵计算配置；随后介绍卷积路径与 CNN 结构在当前代码中的实现范围；在此基础上，再说明 Tiny-ImageNet 数据集接入、输入管线与训练支撑代码的组织方式；最后讨论 MPI 分布式同步路径和自动微分运行时整理的相关内容。附录部分补充若干诊断实验与参数推导过程，用于支持正文中的实现分析与实验解释。
+\subsection{Périmètre du rapport et organisation}
+La suite du rapport développe ces extensions dans l'ordre suivant. La première partie traite des implémentations GEMM et de leur méthode de comparaison, puis précise la configuration de calcul matriciel réutilisée dans les expériences suivantes. La deuxième présente le périmètre d'implémentation du chemin convolutif et de la structure CNN dans le code actuel. La troisième décrit l'intégration du jeu de données Tiny-ImageNet, le pipeline d'entrée et l'organisation du code de support à l'entraînement. La dernière aborde le chemin de synchronisation distribuée fondé sur MPI ainsi que la réorganisation du runtime de différentiation automatique. Les annexes complètent l'exposé par des expériences de diagnostic et des dérivations de paramètres utilisées pour appuyer l'analyse et l'interprétation des résultats.
 
-\section{GEMM矩阵乘法的优化}
+\section{Optimisation de l'opérateur de multiplication de matrices GEMM}
 
-在当前系统中，GEMM（general matrix multiplication，通用矩阵乘法）是最核心的底层计算算子。它不仅出现在 MLP 的全连接层中，也被卷积路径中的 \texttt{im2col + matmul} 方案反复调用。因此，矩阵乘法实现的效率会直接影响单个算子的执行时间，并进一步影响后续 CNN、Tiny-ImageNet 和分布式训练实验中的总体耗时。
+Dans le système actuel, GEMM (general matrix multiplication) est l'opérateur de calcul bas niveau central, utilisé à la fois dans les couches entièrement connectées du MLP et dans le schéma convolutif \texttt{im2col + matmul}. Son efficacité influe donc directement sur le coût global des expériences CNN, Tiny-ImageNet et d'entraînement distribué.
 
-本章围绕项目中实现或接入的多种 GEMM 路径展开，包括 \texttt{blas}（即项目中接入的 OpenBLAS 实现）、\texttt{omp}、\texttt{omp\_blocked}、\texttt{omp\_blocked\_packab}、\texttt{omp\_gotoblas\_avx2} 和 \texttt{omp\_gotoblas\_avx512}。这里的目的不只是对这些 backend（后端）做横向比较，而是借助 OpenMP 并行、cache blocking（缓存分块）、packing（数据打包）以及最终的 GotoBLAS 风格分层与 SIMD 微内核等手段，对当前设备上的 GEMM workload 做适配优化。
+Ce chapitre présente, compare et optimise plusieurs chemins GEMM du projet : \texttt{blas} (OpenBLAS), \texttt{omp} (version OpenMP de base implémentée au semestre précédent), \texttt{omp\_blocked}, \texttt{omp\_blocked\_packab}, \texttt{omp\_gotoblas\_avx2} et \texttt{omp\_gotoblas\_avx512}. L'objectif est d'adapter le workload GEMM à la machine cible à l'aide du parallélisme OpenMP, du blocking, du packing et d'une organisation de type GotoBLAS avec micro-kernels SIMD.
 
-具体而言，本章关注的问题包括：基础 OpenMP 并行能带来多少收益，cache blocking（缓存分块）与 packing（数据打包）是否能够改善访存行为，GotoBLAS 风格的分层结构在本项目的 workload（工作负载）上是否有效，以及 AVX2/AVX-512 微内核在不同矩阵形状和线程数下表现是否稳定。相关结果主要用于形成后续实验中复用的 \texttt{matmul} 实现配置。
+Les questions traitées sont les suivantes : quel gain apporte le parallélisme OpenMP de base, dans quelle mesure le blocking cache et le packing améliorent les accès mémoire, si l'organisation hiérarchique de type GotoBLAS est adaptée au workload du projet, et si les micro-kernels AVX2/AVX-512 restent stables selon la forme des matrices et le nombre de threads. Les résultats servent principalement à fixer la configuration \texttt{matmul} réutilisée dans les expériences ultérieures.
 
-\subsection{实验环境}
-除特别说明外，本章后续实验均使用附录~\ref{app:gemm_setup} 中列出的硬件环境、软件配置、测量协议和 CPU 绑定设置。GEMM 比较默认限制在 1 至 8 个物理线程，并启用 \texttt{OMP\_PROC\_BIND=true} 与 \texttt{OMP\_PLACES=cores}；只有用于诊断 SMT/超线程异常的对照实验会单独使用 16 线程配置。
+\subsection{Environnement expérimental}
+Sauf mention contraire, les expériences de ce chapitre utilisent l'environnement matériel, la configuration logicielle, le protocole de mesure et les réglages d'affinité CPU décrits en annexe~\ref{app:gemm_setup}. Les comparaisons GEMM utilisent par défaut des configurations de 1 à 8 threads, correspondant aux 8 c\oe urs physiques, avec \texttt{OMP\_PROC\_BIND=true} et \texttt{OMP\_PLACES=cores}. Seules les expériences de contrôle sur le SMT/hyper-threading utilisent une configuration à 16 threads.
 
-\subsection{OpenBLAS多线程分析：超线程的代价}\label{sec:gemm_smt}
+\subsection{Budget de threads et protocole expérimental}\label{sec:gemm_smt}
 
-本节比较 OpenBLAS 与基础 OpenMP GEMM 实现在 1 至 16 线程下的扩展性，观察对象是超线程（SMT）引入的调度、同步和资源竞争成本。
+Avant de comparer les implémentations GEMM, une série d'expériences de contrôle sur le SMT a servi à fixer le budget de threads. La conclusion est qu'une configuration à 16 threads (SMT) dégrade les performances à la fois avec OpenBLAS et avec l'implémentation OpenMP de base. La cause principale est l'amplification des coûts d'ordonnancement et d'attente de synchronisation sur des unités d'exécution physiques partagées par l'hyper-threading (voir annexe~\ref{app:smt_diagnosis}).
 
-\subsubsection{初步观察}
+\textbf{En conséquence, toutes les expériences suivantes reprennent cette configuration de référence,} afin d'écarter des comparaisons entre backends les fluctuations d'ordonnancement observées sous SMT. La comparaison de montée en charge avec contraintes d'affinité figure en annexe~\ref{app:smt_diagnosis}.
 
-图~\ref{fig:blas1_scaling}展示了未绑定CPU核心时两种实现的线程扩展性。
+\subsection{Blocking et packing avec OpenMP}
 
-两个关键现象立即显现：
+Par rapport à la référence \texttt{omp}, cette section évalue dans quelle mesure le \textbf{blocking} et le \textbf{packing} améliorent encore la localité de travail de chaque thread en parallèle.
 
-\textbf{现象一：BLAS对64×64矩阵保持单线程行为。}
-64×64矩阵的计算量仅约524K FLOP，未达到OpenBLAS内部的并行化触发阈值。
-因此，无论配置多少线程，BLAS始终以单线程执行，时间稳定在约9.4~$\mu$s。
-基础OpenMP手动并行在8线程下可将时间降至4.4~$\mu$s；该结果说明基础OpenMP对极小矩阵存在短路径优势，
-不能据此说明OpenBLAS多线程策略有问题。
+Du point de vue de la localité temporelle, le blocking vise à réutiliser autant que possible les sous-blocs de $A$, $B$ et $C$ déjà présents en cache avant leur éviction. Sans cela, des données encore peu exploitées peuvent être remplacées par de nouveaux accès.
 
-\textbf{现象二：16线程（超线程）引发两类性质不同的性能退化。}
-在16线程配置下，两类异常需要区分。
-OMP在64×64上执行时间从8.97~$\mu$s增至73.00~$\mu$s（退化\textbf{8.1倍}），
-说明极小矩阵对过度并行非常敏感；但由于该实现是基础OpenMP GEMM，
-该现象可能同时受到barrier开销、调度粒度、false sharing或手写并行结构等因素的影响，
-因此本文不将其作为OpenBLAS内部行为的直接证据。
-相比之下，OpenBLAS在128×128至512×512上出现的指令数暴增（128×128时达到8线程的\textbf{252倍}）和方差极大，
-才是后续16线程诊断实验的主要对象。
+Le packing complète le blocking en recopiant les panneaux ou sous-blocs appelés à être relus dans un tampon contigu et réordonné. Il échange ainsi une copie supplémentaire contre des accès plus réguliers, moins de strides et une résidence en cache mieux contrôlée, ce qui réduit les cache / TLB miss et améliore l'utilisation de la bande passante.
 
-\begin{center}
-    \includegraphics[width=0.84\textwidth]{../output/ExperienceGEMM/BLAS1/scaling_plot_advanced.png}
-    \captionof{figure}{初始实验（BLAS1）：线程数对BLAS与OMP性能的影响（未绑定CPU核心）。
-             纵轴为执行时间（$\mu$s），横轴为线程数，分四个矩阵尺寸展示。}
-    \label{fig:blas1_scaling}
-\end{center}
+Le réglage détaillé et la procédure de sélection pour \texttt{omp\_blocked}, \texttt{omp\_blocked\_packb} et \texttt{omp\_blocked\_packab} sont regroupés en annexe~\ref{app:blocked_pack_screening}. Sur la plateforme étudiée, les résultats indiquent que la meilleure configuration de \texttt{omp\_blocked} se rapproche d'un blocking résident en L2, tandis que les variantes avec packing présentent un jeu de données optimal plus proche d'une organisation orientée L1.
 
-\subsubsection{16线程异常的解释}
+À partir de ce constat, la suite se concentre sur un chemin de type GotoBLAS plus structuré afin d'évaluer son adaptation à la machine et au workload considérés.
 
-针对OpenBLAS在128×128及以上矩阵中的16线程异常，本文的解释是：OpenBLAS的高性能内核（GotoBLAS风格实现）通常已能充分占用物理核心的FMA单元及SIMD寄存器；
-而SMT（超线程技术）不增加新的物理执行单元，两个逻辑核心共享同一套资源，因此16线程在8个物理核心上通常难以带来额外收益，反而会放大资源竞争。
-对小矩阵而言，计算量本就有限，线程在barrier处的自旋等待占比进一步上升，于是同步与调度开销更容易主导总成本；
-附录~\ref{app:smt_diagnosis}中的对照实验为这一解释提供了量化支持。
+\subsection{Architecture GotoBLAS}\label{sec:gotoblas_arch}
 
-其中，最直接的证据来自亲和性对照实验（实验B，OpenBLAS、16线程、128×128、5000次迭代）：绑定核心后，指令数从13.45\,B降至4.05\,B（$-69.9\%$），context switches从2{,}013降至14（$-99.3\%$），缓存缺失标准差改善约22倍。按这组数据，正文将16线程异常主要归因于调度/迁移与同步等待开销。
+Le packing présenté plus haut améliore déjà la localité des données et prépare efficacement le calcul au niveau des registres. L'implémentation suivante ajoute, sur cette base, une couche de micro-kernel afin de mieux exploiter le SIMD au niveau registre, dans une organisation de type GotoBLAS.
 
-附录中的另外两组结果主要起补充作用：实验A显示 OMP 在 128×128 时的每操作指令数（Instr/Op）为 0.587，而 1024×1024 为 0.128，小矩阵下固定同步开销占比更高；相关的上下文切换对比见附录实验A中的图~\ref{fig:cs_comparison}。实验C则表明 16 线程配置在 500 次迭代时缓存缺失变异系数为 30.3\%，到 2000 次迭代降至 1.4\%，支持正文采用 2000 次标准窗口。本文中的 IPC 用作异常诊断信号，与执行时间、指令数和调度事件结合解读。
+\subsubsection{Modèle de blocking à trois niveaux}
 
-\subsubsection{结论：限制到物理核心，强制绑定}
-
-综合上述结果，16线程配置在两类实现上均不适合作为推荐配置。
-对于OpenBLAS而言，亲和性对照实验表明绑定线程会降低调度事件和同步等待相关指令，支持将线程数控制在物理核心预算以内。
-对于基础OpenMP而言，OMP 64×64的极端退化说明小矩阵过度并行风险较高，其成因可能涉及多种实现因素。
-
-\textbf{因此，后续所有实验均限制在1至8个物理线程，并强制启用 \texttt{OMP\_PROC\_BIND=true} 与 \texttt{OMP\_PLACES=cores}。}
-这一选择同时为系统和测量工具保留CPU余量。
-
-图~\ref{fig:blas2_scaling}展示了施加 CPU 亲和性约束后的线程扩展性对比。
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.90\textwidth]{../output/ExperienceGEMM/BLAS2/scaling_plot_advanced.png}
-    \caption{施加 CPU 亲和性约束后（BLAS2）的线程扩展性对比。
-             在图中覆盖的 $64\times64$ 至 $512\times512$ 方阵上，并在 8 个物理线程配置下，\texttt{blas} 相对于同图中的其他实现给出最低测得时间。}
-    \label{fig:blas2_scaling}
-\end{figure}
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lrrl}
-\toprule
-\textbf{矩阵尺寸} & \textbf{最优配置} & \textbf{性能 ($\mu$s)} & \textbf{相比单线程加速} \\
-\midrule
-64×64   & BLAS 单线程 & 9.42    & ---          \\
-128×128 & BLAS 8线程  & 24.29   & $3.5\times$  \\
-256×256 & BLAS 8线程  & 123.75  & $5.0\times$  \\
-512×512 & BLAS 8线程  & 1428.53 & $3.3\times$  \\
-\bottomrule
-\end{tabular}
-\caption{施加亲和性约束后各矩阵尺寸的最优配置（OpenBLAS）}
-\label{tab:blas_optimal}
-\end{table}
-
-\subsection{OpenMP分块与打包技术}
-
-在 OpenBLAS 基线之后，本文继续比较自主实现的 OpenMP GEMM，并检查 \textbf{分块（Blocking）}与\textbf{数据打包（Packing）}在当前代码路径中的收益范围。
-
-\subsubsection{基础分块：\texttt{omp\_blocked}}
-基础 \texttt{omp} 实现采用 $ikj$ 循环顺序后，内层对 row-major 存储的 $B[k,j]$ 已经是连续访问，因此其局部性并不差。
-\texttt{omp\_blocked} 在此基础上加入 cache blocking，将 $j/k$ 方向的计算重组为由 \texttt{MATMUL\_BLOCK\_SIZE} 控制的 tile，
-并扫描 $\{32,48,64\}$ 三种块大小，在矩阵尺寸 64 至 512、线程数 1 至 8 的范围内进行测试。
-
-需要说明的是，实现中的并行任务并不直接等同于缓存块大小；为避免小矩阵下任务数不足，代码还额外计算了行方向的任务粒度。
-
-我们枚举了块大小、线程数和矩阵尺寸。结果表明，$256\times256$ 至 $512\times512$ 下 tile=64 通常较优，$64\times64$ 对块大小基本不敏感；但整体上，\texttt{omp\_blocked} 仍未超过朴素 \texttt{omp}。按当前实现，cache blocking 改善的访问顺序和局部性被块边界循环、任务管理和实现开销抵消了。
-
-\subsubsection{带打包的分块：\texttt{omp\_blocked\_packb}与\texttt{omp\_blocked\_packab}}
-
-基础分块只改变循环遍历顺序，不改变矩阵在内存中的布局。当内层计算反复访问同一块 $A$ 或 $B$ 面板时，仍会受到步长访问、边界判断、TLB 压力和缓存行利用率的影响。packing 的做法是在计算前把即将复用的面板复制到连续缓冲区，代价是多一次复制，收益是后续访问更规则。
-
-\texttt{omp\_blocked\_packb} 首先对 $B$ 的当前面板进行打包。内层循环随后直接访问连续 packed buffer，从而减少不规则寻址，并改善硬件预取器和缓存行利用率。
-
-\texttt{omp\_blocked\_packab} 在此基础上进一步对 $A$ 面板进行打包，使 $A$ 与 $B$ 都以连续面板进入内层计算。实验中分别扫描 \texttt{PACK\_M}、\texttt{PACK\_N} 与 \texttt{PACK\_K}，其中 \texttt{PACK\_K} 对 L2 复用和打包成本的平衡最敏感。
-
-我们同样枚举了分块大小、线程数和矩阵尺寸。结果表明，A+B 双打包在较大矩阵上比单纯分块更稳定，\texttt{PACK\_K} 位于 32 至 64 附近时更常进入较优区域。正文据此保留 packing 路径进入后续实现比较。
-
-\subsection{GotoBLAS架构}\label{sec:gotoblas_arch}
-
-前述 blocked / packed OpenMP 路径仍落后于 OpenBLAS。后续实现采用 GotoBLAS 风格组织：三层 blocking、packed panels 和 SIMD micro-kernel。参数搜索围绕 $(M_r,N_r,K_c,M_c,N_c)$ 展开，并以项目中的 GEMM workload 为筛选对象。
-
-\subsubsection{三层分块模型}
-
-GotoBLAS将 $C = A \cdot B$（规模 $M \times K \times N$）分解为三层嵌套循环及最内层微内核，
-每层对应一个缓存层级：
-
-\begin{enumerate}
-    \item \textbf{外层（$N_c$维度）}：沿N维度以$N_c$为步长，将B的面板（$K \times N_c$）装入LLC（L3缓存）；
-    \item \textbf{中层（$K_c$维度）}：沿K维度以$K_c$为步长，将打包后的B面板（$K_c \times N_c$）装入L2缓存；
-    \item \textbf{内层（$M_c$维度）}：沿M维度以$M_c$为步长，将打包后的A面板（$M_c \times K_c$）装入L1缓存；
-    \item \textbf{微内核（$M_r \times N_r$寄存器tile）}：最内层操作，在SIMD寄存器中积累$M_r \times N_r$的C块。
-\end{enumerate}
-
-需要说明的是，这一层次化模型默认各层块都能形成足够规整的 tile；但当 $M$ 很小或线程数较高时，沿 $M$ 维切分后每个线程实际分得的行数可能低于微内核高度 $M_r$。此时宏块与寄存器块无法充分铺满，程序会更频繁地落入边界处理（remainder loop），从而削弱三层分块本应带来的缓存复用与并行效率。
+GotoBLAS décompose $C = A \cdot B$ (de taille $M \times K \times N$) en trois niveaux de boucles imbriquées et un micro-kernel interne, comme l'illustre la figure~\ref{fig:gotoblas_overview}.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.48\textwidth]{Images/blis_design.png}
     \hfill
     \includegraphics[width=0.48\textwidth]{Images/DataMovement.png}
-    \caption{左：GotoBLAS/BLIS风格的分块与微内核组织示意。右：GotoBLAS分层分块中的数据移动路径示意。}
+    \caption{À gauche : organisation hiérarchique de l'algorithme GEMM de type GotoBLAS/BLIS autour du micro-kernel, reproduite de \cite[Fig.~1]{vanzee2017complex}. À droite : schéma des mouvements de données et du placement des panneaux dans la hiérarchie mémoire pour une implémentation BLIS/GotoBLAS, reproduit de \cite[Fig.~4]{low2016analytical}.}
     \label{fig:gotoblas_overview}
 \end{figure}
 
-缓存块参数按面板容量估算：$A$ 面板 $M_c \times K_c \times 4$ 字节对应 L1（32~KiB/核），$B$ 面板 $K_c \times N_c \times 4$ 字节对应 L2（1~MiB/核）。当前默认参数为 $K_c=384$、$M_c$ 有效行数 $=64$（倍率 8，基于 $M_r=8$）、$N_c=448$；这些参数在第~\ref{sec:avx2_tuning}节中继续做实验筛选。
+Les trois niveaux externes de blocking et de packing visent à compacter le jeu de données et à le maintenir dans le niveau de cache adapté, tandis que le micro-kernel interne maximise, au niveau des registres, la réutilisation de ces données packées.
 
-\subsubsection{微内核设计}\label{subsec:microkernel}
+\begin{enumerate}
+    \item \textbf{Couche externe (dimension $N_c$)} : parcours de la dimension $N$ avec un pas $N_c$ pour charger dans le LLC (cache L3) les panneaux de $B$ de taille $K \times N_c$ ;
+    \item \textbf{Couche intermédiaire (dimension $K_c$)} : parcours de la dimension $K$ avec un pas $K_c$ pour charger en cache L2 les panneaux packés de $B$ de taille $K_c \times N_c$ ;
+    \item \textbf{Couche interne (dimension $M_c$)} : parcours de la dimension $M$ avec un pas $M_c$ pour charger en cache L1 les panneaux packés de $A$ de taille $M_c \times K_c$ ;
+    \item \textbf{Micro-kernel (tile registre $M_r \times N_r$)} : opération la plus interne, avec accumulation d'un bloc de $C$ de taille $M_r \times N_r$ dans les registres SIMD.
+\end{enumerate}
 
-当前 AVX2 单精度微内核沿 $N$ 方向按 8 列组织，以匹配 YMM 向量宽度并减少边界处理。对 \texttt{float32} 路径而言，256 位 YMM 寄存器一次可覆盖 8 个 \texttt{float}，因此本实现优先筛选 $N_r$ 为 8 倍数的形状。
+Ce modèle hiérarchique suppose que chaque niveau produit des tiles suffisamment réguliers. Lorsque $M$ est faible ou que le nombre de threads est élevé, le nombre de lignes réellement attribuées à chaque thread après découpage selon $M$ peut devenir inférieur à la hauteur du micro-kernel $M_r$. Les macro-blocs et blocs registres sont alors moins bien remplis, et le programme entre plus souvent dans les traitements de reste (\emph{remainder loop}), ce qui réduit l'efficacité parallèle et la réutilisation cache attendues du blocking à trois niveaux.
 
-\subsection{GotoBLAS单线程调优：AVX2微内核筛选}\label{sec:avx2_tuning}
+Les paramètres de bloc cache sont estimés à partir de la capacité des panneaux : le panneau de $A$, de taille $M_c \times K_c \times 4$ octets, cible L1 (32~KiB par coeur), et celui de $B$, de taille $K_c \times N_c \times 4$ octets, cible L2 (1~MiB par coeur). Les valeurs par défaut sont actuellement $K_c=384$, un nombre de lignes effectif $M_c=64$ (facteur 8, à partir de $M_r=8$) et $N_c=448$. Ces paramètres sont ensuite affinés expérimentalement dans la section~\ref{sec:avx2_tuning}.
 
-参数搜索以项目中的神经网络 GEMM 形状为对象。由于 $(M_r,N_r,K_c,M_c,N_c)$ 的组合空间过大，本文采用分阶段筛选：先缩减候选，再对保留形状做单线程实验。
+\subsection{Réglage de GotoBLAS et stratégie parallèle multi-threads}\label{sec:avx2_tuning}
 
-\subsubsection{对Nr和Mr的搜索策略}
+La recherche de paramètres s'appuie sur les formes GEMM issues des réseaux de neurones du projet. Comme l'espace combinatoire de $(M_r,N_r,K_c,M_c,N_c)$ est trop large, la sélection est effectuée par étapes : réduction initiale des candidats, puis essais mono-thread sur les formes conservées.
 
-为避免对 $(M_r,N_r)$ 与缓存块参数进行完全暴力搜索，本文先依据 AVX2 \texttt{float32} 的向量宽度、吞吐隐藏条件与寄存器预算，对微内核形状进行预筛选。最终保留的候选集合为 $\{(8,8),(12,8),(13,8),(4,16),(5,16),(6,16)\}$，详细推导见附录~\ref{app:blocked_size_tuning}。
+\subsubsection{Conception du micro-kernel}\label{subsec:microkernel}
 
-因此为了做性能对比，本项目实现的AVX2微内核列举如下：
+Le micro-kernel AVX2 en simple précision est organisé par blocs de 8 colonnes selon la dimension $N$, afin de correspondre à la largeur vectorielle YMM et de limiter les traitements de bord. Dans le chemin \texttt{float32}, un registre YMM de 256 bits couvre 8 valeurs \texttt{float}. L'implémentation privilégie donc des formes où $N_r$ est multiple de 8.
 
-\begin{table}[H]
-\centering
-\begin{tabular}{lrrl}
-\toprule
-\textbf{内核名称} & $M_r$ & $N_r$ & \textbf{主要特点} \\
-\midrule
-\texttt{avx2\_8x8}  & 8  & 8  & 16寄存器满载，通用性强 \\
-\texttt{avx2\_12x8} & 12 & 8  & 高$M$覆盖率 \\
-\texttt{avx2\_13x8} & 13 & 8  & 扩展$M$覆盖 \\
-\texttt{avx2\_4x16} & 4  & 16 & 宽N方向，适合$N$较大形状 \\
-\texttt{avx2\_5x16} & 5  & 16 & 中等$M$，宽N \\
-\texttt{avx2\_6x16} & 6  & 16 & 中等$M$，宽N \\
-\bottomrule
-\end{tabular}
-\caption{已实现的GotoBLAS AVX2微内核}
-\label{tab:kernels_avx2}
-\end{table}
+Le détail du protocole de recherche, de la réduction de l'espace $(M_r,N_r,K_c,M_c,N_c)$ et des résultats par workload est reporté dans les annexes~\ref{app:gemm_setup}, \ref{app:avx2_tuning_results} et \ref{app:blocked_size_tuning}. Le corps du texte ne retient ici que les conclusions utiles aux expériences multi-threads.
 
-\subsubsection{$k_c$ 的缓存模型和搜索策略}
+\subsubsection{Résultats synthétiques}
 
-在保留的 6 种 AVX2 微内核形状上，本文先依据当前 AVX2 \texttt{float32} 路径下的 L1 容量、对齐粒度与 page-footprint / TLB 约束，对每个 $(M_r,N_r)$ 生成一组离散 $K_c$ 候选。正文只给出进入第一轮单线程筛选的候选集合，完整推导见附录~\ref{app:blocked_size_tuning}。
+En mono-thread, les formes \texttt{4x16} et \texttt{8x8} sont les plus compétitives sur les workloads représentatifs. La première domine plusieurs formes de couches entièrement connectées, tandis que la seconde reste plus robuste sur une partie des workloads convolutionnels. Une figure représentative et le tableau récapitulatif des meilleures configurations par famille figurent en annexe (figure~\ref{fig:avx2_kernelshape_line}, tableau~\ref{tab:avx2_tuning_results}).
 
-\begin{table}[H]
-\centering
-\begin{tabular}{l l}
-\toprule
-\textbf{内核形状} & \textbf{$K_c$ 候选集合} \\
-\midrule
-\texttt{8x8}  & $\{288,384\}$ \\
-\texttt{12x8} & $\{256,352,416\}$ \\
-\texttt{13x8} & $\{224,320,384\}$ \\
-\texttt{4x16} & $\{192,256,320\}$ \\
-\texttt{5x16} & $\{160,192,256\}$ \\
-\texttt{6x16} & $\{128,160,224\}$ \\
-\bottomrule
-\end{tabular}
-\caption{各 AVX2 微内核形状对应的第一轮 $K_c$ 候选}
-\label{tab:kc_candidates}
-\end{table}
+Par rapport à OpenBLAS, l'écart se situe typiquement entre 10 et 24\% sur les formes courantes ($N \geq 64$), mais atteint 66 à 78\% sur les très petits $N$, où les traitements de bord deviennent dominants. Pour disposer d'une configuration fixe unique dans les expériences multi-threads suivantes, le chemin AVX2 retient donc \texttt{avx2\_8x8} comme compromis principal.
 
-\subsubsection{$m_c$ 与 $n_c$ 的候选结果}
+\subsubsection{Configuration AVX2 finale et aperçu d'AVX-512}\label{sec:avx512_brief}
 
-在给定 $(M_r,N_r,K_c)$ 后，$M_c$ 与 $N_c$ 的基础候选同样先由 cache 尺度关系生成，再用 page-footprint / TLB 约束做一次裁剪。第一轮 coarse screening 覆盖全部保留的 $(M_r,N_r,K_c)$ 组合；在此基础上，本文仅对单线程结果中更有竞争力的 5 组 \texttt{KernelShape/Kc} 继续做第二轮精筛。正文直接给出第二轮实际使用的更密搜索网格，详细生成过程见附录~\ref{app:blocked_size_tuning}。
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lll l p{0.22\textwidth} p{0.22\textwidth} r}
-\toprule
-\textbf{内核} & \textbf{$M_r$} & \textbf{$N_r$} & \textbf{$K_c$} & \textbf{$M_c$ 候选} & \textbf{$N_c$ 候选} & \textbf{组合数} \\
-\midrule
-\texttt{8x8}  & 8 & 8  & 288 & $\{96,128,160,192\}$ & $\{448,512,576,640\}$ & 16 \\
-\texttt{8x8}  & 8 & 8  & 384 & $\{64,96,128\}$      & $\{320,384,448,512\}$ & 12 \\
-\texttt{4x16} & 4 & 16 & 192 & $\{160,192,224,256,288\}$ & $\{640,768,896,1024\}$ & 20 \\
-\texttt{4x16} & 4 & 16 & 256 & $\{128,160,192\}$     & $\{512,576,640,704,768\}$ & 15 \\
-\texttt{4x16} & 4 & 16 & 320 & $\{96,128,160\}$      & $\{384,448,512,576\}$ & 12 \\
-\bottomrule
-\end{tabular}
-\caption{第二轮精筛使用的 $M_c/N_c$ 候选网格}
-\label{tab:mc_nc_round2}
-\end{table}
-
-因此，第二轮总候选数为 $16+12+20+15+12=75$。这些组合围绕第一轮已知优胜区域做局部加密，用于提高单线程 blocked-size 结论的稳定性。
-
-\subsubsection{测试工作负载与搜索协议}
-
-单线程调优所使用的代表性工作负载，以及两轮参数搜索的具体组织方式见附录~\ref{app:gemm_setup}。正文以下内容只保留筛选结果与由此得到的配置选择。
-
-\subsubsection{调优结果}
-
-图~\ref{fig:avx2_heatmap}展示了第一轮搜索结果的热图，
-颜色越深（绿色）代表与最优自定义实现的差距越小。
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.88\textwidth]{../output/ExperienceGEMM/GotoBLASBlocked/summary/plots/relative_to_best_custom_heatmap.png}
-    \caption{AVX2单线程候选热图：各内核形状在代表性工作负载上相对于最佳自定义实现的GFLOPS比值（\%）。}
-    \label{fig:avx2_heatmap}
-\end{figure}
-
-主要结论汇总于下表：
-
-\begin{table}[H]
-\centering
-\begin{tabular}{p{0.24\textwidth}lrrrrrr}
-\toprule
-\textbf{工作负载族} & \textbf{最优内核} & $M_c$ & $N_c$ & $K_c$ &
-\textbf{自定义} & \textbf{OpenBLAS} & \textbf{差距} \\
- & & & & & \textbf{($\mu$s)} & \textbf{($\mu$s)} & \\
-\midrule
-fc\_forward (b32) & 4x16 & 128 & 576 & 320 & 72.5  & 60.2 & $-17\%$ \\
-fc\_forward (b64) & 4x16 & 192 & 512 & 256 & 132.6 & 110.1 & $-17\%$ \\
-fc\_head (b32)    & 4x16 & --  & --  & --  & 4.76  & 1.14 & $-76\%$ \\
-conv\_dx (b32)    & 8x8  & 160 & 640 & 288 & 744.3 & 647.3 & $-13\%$ \\
-fc\_wide (b32)    & 4x16 & 128 & 768 & 256 & 136.5 & 122.2 & $-10\%$ \\
-\bottomrule
-\end{tabular}
-\caption{AVX2单线程调优：各工作负载族的最佳配置及与OpenBLAS单线程的对比}
-\label{tab:avx2_tuning_results}
-\end{table}
-
-结果揭示了两类性能差距：
-
-\textbf{主流形状（$N \geq 64$）}：与OpenBLAS的差距在10至24\%之间，
-反映了我们微内核实现与高度优化的OpenBLAS汇编之间的性能差距，
-以及OpenBLAS针对特定形状的更精细适配（如padding和prefetch策略）。
-
-\textbf{小N形状（$N < 32$，如fc\_head）}：差距高达66至78\%。
-极小的$N$无法形成有效的$N_r$寄存器tile，导致大量边界处理开销。
-OpenBLAS对退化形状有专用代码路径，而本实现尚未针对此类形状优化。
-
-\subsubsection{最终AVX2配置与AVX-512简介}\label{sec:avx512_brief}
-
-综合单线程调优结果，后续多线程实验固定使用如下 AVX2 配置：
+Au vu de ce compromis mono-thread, les expériences multi-threads suivantes utilisent la configuration AVX2 fixe suivante :
 \[
 \texttt{avx2\_8x8},\quad K_c = 384,\quad M_c = 64,\quad N_c = 448
 \]
-其中$M_c=64$为有效行数（代码常量 \texttt{kCacheBlockM}$=8$，有效值$= \texttt{kCacheBlockM} \times M_r = 8 \times 8 = 64$）。
-该配置来自前述 workload 集合上的单线程筛选结果。
+où $M_c=64$ correspond au nombre effectif de lignes (constante de code \texttt{kCacheBlockM}$=8$, valeur effective $= \texttt{kCacheBlockM} \times M_r = 8 \times 8 = 64$).
+Cette configuration sert de point fixe pour les comparaisons multi-threads.
 
-AVX-512微内核同样面向当前项目统一的 \texttt{float32}/\texttt{Scalar=float} 数据路径进行调优。对于 512 位的 ZMM 寄存器，这意味着单个向量可容纳 16 个 \texttt{float}；在 \texttt{avx512\_8x32} 这种 $N_r=32$ 的微内核中，N 方向通常以两个 ZMM 向量分块处理。
-\texttt{avx512\_8x32}（$M_r=8, N_r=32$）在单次FMA中可积累 $8 \times 32 = 256$ 个元素，
-理论峰值FLOP/周期是AVX2 8×8内核的两倍。
-最终选定：$\texttt{avx512\_8x32},\ K_c=160,\ M_c=64,\ N_c=448$（$M_c$有效行数为64；$K_c=160$为实验调优值，通过 \texttt{MATMUL\_KC=160} 在运行时传入，与 AVX2 路径的编译常量 \texttt{kCacheBlockK}$=384$ 性质不同）。
-AVX2 blocked-size 候选集合的详细推导见附录~\ref{app:blocked_size_tuning}。
+Le chemin AVX-512 suit le même schéma sur le chemin de données unifié \texttt{float32}/\texttt{Scalar=float}, avec un micro-kernel \texttt{avx512\_8x32}. La configuration finale retenue est : $\texttt{avx512\_8x32},\ K_c=160,\ M_c=64,\ N_c=448$ ($M_c$ correspond à 64 lignes effectives ; $K_c=160$ est une valeur issue du réglage expérimental, transmise à l'exécution via \texttt{MATMUL\_KC=160}, contrairement à la constante compilée \texttt{kCacheBlockK}$=384$ du chemin AVX2).
+La dérivation détaillée des ensembles candidats pour le blocked-size AVX2 est donnée en annexe~\ref{app:blocked_size_tuning}.
 
-\subsection{GotoBLAS多线程并行策略与参数调优}\label{sec:gotoblas_mt}
+\subsubsection{Stratégie parallèle multi-threads et réglage des paramètres pour GotoBLAS}\label{sec:gotoblas_mt}
 
-单线程调优确定了最优内核形状和块参数。进入多线程场景后，当前实现继续使用运行时给定的 $M_c, N_c, K_c$ 作为缓存分块参数，并在并行调度层引入随线程数变化的任务粒度：代码在 $ic/M$ 维上根据线程数计算更细的 \texttt{task\_m}，以便在小规模矩阵下产生更多任务，减少线程空闲。
+Le réglage mono-thread détermine la meilleure forme de noyau et les meilleurs paramètres de bloc. En multi-threads, l'implémentation conserve les valeurs $M_c$, $N_c$ et $K_c$ fournies à l'exécution comme paramètres de blocking cache, puis introduit à l'étage d'ordonnancement une granularité de tâche dépendante du nombre de threads : le code calcule un \texttt{task\_m} plus fin sur la dimension $ic/M$ afin de générer davantage de tâches sur les petites matrices et de réduire l'inactivité des threads.
 
-\subsubsection{线程感知块参数调优}
+\subsubsection{Réglage des paramètres avec prise en compte des threads}
 
-在当前代码中，线程感知主要体现在调度粒度而非缓存块参数本身。也就是说，进入并行区后程序会根据线程数计算更细的 \texttt{task\_m}，而强扩展性实验本身只使用最终选定的固定 blocked-size 配置，不再展开其中间调参与推理过程。
+Dans le code actuel, la prise en compte du nombre de threads se traduit surtout par la granularité d'ordonnancement, et non par une modification des paramètres de bloc cache eux-mêmes. Une fois dans la région parallèle, le programme calcule donc un \texttt{task\_m} plus fin selon le nombre de threads, tandis que les expériences de \emph{strong scaling} utilisent uniquement la configuration finale à blocked-size fixe, sans détailler ici les étapes intermédiaires du réglage.
 
-本文后续强扩展性实验采用的固定配置为：AVX2 路径使用 $\texttt{avx2\_8x8},\ K_c=384,\ M_c=64,\ N_c=448$，AVX-512 路径使用 $\texttt{avx512\_8x32},\ K_c=160,\ M_c=64,\ N_c=448$。其中 $M_c=64$ 为有效行数（代码常量 \texttt{kCacheBlockM}$=8$，有效值$= 8 \times M_r = 8 \times 8 = 64$）。图~\ref{fig:mc_nc_heatmap_t4} 中热图的横轴对应 \texttt{kCacheBlockM} 取值，高性能区域集中在 \texttt{kCacheBlockM}$=8$（即有效 $M_c=64$）一行，而 $N_c$ 方向表现为相对平坦的平台。
+Les expériences de \emph{strong scaling} qui suivent utilisent la configuration fixe suivante : pour le chemin AVX2, $\texttt{avx2\_8x8},\ K_c=384,\ M_c=64,\ N_c=448$ ; pour le chemin AVX-512, $\texttt{avx512\_8x32},\ K_c=160,\ M_c=64,\ N_c=448$. Ici, $M_c=64$ représente le nombre effectif de lignes (constante de code \texttt{kCacheBlockM}$=8$, valeur effective $= 8 \times M_r = 8 \times 8 = 64$). Une carte thermique représentative de \texttt{kCacheBlockM}/$N_c$ avec prise en compte des threads est fournie en annexe, figure~\ref{fig:mc_nc_heatmap_t4}. La zone de meilleures performances y est concentrée sur la ligne \texttt{kCacheBlockM}$=8$ (soit $M_c=64$ effectif), tandis que la direction $N_c$ forme un plateau relativement plat.
+
+\subsubsection{Expérience de strong scaling}
+
+L'expérience de \emph{strong scaling}, à taille de problème fixe et nombre de threads variable ($T \in \{1,2,4,8\}$), compare trois implémentations : GotoBLAS AVX2, GotoBLAS AVX-512 et OpenBLAS.
+L'ensemble de test couvre 9 workloads, incluant des formes issues de MLP, de convolutions CNN et de matrices carrées.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.84\textwidth]{../Docs/report/image-3.png}
-    \caption{线程感知 \texttt{kCacheBlockM}/$N_c$ 调优的代表性热图（$T=4$，\texttt{fc\_wide\_output\_nn}）。
-             高性能区域主要集中在 \texttt{kCacheBlockM}$=8$（有效 $M_c=64$）一行，而 $N_c$ 方向表现为相对平坦的平台。}
-    \label{fig:mc_nc_heatmap_t4}
+    \includegraphics[width=0.80\textwidth]{../output/ExperienceGEMM/GotoBLASBlockedAVX512/fixed_strong_scaling_comparison/summary/plots/overall_geomean_gflops_by_threads.png}
+    \caption{Expérience de strong scaling : moyenne géométrique des GFLOPS pour chaque nombre de threads, calculée sur 9 workloads.}
+    \label{fig:strong_scaling_geomean}
 \end{figure}
 
-\subsubsection{强扩展性实验（Strong Scaling）}
+La figure~\ref{fig:strong_scaling_geomean} repose sur la moyenne géométrique de 9 workloads à configuration fixe. 
+Elle montre que, sur cette agrégation, OpenBLAS conserve les GFLOPS absolus les plus élevés, tandis que les chemins GotoBLAS AVX2 et AVX512 présentent une montée plus régulière avec le nombre de threads. 
+Selon cette mesure, à 8 threads, les versions GotoBLAS AVX2 et AVX512 atteignent toutes deux un speedup d'environ $3.23\times$, contre environ $2.72\times$ pour OpenBLAS. Les résultats détaillés par workload proviennent de la comparaison \emph{fixed-config strong-scaling}. 
+Sur la majorité des workloads, OpenBLAS atteint des GFLOPS absolus plus élevés ; le chemin GotoBLAS sert surtout à comparer le blocking, le packing et l'organisation OpenMP, tout en restant compétitif sur certaines matrices carrées et sur quelques formes GEMM liées à la convolution.
 
-以固定问题规模、变化线程数（$T \in \{1,2,4,8\}$）的强扩展性实验，
-对比了AVX2 GotoBLAS、AVX-512 GotoBLAS与OpenBLAS三种实现，
-测试集涵盖9个工作负载（MLP、CNN卷积和方阵形状）。
+\subsection{Principe d'implémentation Unrolled+Prefetch}
 
-\begin{table}[H]
+Après le réglage de base du chemin AVX-512, le code a été étendu par une variante \textbf{unrolled+prefetch}. Cette version conserve la structure blocked+packed existante et ajoute seulement du déroulage de boucle (par exemple \texttt{GEMM\_UNROLL\_4}) et du prefetch explicite dans le micro-kernel AVX-512 et dans la phase d'accès aux panneaux packés correspondants. L'objectif est de réduire davantage l'attente mémoire dans la partie la plus interne de l'exécution. Cette variante agit sur le chemin d'accès séquentiel aux panneaux packés $A/B$, avec le même périmètre statistique que dans les sections précédentes.
+
+Une expérience complémentaire sur matrices carrées fixes, utile surtout comme contrôle sur tailles synthétiques, est reportée en annexe~\ref{app:fixed_square_scaling}.
+
+
+\section{Fonction de perte, optimiseurs et boucle d'entraînement}
+
+Dans le point d'entrée principal de l'entraînement, la fonction de perte est fixée à \texttt{CrossEntropyLoss}. Le modèle produit des logits de classe en sortie de la propagation avant ; la couche de perte applique en interne un softmax numériquement stable et l'entropie croisée, puis renvoie une perte scalaire pour l'ensemble du batch. Une implémentation de \texttt{MSELoss} est également conservée dans le code, mais le chemin de classification utilise uniquement \texttt{CrossEntropyLoss}.
+
+Du côté des optimiseurs, l'implémentation actuelle propose trois variantes : \texttt{SGD}, \texttt{MomentumSGD} et \texttt{AdamW}. La figure~\ref{fig:optimizer_compare} regroupe les courbes d'entraînement sur 20 epochs pour ces trois optimiseurs appliqués au MLP sur MNIST.
+
+\begin{figure}[h]
 \centering
-\begin{tabular}{lrrrrrr}
-\toprule
-\textbf{实现} & \multicolumn{4}{c}{\textbf{几何平均GFLOPS}} & \textbf{8T加速比} & \textbf{8T并行效率} \\
-\cmidrule(lr){2-5}
- & \textbf{1T} & \textbf{2T} & \textbf{4T} & \textbf{8T} & & \\
-\midrule
-AVX2 GotoBLAS    & 26.1 & 41.7 & 64.4 & 84.4  & $3.23\times$ & $40.4\%$ \\
-AVX512 GotoBLAS  & 27.6 & 45.0 & 67.4 & 89.4  & $3.23\times$ & $40.4\%$ \\
-OpenBLAS         & 43.4 & 67.5 & 101.1 & 118.2 & $2.72\times$ & $34.0\%$ \\
-\bottomrule
-\end{tabular}
-\caption{强扩展性实验：各线程数下的几何平均GFLOPS（跨9个工作负载）}
-\label{tab:strong_scaling}
-\end{table}
-
-表~\ref{tab:strong_scaling} 的统计口径是 9 个 fixed-config workload 的几何平均。按这一口径，8 线程下 AVX2 和 AVX512 GotoBLAS 的 speedup 均为 $3.23\times$，OpenBLAS 为 $2.72\times$。逐 workload 的结果则来自 fixed-config strong-scaling comparison：在多数 workload 上，OpenBLAS 的绝对 GFLOPS 更高；GotoBLAS 路径主要用于比较 blocking、packing 和 OpenMP 组织，并在部分方阵和少数卷积相关 GEMM 形状上保持竞争力。
-
-\subsection{Unrolled+Prefetch实现思路}
-
-在 AVX2 GotoBLAS 与 AVX-512 微内核完成基础调优后，代码又增加了一条 \textbf{unrolled+prefetch} 路径。该路径保留原有 blocked+packed 结构，只在 \texttt{src/gemm/GEMMGotoBLAS.cpp} 的最内层执行阶段加入循环展开（如 \texttt{GEMM\_UNROLL\_4}）和 \texttt{\_\_builtin\_prefetch}。它作用于 packed $A/B$ 面板的连续访问路径，统计范围仍与前文相同。
-
-\subsection{固定方阵上的线程扩展补充实验}
-
-除前述项目 workload 外，本文还对 64×64、128×128、256×256 和 512×512 四组固定方阵做了多实现线程扩展补充实验。该实验由脚本 \texttt{scripts/ExperienceGEMM/find\_optimal\_threads.sh} 统一驱动，测量 \texttt{blas}、\texttt{omp}、\texttt{omp\_blocked}、\texttt{omp\_blocked\_packab}、\texttt{omp\_gotoblas\_avx2} 与 \texttt{omp\_gotoblas\_avx512} 六种实现；另由 \texttt{scripts/ExperienceGEMM/find\_optimal\_threads\_avx512.sh} 单独采集 unroll+prefetch 路径的数据，在绘图时以 \texttt{omp\_unroll\_prefetch} 为标签合并到同一图中。图~\ref{fig:scaling_4way_all_impls} 只展示 1--8 个物理线程范围内的结果。
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.96\textwidth]{../output/ExperienceGEMM/scaling_plot_advanced_4way.png}
-    \caption{固定方阵上的多实现线程扩展补充实验。四个子图分别对应 64×64、128×128、256×256 与 512×512，纵轴为执行时间，横轴为线程数。}
-    \label{fig:scaling_4way_all_impls}
+\includegraphics[width=0.92\textwidth]{../output/compare_opt/optimizer_compare.png}
+\caption{Comparaison des pertes et des précisions d'entraînement/test pour trois optimiseurs sur le MLP MNIST (20 epochs). La précision finale en test est de 96.52\% pour SGD, 98.27\% pour MomentumSGD et 98.03\% pour AdamW.}
+\label{fig:optimizer_compare}
 \end{figure}
 
-图~\ref{fig:scaling_4way_all_impls} 显示，64×64 下 OpenBLAS 基本保持单线程路径，线程数变化对其影响较小，各类 OpenMP 路径在 4--8 线程附近才接近其性能；128×128 至 512×512 的区间里，GotoBLAS 两条路径的时间曲线下降更快。AVX-512 路径整体上通常略优于 AVX2 路径，这一观察限定在该图覆盖的固定方阵与 1--8 线程范围内。
+La figure~\ref{fig:optimizer_compare} montre que \texttt{SGD} converge plus lentement et reste en retrait en précision finale, tandis que \texttt{MomentumSGD} obtient ici la meilleure précision de test ; \texttt{AdamW} atteint un niveau proche, avec une convergence plus rapide au début de l'entraînement.
 
+Ces trois variantes correspondent à des mécanismes de mise à jour différents. Pour \texttt{SGD}, les paramètres sont mis à jour directement à partir du gradient courant :
+\[
+\theta_{t+1}=\theta_t-\eta g_t.
+\]
+\texttt{MomentumSGD} ajoute un terme de vitesse, qui lisse exponentiellement l'historique des gradients afin de stabiliser la direction de mise à jour :
+\[
+v_{t+1}=\mu v_t-\eta g_t,\qquad \theta_{t+1}=\theta_t+v_{t+1},
+\]
+La correction de Nesterov peut être activée selon la configuration. \texttt{AdamW} maintient en plus des estimations du premier et du second moment du gradient et découple le \emph{weight decay} de la mise à jour adaptative, ce qui améliore le comportement de régularisation tout en conservant une convergence stable.
 
-\section{卷积的优化}
+Une fois le graphe de calcul construit, l'optimiseur est sélectionné à partir des paramètres de ligne de commande. À chaque itération d'entraînement, les gradients sont d'abord remis à zéro ; après le backward et, le cas échéant, la synchronisation distribuée, ils sont mis à l'échelle selon la taille du batch global avant la mise à jour des paramètres. \texttt{Trainer::runEpoch(...)} porte à lui seul les chemins d'entraînement et d'évaluation : le premier exécute propagation avant, calcul de la perte, rétropropagation et mise à jour des paramètres ; le second conserve uniquement la propagation avant et le calcul des métriques. La fonction de perte, l'optimiseur et la boucle d'entraînement constituent donc la base commune aux expériences CNN, ResNet et distribuées décrites ensuite.
 
-本章只讨论三个对当前训练时间占比有直接影响的实现：CNN reference 卷积路径、MPI 梯度同步和 autodiff runtime。
+\section{Implémentation et optimisation de l'opérateur de convolution}
 
-\subsection{卷积层的实现方式}
+Cette section introduit l'implémentation de la convolution pour les futurs CNN et se concentre sur l'organisation du chemin principal \texttt{im2col/GEMM/col2im} ainsi que sur ses marges d'optimisation.
 
-\texttt{Conv2DLayer} 在 reference backend 中把卷积前向改写为 \texttt{im2col} 后的一次 GEMM：
+\subsection{Implémentation initiale de la couche de convolution}
+
+\texttt{Conv2DLayer} réécrit, dans le backend de référence, la propagation avant d'une convolution en une opération GEMM après \texttt{im2col} :
 \[
 \texttt{im2col}(X) \in \mathbb{R}^{(N \cdot H_{out} \cdot W_{out}) \times (C_{in}\cdot k_H \cdot k_W)},
 \]
@@ -551,125 +388,159 @@ W \in \mathbb{R}^{C_{out} \times (C_{in}\cdot k_H \cdot k_W)},
 Y = \texttt{im2col}(X)\cdot W^T + b.
 \]
 
-这一选择复用了 \texttt{MathOps::matmul} 路径。在当前实现中，卷积成本分布在 \texttt{im2col}、GEMM、输出重排、\texttt{dW/dX} 和 \texttt{col2im} 这些阶段上。本节分析仅针对这条 \texttt{im2col/GEMM/col2im} 链路。
+Ce choix réutilise le chemin \texttt{MathOps::matmul}. Dans l'implémentation actuelle, le coût de la convolution se répartit entre \texttt{im2col}, GEMM, la réorganisation de la sortie, \texttt{dW/dX} et \texttt{col2im}. L'analyse de cette section se limite à cette chaîne \texttt{im2col/GEMM/col2im}.
 
-\subsection{卷基层并行化与优化策略}
+\subsection{Parallélisation de la couche de convolution et stratégie d'optimisation}
 
-若使用默认的 \texttt{reference} CPU backend，卷积层走 \texttt{im2col + GEMM}；若显式选择 \texttt{--conv\_backend onednn}，则走 oneDNN primitives；仓库中还保留了受宏和环境变量控制的实验性 cuDNN forward/backward 分支。本节只讨论 reference CPU 路径，不把 oneDNN 或实验性 GPU 分支并入同一结论。
+Dans l'implémentation CNN actuelle du projet, la couche de convolution repose sur le chemin \texttt{im2col + GEMM}. Cette approche permet de réutiliser un backend de multiplication de matrices déjà optimisé, mais la performance de la couche n'est pas déterminée par GEMM seul. En pratique, le coût total provient principalement de trois composantes : la réorganisation des données par \texttt{im2col} à l'étape avant, l'opération de multiplication de matrices elle-même, puis \texttt{col2im} et les GEMM liés aux gradients pendant la phase arrière. Ainsi, même avec un GEMM rapide, la couche de convolution peut rester un goulot d'étranglement à cause de la réorganisation des données et des coûts d'ordonnancement des threads.
 
-本节依赖两类证据：reference backend 的 \texttt{PROFILE\_OPS} 计时项，以及 \texttt{tests/test\_conv2d\_backend\_benchmark.cpp} 提供的 forward、forward+backward 和 mini-CNN train step 对照。这里不尝试给出 oneDNN 与 cuDNN 的统一结论。
+À partir de ce constat, l'objectif n'est pas d'accélérer un kernel isolé, mais de réorganiser la parallélisation de bout en bout autour du chemin principal de convolution : réduire le surcoût des étapes de réagencement, améliorer la montée en charge multi-threads et limiter les pertes liées au parallélisme sur les petites tâches, sans modifier la sémantique numérique. La comparaison porte donc sur le débit global de la chaîne de convolution, et non sur la vitesse de pointe d'un seul kernel.
 
-\subsubsection{并行化切分策略}
+\subsection{Stratégie de découpage pour la parallélisation}
 
-当前 reference 路径按输出元素切分。前向中，\texttt{im2col} 按样本和输出空间位置展开，输出重排与 bias 累加按样本和输出通道组织；反向中，\texttt{grad\_reshape}、\texttt{dW} 和 \texttt{dX} 延续同一组织方式，\texttt{col2im} 在每个样本私有的输入梯度区域内散射累加。GEMM 本体继续委托给底层 \texttt{matmul} 路径，以避免跨线程写冲突。对于较小输入、较小 batch 或较小通道数，OpenMP 调度、barrier 和线程迁移的固定成本会更显眼。
+Le premier choix pour paralléliser les passes avant et arrière d'une convolution concerne la dimension de découpage. En théorie, les tâches peuvent être réparties selon la dimension batch, les canaux de sortie, la dimension spatiale de sortie ($H_{out}\times W_{out}$) ou la dimension de réduction. Ces variantes diffèrent nettement du point de vue de l'équilibrage de charge, de la réutilisation cache et du risque d'écritures conflictuelles.
 
-\subsubsection{实现细节与工程取舍}
+L'implémentation privilégie le principe d'indépendance des éléments de sortie : chaque thread traite des blocs de sortie disjoints afin d'éviter des verrous ou opérations atomiques supplémentaires. Dans le chemin avant, la phase \texttt{im2col} est découpée par échantillons et par blocs de sortie spatiale pour garantir des zones d'écriture disjointes entre threads ; la phase GEMM réutilise directement la stratégie parallèle de la multiplication de matrices sous-jacente, sans gestion fine supplémentaire au niveau de la couche de convolution. Dans le chemin arrière, les calculs matricialisés de \texttt{dW} et \texttt{dX} sont eux aussi organisés autour de blocs de sortie, tandis que \texttt{col2im} réduit le risque d'écritures conflictuelles au moyen d'une diffusion par blocs et de protections de bord.
 
-reference 路径的代码调整集中在三点：\texttt{im2col/col2im} 的循环顺序按 \texttt{Matrix} 行主序组织；反向传播显式保存 \texttt{cols}、形状元数据和必要 context；OpenMP 循环统一采用 \texttt{schedule(static)}，并且只在 \texttt{CNN\_PARALLEL=1} 时开启。前向、反向公式和现有 autodiff、optimizer 流程不变。
+Un découpage plus fin n'apporte pas systématiquement un meilleur résultat. Lorsque la granularité des tâches devient trop faible, les coûts fixes de création de threads, de synchronisation par barrière et de migration d'ordonnancement augmentent fortement ; cet effet est particulièrement visible sur des entrées de petite taille comme celles de MNIST. La stratégie de découpage doit donc équilibrer le degré de parallélisme et la densité de calcul par tâche : fournir suffisamment de travail pour exploiter les coeurs, sans fragmenter l'exécution en une multitude de tâches trop courtes.
 
-\subsubsection{实验协议与对照设置}
+\subsection{Détails d'implémentation et choix d'ingénierie}
 
-当前仓库已经为卷积路径保留了较明确的 profiling 与 benchmark 入口。例如，reference backend 会分别记录 \texttt{conv2d\_forward\_im2col}、\texttt{conv2d\_forward\_gemm}、\texttt{conv2d\_forward\_bias\_reshape}、\texttt{conv2d\_backward\_grad\_reshape}、\texttt{conv2d\_backward\_dW\_gemm}、\texttt{conv2d\_backward\_dX\_gemm} 与 \texttt{conv2d\_backward\_col2im} 等分项计时；另有 \texttt{tests/test\_conv2d\_backend\_benchmark.cpp} 用于对 reference 与 oneDNN backend 做 forward、forward+backward 以及 mini-CNN train step 级别的对照。
+Sur le plan de l'implémentation, l'optimisation se concentre sur trois points. Le premier consiste à améliorer la continuité des accès mémoire : l'ordre des boucles et les calculs d'indices de \texttt{im2col/col2im} sont ajustés pour que les boucles internes parcourent autant que possible des adresses contiguës, ce qui augmente l'utilisation des lignes de cache et réduit le coût des calculs d'adresse. Le deuxième concerne la gestion des tampons temporaires : les buffers intermédiaires sont réutilisés lorsque c'est possible afin de limiter les allocations et désallocations répétées pendant l'entraînement, et donc de réduire les fluctuations de l'allocateur. Le troisième porte sur la stratégie d'ordonnancement des threads : un découpage statique plus stable est privilégié lorsque la charge est régulière, afin de réduire le coût d'ordonnancement du runtime et les migrations de threads.
 
-实验协议固定硬件、线程数、输入形状和 batch 配置，并分别观察 \texttt{im2col}、卷积 GEMM、\texttt{col2im} 与 backward 相关阶段耗时。只看 GEMM 不足以区分计算、重排和调度开销。
+Ces modifications ont un trait commun : elles réorganisent le chemin d'exécution sans modifier la sémantique mathématique. Les résultats des passes avant et arrière restent donc alignés avec l'implémentation de base, et les optimisations se limitent à l'organisation du calcul, à la disposition des données et à l'ordonnancement parallèle. Cette approche présente deux avantages directs : la vérification de la correction reste simple, car les écarts doivent principalement venir de l'ordre des arrondis en virgule flottante ; elle reste également compatible avec le flux actuel d'autodiff et d'optimisation, sans réécriture de la boucle principale d'entraînement.
 
-\subsubsection{结果分析：范围与边界}
+\subsection{Protocole expérimental et configuration de comparaison}
 
-\texttt{PROFILE\_OPS} 计数项和 backend benchmark 的统计口径是整条 \texttt{im2col/GEMM/post-process/col2im} 链路。在较小问题规模下，这套协议主要暴露 OpenMP 调度的固定成本；在更重的配置下，benchmark 会分别给出 \texttt{conv2d\_forward\_im2col}、\texttt{conv2d\_forward\_gemm}、\texttt{conv2d\_backward\_dX\_gemm}、\texttt{conv2d\_backward\_dW\_gemm} 和 \texttt{conv2d\_backward\_col2im} 等计时项。
+Pour évaluer le gain de la parallélisation, les expériences suivent le même protocole reproductible que dans les sections précédentes : environnement matériel et options de compilation fixés, mêmes formes d'entrée et même configuration de batch, puis comparaison entre le chemin convolutif de base et le chemin optimisé. Le nombre de threads est généralement pris dans $\{1,2,4,8\}$ avec une politique d'affinité CPU identique, afin d'éviter que le bruit d'ordonnancement ne masque les différences d'implémentation. Chaque série de tests comprend des itérations d'échauffement et des répétitions, la médiane des temps servant de statistique principale, complétée par l'écart-type pour juger de la stabilité des résultats.
 
-\subsubsection{小结}
+Les mesures ne se limitent pas au temps de la seule propagation avant d'une convolution. Elles enregistrent aussi séparément \texttt{im2col}, le GEMM convolutif, \texttt{col2im} et les étapes liées au backward, afin de distinguer le gain sur l'opérateur lui-même et le gain de bout en bout sur la chaîne complète. Une observation limitée à GEMM tend à surestimer l'effet global de l'optimisation ; un découpage des temps met plus clairement en évidence le déplacement des goulots d'étranglement, qu'il provienne du calcul, de la réorganisation des données ou de l'ordonnancement parallèle.
 
-本节结论限定在默认的 reference CPU backend。证据来自 \texttt{PROFILE\_OPS} 和 \texttt{tests/test\_conv2d\_backend\_benchmark.cpp}；分析对象是 \texttt{im2col}、GEMM、\texttt{col2im} 以及 backward 相关阶段。
+\subsection{Analyse des résultats : gains, limites et déplacement des goulots d'étranglement}
 
-\section{CNN架构的实现}
+Les résultats expérimentaux montrent que l'optimisation parallèle de la couche de convolution apporte un gain stable sur les workloads de taille moyenne ou supérieure, et que la durée totale des passes avant et arrière diminue par rapport à la version de base. Cette amélioration ne provient donc pas d'une seule étape, mais d'un progrès coordonné sur l'ensemble de la chaîne \texttt{im2col/GEMM/col2im}.
 
-本章说明当前 CNN 路径如何接入现有训练框架。代码通过 \texttt{NeuralNetwork} 接口复用训练器、优化器、自动求导和数据加载；新增部分集中在 \texttt{Conv2D}、\texttt{MaxPool2D} 和 \texttt{CNNNetwork}。
+Le domaine de validité est lui aussi clair : lorsque la taille des entrées ou du batch est faible, une partie du gain parallèle est annulée par les coûts fixes d'ordonnancement, et les petits problèmes restent sensibles à un parallélisme trop agressif. L'intérêt de cette optimisation ne se limite donc pas à la réduction du temps de convolution ; elle permet aussi de faire apparaître plus nettement les goulots d'étranglement suivants. Les étapes suivantes portent encore sur le coût de réagencement de la convolution, le chemin backward et l'adéquation entre formes de kernels et workloads.
 
-\subsection{整体实现思路}
+\section{Implémentation de l'architecture CNN}
 
-CNN 的接入保持原有训练器、损失函数、优化器以及 \texttt{Node}/\texttt{Matrix} 计算框架不变，只在网络抽象层增加统一接口 \texttt{NeuralNetwork}，让 \texttt{MLPNetwork} 与 \texttt{CNNNetwork} 共用训练逻辑。软件分层也保持原状：底层是 \texttt{Matrix} 与矩阵乘法，中间层是 \texttt{Node}/\texttt{MathOps}，上层新增 \texttt{Conv2DLayer}、\texttt{MaxPool2DLayer} 和 \texttt{CNNNetwork}。
+Ce chapitre décrit l'intégration du chemin CNN dans le framework d'entraînement existant. Le code réutilise, via l'interface \texttt{NeuralNetwork}, le trainer, les optimiseurs, la différentiation automatique et le chargement des données ; les ajouts se concentrent sur \texttt{Conv2D}, \texttt{MaxPool2D} et \texttt{CNNNetwork}.
 
-\subsection{LeNet 风格网络结构}
+\subsection{Principe général d'implémentation}
 
-当前 CNN 路径采用一套适配 MNIST 的 LeNet 风格结构。每个样本先以 $(N,784)$ 进入网络，再在前向传播内部解释为 $(N,1,28,28)$ 的单通道图像。网络主体由两层卷积、两层池化和三层全连接组成，如表~\ref{tab:cnn_architecture} 所示。
+L'intégration du CNN conserve le trainer, la fonction de perte, l'optimiseur et le cadre de calcul \texttt{Node}/\texttt{Matrix} déjà en place. Une interface unifiée \texttt{NeuralNetwork} est ajoutée au niveau de l'abstraction réseau afin que \texttt{MLPNetwork} et \texttt{CNNNetwork} partagent la même logique d'entraînement. La stratification logicielle reste inchangée : \texttt{Matrix} et la multiplication de matrices en bas, \texttt{Node}/\texttt{MathOps} au niveau intermédiaire, puis \texttt{Conv2DLayer}, \texttt{MaxPool2DLayer} et \texttt{CNNNetwork} au niveau supérieur.
 
-\begin{table}[H]
+\subsection{Structure de type LeNet}
+
+Le chemin CNN actuel utilise une structure de type LeNet adaptée à MNIST. Chaque échantillon entre d'abord dans le réseau sous la forme $(N,784)$, puis est interprété pendant la propagation avant comme une image monochrome de forme $(N,1,28,28)$. Le corps du réseau comprend deux couches de convolution, deux couches de pooling et trois couches entièrement connectées ; les transformations de forme sont résumées dans la figure~\ref{fig:cnn_architecture_flow}.
+
+\begin{figure}[H]
 \centering
-\begin{tabular}{p{0.06\textwidth}p{0.28\textwidth}p{0.20\textwidth}p{0.20\textwidth}p{0.12\textwidth}}
-\toprule
-\textbf{\#} & \textbf{层} & \textbf{输入} & \textbf{输出} & \textbf{参数量} \\
-\midrule
-1 & Conv2D $(5\times5,\ s=1,\ p=2)$ & $(N,1,28,28)$ & $(N,6,28,28)$ & 156 \\
-2 & ReLU & $(N,6,28,28)$ & $(N,6,28,28)$ & 0 \\
-3 & MaxPool2D $(2\times2,\ s=2)$ & $(N,6,28,28)$ & $(N,6,14,14)$ & 0 \\
-4 & Conv2D $(5\times5,\ s=1,\ p=0)$ & $(N,6,14,14)$ & $(N,16,10,10)$ & 2416 \\
-5 & ReLU & $(N,16,10,10)$ & $(N,16,10,10)$ & 0 \\
-6 & MaxPool2D $(2\times2,\ s=2)$ & $(N,16,10,10)$ & $(N,16,5,5)$ & 0 \\
-7 & Flatten & $(N,16,5,5)$ & $(N,400)$ & 0 \\
-8 & Linear $400 \rightarrow 120$ + ReLU & $(N,400)$ & $(N,120)$ & 48120 \\
-9 & Linear $120 \rightarrow 84$ + ReLU & $(N,120)$ & $(N,84)$ & 10164 \\
-10 & Linear $84 \rightarrow 10$ & $(N,84)$ & $(N,10)$ & 850 \\
-\bottomrule
-\end{tabular}
-\caption{当前 CNN 路径的网络结构}
-\label{tab:cnn_architecture}
-\end{table}
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={font=\footnotesize},
+    block/.style={
+        draw,
+        rounded corners=4pt,
+        align=center,
+        minimum height=1.95cm,
+        fill=gray!4,
+        inner sep=4pt
+    },
+    arrow/.style={->, line width=0.8pt}
+]
+% row 1
+\node[block, text width=2.6cm] (input) at (0,0)
+    {\textbf{Input / Reshape}\\[2pt]$(N,784)\rightarrow(N,1,28,28)$};
 
-整套网络总计约 $61706$ 个可训练参数。这个规模对应当前的 MNIST CNN 路径，并覆盖卷积、池化、特征展平和分类头四类计算。
+\node[block, text width=3.4cm] (conv1) at (3.8,0)
+    {\textbf{Conv2D $(5\times5,\ s=1,\ p=2)$ + ReLU}\\[2pt]$(N,1,28,28)\rightarrow(N,6,28,28)$\\[2pt]Nombre de paramètres : $156$};
 
-\subsection{前向数据流与形状传播}
+\node[block, text width=2.9cm] (pool1) at (7.6,0)
+    {\textbf{MaxPool2D $(2\times2,\ s=2)$}\\[2pt]$(N,6,28,28)\rightarrow(N,6,14,14)$};
 
-该网络的前向数据流可以概括为：
-\[
-(N,784)
-\rightarrow (N,1,28,28)
-\rightarrow \text{Conv+ReLU}
-\rightarrow \text{Pool}
-\rightarrow \text{Conv+ReLU}
-\rightarrow \text{Pool}
-\rightarrow \text{Flatten}
-\rightarrow \text{FC+ReLU}
-\rightarrow \text{FC+ReLU}
-\rightarrow \text{Logits}.
-\]
+\node[block, text width=3.5cm] (conv2) at (11.6,0)
+    {\textbf{Conv2D $(5\times5,\ s=1,\ p=0)$ + ReLU}\\[2pt]$(N,6,14,14)\rightarrow(N,16,10,10)$\\[2pt]Nombre de paramètres : $2416$};
 
-这里的实现选择是继续使用统一的 \texttt{Matrix} 作为底层存储，而不单独引入 \texttt{Tensor4D}。\texttt{Matrix} 的标量类型在整个项目中统一为 \texttt{float}（单精度32位，由 \texttt{tensor.hpp} 中的 \texttt{using Scalar = float} 定义），前向、反向和 GEMM 路径均以此为准。逻辑上的四维张量 $(N,C,H,W)$ 在内存中展平为二维矩阵 \texttt{Matrix(N, C*H*W)}，再通过形状参数解释其语义。对某个元素 $(n,c,h,w)$，其线性索引可写为
+% row 2
+\node[block, text width=2.9cm] (pool2) at (2.0,-2.9)
+    {\textbf{MaxPool2D $(2\times2,\ s=2)$}\\[2pt]$(N,16,10,10)\rightarrow(N,16,5,5)$};
+
+\node[block, text width=2.4cm] (flat) at (5.5,-2.9)
+    {\textbf{Flatten}\\[2pt]$(N,16,5,5)\rightarrow(N,400)$};
+
+\node[block, text width=3.5cm] (fc1) at (9.7,-2.9)
+    {\textbf{Linear $400\rightarrow120$ + ReLU}\\[2pt]$(N,400)\rightarrow(N,120)$\\[2pt]Nombre de paramètres : $48120$};
+
+% row 3
+\node[block, text width=3.5cm] (fc2) at (5.0,-5.8)
+    {\textbf{Linear $120\rightarrow84$ + ReLU}\\[2pt]$(N,120)\rightarrow(N,84)$\\[2pt]Nombre de paramètres : $10164$};
+
+\node[block, text width=3.0cm] (fc3) at (9.2,-5.8)
+    {\textbf{Linear $84\rightarrow10$}\\[2pt]$(N,84)\rightarrow(N,10)$\\[2pt]Nombre de paramètres : $850$};
+
+% arrows row 1
+\draw[arrow] (input.east) -- (conv1.west);
+\draw[arrow] (conv1.east) -- (pool1.west);
+\draw[arrow] (pool1.east) -- (conv2.west);
+
+% row 1 -> row 2 : route downward into the next stage
+\draw[arrow] (conv2.south) -- ++(0,-0.55) -| (pool2.north);
+
+% arrows row 2
+\draw[arrow] (pool2.east) -- (flat.west);
+\draw[arrow] (flat.east) -- (fc1.west);
+
+% row 2 -> row 3 : route downward into the next stage
+\draw[arrow] (fc1.south) -- ++(0,-0.65) -| (fc2.north);
+
+% arrows row 3
+\draw[arrow] (fc2.east) -- (fc3.west);
+
+% total params
+\node[anchor=center, font=\small\bfseries] at (7.1,-7.35) {Nombre total de paramètres entraînables : $61706$};
+\end{tikzpicture}
+\caption{Structure du chemin CNN actuel et évolution des shapes à chaque étape.}
+\label{fig:cnn_architecture_flow}
+\end{figure}
+
+L'ensemble du réseau compte environ $61706$ paramètres entraînables. Cette échelle correspond au chemin CNN actuel pour MNIST et couvre quatre types de calcul : convolution, pooling, mise à plat des caractéristiques et tête de classification.
+
+\subsection{Flux de données avant et propagation des shapes}
+
+Le chemin avant de ce réseau suit la figure~\ref{fig:cnn_architecture_flow} : l'entrée est d'abord interprétée de $(N,784)$ vers $(N,1,28,28)$, puis traverse successivement deux convolutions, deux opérations de pooling, une mise à plat des caractéristiques et une tête de classification à trois couches entièrement connectées.
+
+Le choix d'implémentation consiste à conserver \texttt{Matrix} comme stockage bas niveau unique, sans introduire de \texttt{Tensor4D} distinct. Le projet utilise uniformément des \texttt{float} en simple précision ; un tenseur logique à quatre dimensions $(N,C,H,W)$ est aplati en mémoire dans une matrice bidimensionnelle \texttt{Matrix(N, C*H*W)}, puis réinterprété au moyen des paramètres de forme. Pour un élément $(n,c,h,w)$, l'indice linéaire s'écrit
 \[
 \texttt{idx} = c \times H \times W + h \times W + w.
 \]
-这样做的优点是避免重写一套新的底层张量存储与算子系统，并使卷积层可以直接复用现有矩阵运算接口；代价则是每一层都需要显式传递形状信息，并在实现中谨慎处理 reshape 与索引。
+Ce choix évite de réécrire un nouveau système de stockage tensoriel et de nouveaux opérateurs bas niveau, tout en permettant à la couche de convolution de réutiliser directement les interfaces matricielles existantes. En contrepartie, chaque couche doit transmettre explicitement ses informations de forme et manipuler avec précaution les opérations de reshape et d'indexation.
 
-\subsection{池化层与全连接分类头}
+\subsection{Couche de pooling et tête de classification entièrement connectée}
 
-\texttt{MaxPool2DLayer} 负责空间下采样。当前实现使用最大池化；前向阶段记录每个窗口中最大值的位置，反向阶段把梯度散射回对应输入位置。池化层本身不含可训练参数。
+\texttt{MaxPool2DLayer} assure le sous-échantillonnage spatial. L'implémentation actuelle utilise un max pooling ; pendant la passe avant, la position du maximum est enregistrée dans chaque fenêtre, puis le gradient est redistribué à la position correspondante lors de la passe arrière. La couche de pooling ne contient aucun paramètre entraînable.
 
-两次卷积和池化之后，特征图尺寸从 $(N,1,28,28)$ 变为 $(N,16,5,5)$。随后网络在 \texttt{forward()} 中直接执行展平，把它改写为 $(N,400)$，再送入三层全连接分类头。展平在网络内部作为一步 reshape 处理。
+Après deux convolutions et deux opérations de pooling, la taille de la carte de caractéristiques passe de $(N,1,28,28)$ à $(N,16,5,5)$. Le réseau effectue ensuite directement la mise à plat dans \texttt{forward()} pour obtenir $(N,400)$, puis transmet ce résultat à la tête de classification à trois couches entièrement connectées. Cette mise à plat est traitée en interne comme une opération de reshape.
 
-\subsection{接口抽象与代码组织}
+\subsection{Abstraction d'interface et organisation du code}
 
-为使训练器同时支持 MLP 与 CNN，代码中增加了精简的网络抽象接口 \texttt{NeuralNetwork}，职责只有两项：执行前向传播，以及返回全部可训练参数。\texttt{MLPNetwork} 与 \texttt{CNNNetwork} 因而可以共用同一套训练循环。
+Pour que le trainer puisse prendre en charge à la fois le MLP, le CNN de type LeNet et les futures variantes ResNet, l'implémentation actuelle n'introduit pas de boucle d'entraînement distincte pour chaque famille de modèles. Elle ajoute au contraire une abstraction unifiée \texttt{NeuralNetwork} au-dessus de la couche réseau. Cette interface ne conserve que les deux capacités réellement nécessaires à la boucle principale : exécuter la propagation avant à partir des entrées et renvoyer l'ensemble des paramètres entraînables. Le trainer, la fonction de perte, l'optimiseur et la logique de remise à zéro des gradients et de mise à jour des paramètres restent ainsi inchangés ; les différences entre modèles sont cantonnées à leur structure interne.
 
-从文件组织上看，CNN 相关增量主要集中在以下几部分：
-\begin{itemize}
-    \item \texttt{include/conv2d\_layer.hpp} 与 \texttt{src/conv2d\_layer.cpp}：卷积层实现；
-    \item \texttt{include/maxpool2d\_layer.hpp} 与 \texttt{src/maxpool2d\_layer.cpp}：池化层实现；
-    \item \texttt{include/cnn\_network.hpp} 与 \texttt{src/cnn\_network.cpp}：LeNet 风格 CNN 主体（\texttt{CNNNetwork}）；
-    \item \texttt{include/resnet\_network.hpp} 与 \texttt{src/resnet\_network.cpp}：带残差连接的 \texttt{ResNetNetwork}，支持可配置的 BasicBlock 堆叠，通过 \texttt{--model resnet} 调用；
-    \item \texttt{include/neural\_network.hpp}：统一网络接口；
-    \item \texttt{src/main.cpp}：加入 \texttt{--model cnn} / \texttt{--model resnet} 等命令行入口。
-\end{itemize}
+Dans cette organisation, les couches de convolution, de pooling et les couches entièrement connectées sont considérées comme des composants internes du réseau, et non comme des branches particulières du framework d'entraînement. Que le modèle sous-jacent soit \texttt{MLPNetwork}, \texttt{CNNNetwork} ou \texttt{ResNetNetwork}, le trainer manipule toujours la même interface : les données d'entrée passent par \texttt{forward()}, puis l'optimiseur reçoit la liste des paramètres à mettre à jour après la rétropropagation. Cette conception découple autant que possible les variations d'architecture de modèle des variations du flux d'entraînement, et permet d'intégrer le réseau convolutif sur la base du pipeline MLP existant sans réécrire tout le cadre d'exécution.
 
-CNN 相关改动主要是新增层类型和网络组合方式；原有损失函数、优化器、训练器、自动求导节点和矩阵库保持不变。后文卷积优化和训练 profile 也沿用同一训练框架。
+Du point de vue de l'organisation du code, les ajouts suivent principalement la hiérarchie « implémentation des couches $\rightarrow$ composition du réseau $\rightarrow$ point d'entrée d'entraînement » : les couches de convolution et de pooling portent la sémantique locale des opérateurs, \texttt{CNNNetwork} et \texttt{ResNetNetwork} assemblent les structures concrètes, puis le programme principal choisit, via les arguments de ligne de commande, quel réseau instancier. Les fonctions de perte, optimiseurs, noeuds d'autodiff et backends de calcul matriciel existants restent donc presque inchangés. Les optimisations de convolution, le profiling d'entraînement et le chemin de synchronisation distribuée décrits ensuite s'appuient tous sur ce cadre d'entraînement unifié.
 
-\subsection{设计取舍与当前边界}
+\subsection{Choix de conception et état actuel}
 
-当前 CNN 架构采用三项固定取舍：底层继续复用 \texttt{Matrix}；网络结构使用固定成员组合；卷积实现优先走 \texttt{im2col + matmul} 路径。当前实验路径仍以 LeNet 风格 CNN 为主。代码中已包含 \texttt{ResNetNetwork}（\texttt{BasicBlock} 堆叠，可配置深度），但报告没有展开系统性超参调优或基准测试；BatchNorm 等组件也尚未接入。输入表示足以覆盖当前卷积网络，高维张量算子的通用表示仍未单独展开。
+Le chemin CNN principal repose encore sur une structure de type LeNet et sur un schéma de convolution \texttt{im2col + matmul}, avec réutilisation du stockage unifié \texttt{Matrix} et du framework d'entraînement existant. L'extension ResNet est déjà intégrée, mais n'a pas encore fait l'objet d'un réglage systématique des hyperparamètres ni de campagnes de benchmark ; des composants plus complets, comme BatchNorm, restent également à développer.
+
+\subsection{Vérification à l'exécution}
 
 \begin{table}[h]
 \centering
 \begin{tabular}{lcc}
 \hline
-模型 & 训练轮数 & 测试准确率 \\
+Modèle & Nombre d'epochs & Précision en test \\
 \hline
 MLP & 1 & 80.10\% \\
 MLP & 3 & 87.12\% \\
@@ -677,201 +548,304 @@ MLP & 5 & 89.00\% \\
 CNN & 1 & 88.82\% \\
 \hline
 \end{tabular}
-\caption{CNN 与 MLP 在 MNIST 上的测试准确率对比（batch=256，seed=42）}
+\caption{Comparaison de la précision en test du CNN et du MLP sur MNIST (batch=256, seed=42)}
 \label{tab:cnn_mlp_acc}
 \end{table}
 
-在这组 batch=256、seed=42 的粗粒度对比中，CNN 训练 1 个 epoch 达到 88.82\%，接近 MLP 训练 5 个 epoch 的 89.00\%。该表用于说明 CNN 主路径已经可运行，并在该设置下达到与 MLP 相近的 MNIST 精度水平。注：MLP 实测耗时数据存在统计波动（3 epoch 比 1 epoch 更快），此处仅引用准确率列。
+Dans cette comparaison grossière avec `batch=256` et `seed=42`, le CNN atteint 88.82\% après 1 epoch, soit un niveau proche des 89.00\% obtenus par le MLP après 5 epochs. Ce résultat sert principalement à montrer que le chemin principal du CNN s'exécute désormais de manière stable et atteint, dans cette configuration, un niveau de précision sur MNIST proche de celui du MLP.
 
-\section{Tiny-ImageNet数据集迁移与后续方向}
+\subsection{Extension vers une structure ResNet}
 
-在 CNN 路径和分布式训练接入后，实验对象从 MNIST 扩展到 \texttt{Tiny-ImageNet}。这一迁移对应三类代码路径：JPEG 解码、卷积训练和 MPI 同步。
+Après le CNN de type LeNet, le projet a également intégré \texttt{ResNetNetwork} afin de préparer des expériences sur des réseaux convolutifs plus profonds. Le principe central de ResNet est la connexion résiduelle : chaque bloc n'apprend plus un mapping complet $H(x)$, mais un résidu $F(x)$ relatif à l'entrée, avec une sortie écrite
+\[
+y = F(x) + x.
+\]
+Cette structure atténue les problèmes de dégradation du gradient dans l'entraînement des réseaux profonds et conserve une bonne aptitude à l'optimisation lorsque la profondeur augmente.
 
-\subsection{为什么从 MNIST 迁移到 Tiny-ImageNet}
+L'extension ResNet suit toujours l'interface unifiée \texttt{NeuralNetwork}. Elle se branche donc directement sur le même trainer, la même fonction de perte, le même optimiseur et le même système de différentiation automatique, comme modèle optionnel dans le flux d'entraînement existant. La boucle d'entraînement ne nécessite ainsi aucun chemin spécifique à ResNet : le modèle produit sa sortie via la même interface de propagation avant, puis transmet sa liste de paramètres à l'optimiseur. Cette conception permet d'intégrer la structure résiduelle dans le système actuel sans réécrire le framework d'entraînement, tout en vérifiant directement sa compatibilité avec le chemin principal d'autodiff.
 
-MNIST 足以验证 MLP、loss 和 autodiff，但它不会像 Tiny-ImageNet 那样真正覆盖 JPEG 图像加载、CNN 路径和 MPI 路径。在当前仓库中，\texttt{Tiny-ImageNet} 提供约 100000 张训练图像，以及来自 \texttt{val} 目录的约 10000 张评估图像。因此，代码当前实际使用的是 \texttt{train} 和 \texttt{val} 两个 split，而没有在主路径中接入独立的 \texttt{test} split。
+\subsubsection{Structure et stratégie de sous-échantillonnage}
 
-\subsection{迁移后的现状与限制}
+La configuration par défaut de \texttt{ResNetConfig} vise des entrées MNIST, avec une forme d'entrée $1\times28\times28$ et $10$ classes. Le réseau commence par une couche de convolution de type stem, puis enchaîne trois stages ; leurs nombres de canaux sont respectivement $16$, $32$ et $64$, et chaque stage contient deux blocs résiduels. Les dimensions spatiales évoluent selon $28\times28 \rightarrow 28\times28 \rightarrow 14\times14 \rightarrow 7\times7$, avant une couche entièrement connectée qui produit des logits de dimension $10$.
 
-\texttt{Tiny-ImageNet} 分支目前已经接入加载逻辑和训练循环。本节提到的评估对应 \texttt{train + val} 训练/评估路径。
+\subsubsection{BasicBlock}
 
-\begin{table}[h]
-\centering
-\begin{tabular}{ccccc}
-\hline
-Epoch & 训练损失 & 训练准确率 & 测试准确率 & 每轮耗时 (s) \\
-\hline
-1  & 5.276 & 0.87\%  & 1.54\%  & 181.3 \\
-5  & 4.497 & 7.69\%  & 8.46\%  & 180.0 \\
-10 & 3.830 & 16.56\% & 11.56\% & 180.9 \\
-20 & 2.910 & 30.96\% & 9.49\%  & 180.3 \\
-30 & 2.308 & 41.50\% & 7.77\%  & 179.5 \\
-40 & 2.010 & 47.33\% & 7.24\%  & 179.8 \\
-\hline
-\end{tabular}
-\caption{Tiny-ImageNet 40 epoch 训练曲线摘要（world\_size=4，batch=128，per\_param 同步）}
-\label{tab:tiny_imagenet_curve}
-\end{table}
+L'unité de base de l'implémentation ResNet actuelle est \texttt{BasicBlock}. Chaque bloc contient deux convolutions $3\times3$ :
+\[
+x \rightarrow \mathrm{Conv}_{3\times3} \rightarrow \sigma
+\rightarrow \mathrm{Conv}_{3\times3}
+\rightarrow + \rightarrow \sigma,
+\]
+où $\sigma$ désigne la fonction d'activation configurée. Si les nombres de canaux d'entrée et de sortie sont identiques et que le stride vaut $1$, le shortcut réutilise directement l'entrée ; sinon, le bloc ajoute une convolution de projection $1\times1$ afin d'aligner le nombre de canaux et les dimensions spatiales du shortcut sur la sortie de la branche principale.
 
-表~\ref{tab:tiny_imagenet_curve} 显示，训练准确率持续上升至 47\%，但测试准确率在第 5 epoch 后即开始回落，第 40 epoch 仅 7.24\%，表明在当前 LeNet 风格 CNN 结构和无数据增强的配置下，模型在 Tiny-ImageNet 上出现严重过拟合。
+Le calcul d'un bloc résiduel peut alors s'écrire :
+\[
+F(x) = W_2 \sigma(W_1 x),
+\]
+\[
+y = \sigma(F(x) + P(x)),
+\]
+où $P(x)$ représente le chemin shortcut. Lorsque la forme ne change pas, $P(x)=x$ ; en cas de sous-échantillonnage ou de changement du nombre de canaux, $P(x)$ est assuré par une convolution $1\times1$.
+Le passage d'un stage au suivant utilise une convolution de stride $2$ pour le sous-échantillonnage, accompagnée d'une projection $1\times1$ sur le chemin shortcut afin de conserver la cohérence des dimensions spatiales et des canaux entre les deux branches.
 
-\subsection{当前范围与后续方向}
+\subsubsection{Résumé}
 
-后续工作分成系统侧和模型侧两部分：系统侧继续观察 \texttt{im2col/col2im}、卷积 backward 以及卷积与 GEMM 之间的数据重排成本；模型侧继续调整 CNN 架构、超参数和训练配置。
+L'implémentation ResNet actuelle vise surtout à vérifier que la structure résiduelle s'intègre de manière stable au framework de différentiation automatique existant, tout en fournissant au projet une base CNN plus profonde que LeNet. Pour viser de meilleures performances sur des jeux de données plus complexes, il faudra encore ajouter BatchNorm, un global average pooling et une configuration d'entraînement plus systématique.
 
-\section{输入管线与实验自动化支撑}
+\section{Recherche automatique d'hyperparamètres avec Optuna}
 
-\subsection{从矩阵式加载到 \texttt{BatchSource} 抽象}
+En plus du réglage manuel, le projet a introduit \texttt{Optuna} pour organiser une recherche automatique d'hyperparamètres. Le point de départ est simple : les premières expériences sur MNIST ont déjà montré que le taux d'apprentissage, la taille de batch, la fonction d'activation et l'optimiseur influencent fortement la convergence. Avec l'ajout du chemin CNN, une exploration purement manuelle devient rapidement coûteuse. Le HPO est donc traité ici comme une extension directe du flux d'entraînement, et non comme un script auxiliaire ajouté après coup.
 
-MNIST 路径先把数据加载成完整矩阵，再由 \texttt{DataLoader} 按索引切分 batch。对于 \texttt{Tiny-ImageNet}，仓库在 \texttt{DataLoader} 与底层数据源之间引入了 \texttt{BatchSource} 抽象。这个接口暴露样本数、输入与目标维度，以及根据一组索引装载 batch 的操作。
+En pratique, chaque trial exécute un entraînement indépendant et prend \texttt{test\_acc} comme objectif. La métrique d'évaluation peut être soit la meilleure précision de test observée pendant l'entraînement, soit la précision de test du dernier epoch :
+\[
+\mathrm{score}=
+\begin{cases}
+\max_e \mathrm{test\_acc}_e, & \texttt{metric=best},\\
+\mathrm{test\_acc}_E, & \texttt{metric=last}.
+\end{cases}
+\]
+Le \texttt{study} associé est donc formulé en maximisation.
 
-\subsection{Tiny-ImageNet 的流式 JPEG 解码}
+L'espace de recherche couvre principalement les paramètres d'entraînement les plus sensibles : le taux d'apprentissage est échantillonné sur une échelle logarithmique dans $[10^{-4}, 2\times10^{-2}]$, la taille de batch est choisie dans $\{32,64,128\}$, la fonction d'activation est comparée entre \texttt{relu}, \texttt{leaky\_relu}, \texttt{gelu} et \texttt{tanh}, et l'initialisation alterne entre \texttt{he} et \texttt{xavier}. La partie optimiseur suit une recherche conditionnelle : \texttt{sgd} ne balaie que \texttt{weight\_decay}, \texttt{momentum\_sgd} ajoute \texttt{momentum} et \texttt{nesterov}, et \texttt{adamw} explore en plus \texttt{beta1}, \texttt{beta2} et \texttt{eps}. Cette organisation évite des combinaisons peu utiles et concentre le budget de trials sur des régions de paramètres plus pertinentes.
 
-在 MNIST 路径中，\texttt{BatchSource} 可以退化成从已加载矩阵中复制若干行。对于 \texttt{Tiny-ImageNet}，\texttt{TinyImageNetDataset::prepareStreaming()} 会准备来自 \texttt{train} 和 \texttt{val} 的样本，再由 \texttt{TinyImageNetDataset} 提供 \texttt{BatchSource}，在训练循环请求 mini-batch 时按需读取并解码 JPEG 图像。当前加载方式是按 batch 流式解码。
+Les résultats expérimentaux sont sauvegardés avec la configuration des paramètres et le contexte d'exécution afin de faciliter la relecture et la reproduction. L'exécution prend aussi en charge le parallélisme intra-processus ainsi qu'un mode MPI worker pour augmenter le débit de recherche. Parmi les résultats CNN HPO conservés, une campagne de 40 trials avec 3 epochs par trial atteint \(\mathrm{best\ test\_acc}=0.9891\). Ce résultat indique que la recherche automatique peut identifier des configurations légèrement différentes des réglages manuels, mais plus efficaces sous un budget d'entraînement court.
 
-\subsection{损失函数、优化器与训练循环}
+\section{Portage vers Tiny-ImageNet et pipeline d'entrée}
 
-在当前主训练入口中，损失函数固定为 \texttt{CrossEntropyLoss}：模型前向输出类别 logits，损失层在内部执行数值稳定的 softmax 与交叉熵计算，并返回整个 batch 的标量 loss。代码中也保留了 \texttt{MSELoss} 实现，当前 CNN 分类路径使用的是 \texttt{CrossEntropyLoss}。
+Avec l'intégration du chemin CNN et de l'entraînement distribué, le champ expérimental s'étend de MNIST à \texttt{Tiny-ImageNet}. Ce portage augmente non seulement l'échelle des entrées, mais introduit aussi une charge système plus complète, avec décodage JPEG, entraînement convolutif et synchronisation distribuée ; il expose donc plus directement le domaine de validité et les goulots d'étranglement de l'implémentation actuelle.
 
-优化器方面，仓库当前实现了 \texttt{SGD}、\texttt{MomentumSGD} 和 \texttt{AdamW} 三条路径。图~\ref{fig:optimizer_compare} 汇总了 \texttt{output/compare\_opt} 下三种优化器 run 在 MNIST MLP 上的 20 epoch 训练曲线。
+\subsection{Motivation du portage et caractéristiques des données}
+
+MNIST suffit pour valider les chemins de base liés au MLP, à la fonction de perte et à la différentiation automatique, mais ne couvre pas des scénarios plus lourds comme le chargement d'images JPEG, le calcul CNN ou la synchronisation MPI. À l'inverse, \texttt{Tiny-ImageNet} fournit environ 100000 images d'entraînement et environ 10000 images de validation, ce qui convient mieux à l'évaluation d'un pipeline d'entrée plus complexe et d'un flux d'entraînement plus chargé. Les expériences actuelles utilisent une séparation entre jeu d'entraînement et jeu de validation, sans jeu de test indépendant intégré au chemin principal.
+
+\subsection{Organisation du pipeline d'entrée}
+
+Pour s'adapter aux entrées image de \texttt{Tiny-ImageNet}, le système abandonne le schéma unique utilisé sur MNIST, fondé sur un chargement intégral suivi d'un découpage par index. Une abstraction \texttt{BatchSource} est introduite entre le loader et la source de données bas niveau afin de décrire, via une interface unifiée, la taille de l'échantillon, les dimensions d'entrée et le chargement d'un batch par index. Dans le cas de MNIST, cette abstraction peut se réduire à la copie de quelques lignes depuis une matrice déjà chargée ; dans le cas de \texttt{Tiny-ImageNet}, elle devient un chargement et un décodage JPEG par batch pendant l'entraînement. Le loader réutilise les tampons de batch et conserve une logique unifiée pour les index et le mélange aléatoire.
+
+\subsection{État actuel de l'entraînement et principales limites}
+
+Le chemin \texttt{Tiny-ImageNet} est maintenant raccordé à la logique de chargement et à la boucle d'entraînement. Les évaluations mentionnées dans cette section correspondent à une configuration d'entraînement/évaluation avec séparation entre jeu d'entraînement et jeu de validation.
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=0.92\textwidth]{../output/compare_opt/optimizer_compare.png}
-\caption{三种优化器在 MNIST MLP（20 epoch）上的训练/测试损失与准确率对比。SGD 最终测试准确率 96.52\%，MomentumSGD 98.27\%，AdamW 98.03\%。}
-\label{fig:optimizer_compare}
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.92\textwidth,
+    height=5.2cm,
+    xmin=1, xmax=40,
+    ymin=1.8, ymax=5.5,
+    xlabel={Epoch},
+    ylabel={Perte d'entraînement},
+    xtick={1,5,10,20,30,40},
+    ymajorgrids=true,
+    grid style={gray!20},
+    axis line style={gray!60},
+    tick style={gray!60},
+    legend style={draw=none, fill=none, font=\footnotesize, at={(0.02,0.98)}, anchor=north west},
+]
+\addplot[
+    color=blue!70!black,
+    line width=1.1pt,
+    mark=*,
+    mark size=2.2pt
+] coordinates {
+    (1,5.276) (5,4.497) (10,3.830) (20,2.910) (30,2.308) (40,2.010)
+};
+\addlegendentry{Perte d'entraînement}
+\end{axis}
+
+\begin{axis}[
+    width=0.92\textwidth,
+    height=5.2cm,
+    xmin=1, xmax=40,
+    ymin=179.2, ymax=181.6,
+    xtick=\empty,
+    axis y line*=right,
+    axis x line=none,
+    ylabel={Temps par epoch (s)},
+    ylabel style={color=orange!70!black},
+    yticklabel style={color=orange!70!black},
+    ytick={179.5,180.0,180.5,181.0,181.5},
+    legend style={draw=none, fill=none, font=\footnotesize, at={(0.98,0.98)}, anchor=north east},
+]
+\addplot[
+    color=orange!80!black,
+    line width=1.0pt,
+    dashed,
+    mark=square*,
+    mark size=2.0pt
+] coordinates {
+    (1,181.3) (5,180.0) (10,180.9) (20,180.3) (30,179.5) (40,179.8)
+};
+\addlegendentry{Temps par epoch}
+\end{axis}
+\end{tikzpicture}
+
+\vspace{0.6em}
+
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.92\textwidth,
+    height=5.8cm,
+    xmin=1, xmax=40,
+    ymin=0, ymax=50,
+    xlabel={Epoch},
+    ylabel={Précision (\%)},
+    xtick={1,5,10,20,30,40},
+    ymajorgrids=true,
+    grid style={gray!20},
+    axis line style={gray!60},
+    tick style={gray!60},
+    legend style={draw=none, fill=none, font=\footnotesize, at={(0.02,0.98)}, anchor=north west},
+]
+\addplot[
+    color=teal!70!black,
+    line width=1.1pt,
+    mark=*,
+    mark size=2.2pt
+] coordinates {
+    (1,0.87) (5,7.69) (10,16.56) (20,30.96) (30,41.50) (40,47.33)
+};
+\addlegendentry{Précision d'entraînement}
+
+\addplot[
+    color=red!75!black,
+    line width=1.1pt,
+    mark=triangle*,
+    mark size=2.6pt
+] coordinates {
+    (1,1.54) (5,8.46) (10,11.56) (20,9.49) (30,7.77) (40,7.24)
+};
+\addlegendentry{Précision de test}
+\end{axis}
+\end{tikzpicture}
+\caption{Résumé des courbes d'entraînement sur 40 epochs pour Tiny-ImageNet (\texttt{world\_size=4}, \texttt{batch=128}, synchronisation \texttt{per\_param}). Le graphique du haut montre la perte d'entraînement et le temps par epoch ; celui du bas présente la précision d'entraînement et la précision de test.}
+\label{fig:tiny_imagenet_curve}
 \end{figure}
 
-它们都可以由命令行直接选择。\texttt{MomentumSGD} 维护 velocity，并可按配置启用 Nesterov 与 weight decay；\texttt{AdamW} 维护一阶、二阶矩估计，并采用 decoupled weight decay。
+La figure~\ref{fig:tiny_imagenet_curve} montre que la précision d'entraînement continue de monter jusqu'à 47\%, alors que la précision de test commence à décroître dès le 5\ieme{} epoch et ne vaut plus que 7.24\% au 40\ieme{}. Dans la configuration actuelle, avec une structure CNN de type LeNet et sans augmentation de données, le modèle présente donc un surapprentissage marqué sur Tiny-ImageNet.
 
-训练配置在构图完成后根据命令行参数选择优化器，并在每个训练 step 中先调用 \texttt{optimizer\_.zeroGrad()} 清空梯度，再在 backward 与可能的分布式同步完成后，按全局 batch 大小做缩放并执行 \texttt{optimizer\_.step(...)}。梯度求和、跨 rank 平均和参数更新在当前实现中按阶段组织。
+\subsection{Périmètre actuel et suite du travail}
 
-\texttt{Trainer::runEpoch(...)} 统一承担训练与评估两条路径：它从 \texttt{DataLoader} 取出 batch，包装为输入节点，执行 \texttt{model.forward(x)} 和 \texttt{lossFn.forward(preds, y)}，然后在训练模式下触发 backward、梯度同步和参数更新；在评估模式下只执行 forward 与 loss 统计。准确率计算对 logits 和 one-hot 目标分别取 \texttt{argmax}，统计 top-1 正确样本数。
+À ce stade, ce chemin permet déjà de charger \texttt{Tiny-ImageNet} et d'exécuter l'entraînement de manière stable, mais des limites nettes subsistent à la fois du côté des entrées et du côté du modèle. Le pipeline d'entrée n'intègre pas encore de prélecture asynchrone, de chevauchement avec le décodage, de mécanisme de cache ni d'augmentation de données plus complète ; du côté du modèle et des opérateurs, le coût de réagencement entre \texttt{im2col/col2im}, le backward de la convolution ainsi que les transferts entre convolution et GEMM doivent encore être examinés. La suite du travail doit donc progresser en parallèle sur le système d'entrée et sur l'entraînement du modèle. Des entraînements de ResNet et d'IST sur cluster sont prévus afin d'améliorer la précision de test sur Tiny-ImageNet.
 
-\texttt{DataLoader} 会复用 \texttt{batch\_x} 与 \texttt{batch\_y} 两个 batch buffer，并维护统一的样本索引序列与 shuffle 逻辑。
+\section{Entraînement distribué, synchronisation des gradients et réorganisation du runtime}
 
-\subsection{当前输入管线的边界}
+\subsection{Parallélisme de données synchrone et agrégation des gradients}
 
-\texttt{DataLoader::nextBatchInto(...)} 目前仍会在每一步构造 \texttt{batch\_indices}。\texttt{Tiny-ImageNet} 路径还没有引入异步预取、解码重叠、缓存或更完整的数据增强；MNIST 路径当前仍然基于物理拷贝，view 尚未接入。
-
-\subsection{HPO 脚本与 \texttt{run\_meta.json}}
-
-HPO 路径会输出 \texttt{run\_meta.json}、\texttt{trials.csv} 和 \texttt{best.txt}。在当前仓库中，\texttt{run\_meta.json} 记录的字段包括执行二进制、数据目录、trial 数、epoch 数、seed、study 名称以及 MPI 配置。
-
-\subsection{HPO 产物的覆盖范围}
-
-这些文件覆盖 HPO 路径。当前仓库中保留的 HPO run 目录并不完全一致，因此本节只把这些文件作为 HPO 路径的产物说明；普通训练 run 还没有统一的实验追踪输出。
-
-
-\section{MPI}
-
-\subsection{同步数据并行与梯度聚合}
-
-当前分布式训练采用同步数据并行（synchronous data parallelism）。每个 MPI 进程，也就是每个 \texttt{rank}，都维护一份完整的模型参数副本；在数据侧，每个 rank 基于 \texttt{rank} 和 \texttt{world\_size} 构造自己的逻辑分片，仅在本地 shard 上执行前向与反向传播。
-
-设第 $r$ 个 rank 在某一步处理的本地 mini-batch 大小为 $B_r$，其在本地 backward 结束后得到的梯度和为 $g_r$。在同步数据并行中，各 rank 首先通过全局归约得到梯度总和：
+L'entraînement distribué actuel repose sur un parallélisme de données synchrone : chaque \texttt{rank} conserve une copie complète du modèle et n'exécute les passes avant et arrière que sur sa propre partition locale de données. Si l'on note $g_r$ la somme des gradients obtenue par le rank $r$ à un step donné, le gradient global est d'abord obtenu par réduction :
 \[
 g_{\mathrm{sum}}=\sum_{r=0}^{\mathrm{world\_size}-1} g_r.
 \]
-同理，全局 batch 大小为
+La taille globale du batch s'écrit alors
 \[
 B_{\mathrm{global}}=\sum_{r=0}^{\mathrm{world\_size}-1} B_r.
 \]
-于是，真正用于参数更新的全局平均梯度为
+Le gradient moyen global utilisé pour la mise à jour des paramètres est donc
 \[
 g_{\mathrm{global}}
 =\frac{1}{B_{\mathrm{global}}}g_{\mathrm{sum}}
 =\frac{1}{B_{\mathrm{global}}}\sum_{r=0}^{\mathrm{world\_size}-1} g_r.
 \]
-每个 rank 随后都使用同一个平均梯度更新自己的模型副本：
+Tous les ranks utilisent ensuite ce même gradient moyen pour mettre à jour les paramètres ; les copies du modèle restent donc cohérentes après chaque step. La difficulté principale ne tient pas à la définition mathématique, mais à l'organisation de la synchronisation des gradients. Une réduction bloquante paramètre par paramètre introduit de nombreux échanges de petite taille et ne constitue pas une solution durable.
+
+\subsection{Du paramètre par paramètre au gradient bucketing}
+
+Pour réduire les coûts fixes de communication, le système introduit ensuite le gradient bucketing : plusieurs gradients de paramètres sont d'abord empaquetés dans un tampon contigu, puis la réduction est effectuée à l'échelle du bucket. La sémantique de l'entraînement ne change pas ; seule la granularité de synchronisation passe du paramètre individuel au groupe de paramètres, ce qui diminue le nombre d'appels de communication collective.
+
+\subsection{Chevauchement entre communication et calcul}
+
+Une fois le bucketing stabilisé, le système ajoute un chemin de chevauchement entre communication et calcul : dès que tous les gradients d'un bucket sont prêts, une réduction asynchrone peut être lancée avant la fin complète du backward. Le moment de synchronisation est ainsi avancé, depuis « exécution groupée après le backward » vers « exécution dès disponibilité des gradients », ce qui ouvre la possibilité de masquer une partie de l'attente liée à la communication.
+
+\subsection{Compression des gradients : chemin d'implémentation et résultats intermédiaires}
+
+L'objectif de la compression des gradients est de réduire le coût de synchronisation tout en conservant autant que possible une convergence stable et une précision finale proche de la référence. Le premier chemin intégré réalisait une compression locale côté trainer, c'est-à-dire après la synchronisation des gradients et avant \texttt{optimizer.step}. Cette méthode modifie bien la représentation du gradient, mais ne réduit pas le volume de données échangé par \texttt{AllReduce} ; elle apporte donc peu de gain côté communication. Ce constat a conduit à déplacer la compression jusqu'à la frontière de communication.
+
+Dans cette itération, la logique de compression a été déplacée dans le runtime de synchronisation distribuée, selon le schéma
 \[
-\theta \leftarrow \theta-\eta\, g_{\mathrm{global}},
+\texttt{compress} \rightarrow \texttt{AllReduce} \rightarrow \texttt{decompress} \rightarrow \texttt{step}
 \]
-其中 $\theta$ 表示模型参数，$\eta$ 表示学习率。由于所有 rank 在每一步都使用同一个聚合梯度，因此各参数副本在更新后仍保持严格一致。
+comme cadre d'exécution, intégré de manière uniforme aux chemins \texttt{bucketed} et \texttt{overlap\_bucketed}. L'implémentation associée ajoute des hooks d'encodage/décodage et des entrées de profiling décomposées pour distinguer les coûts d'encodage, de communication et de décodage ; le premier noyau de quantification, trop coûteux, a ensuite été remplacé par une implémentation plus légère fondée sur des opérations bit à bit. En parallèle, la stratégie de déclenchement de la compression a été corrigée : elle ne suit plus un intervalle entre buckets, mais un intervalle entre steps. Sur la plateforme actuelle, \texttt{interval=8} fournit un compromis satisfaisant entre coût ajouté et bénéfice observé.
 
-难点在于如何组织梯度同步。最朴素的实现方式，是在每个参数完成本地梯度计算后，在 backward 末尾逐参数调用阻塞式 \texttt{MPI\_Allreduce} 做全局同步。当前代码中，这一基线模式对应 \texttt{Grad Sync Mode = per\_param}。从系统角度看，逐参数做小规模集体通信会引入大量调用开销，通信粒度也过碎，不利于后续优化。
+Sous \texttt{world\_size=2}, sur MNIST, avec MLP(\(128\)), \texttt{batch=64} et \texttt{seed=42}, les médianes obtenues sur trois répétitions sont les suivantes :
 
-\subsection{从逐参数同步到梯度 Bucketing}
+\begin{itemize}
+  \item \textbf{bucketed} : pour \texttt{fp16+i8} par rapport à la baseline,
+  \texttt{avg\_step\_time\_ms} vaut \(+1.84\%\),
+  \texttt{samples\_per\_s} vaut \(-1.80\%\),
+  et \texttt{test\_acc} vaut \(-0.02\%\) ;
+  \item \textbf{overlap\_bucketed} : pour \texttt{fp16+i8} par rapport à la baseline,
+  \texttt{avg\_step\_time\_ms} vaut \(+1.58\%\),
+  \texttt{samples\_per\_s} vaut \(-1.54\%\),
+  et \texttt{test\_acc} vaut \(-0.02\%\).
+\end{itemize}
 
-为降低通信侧的固定开销，系统首先引入了基于 \texttt{bucket} 的梯度同步：梯度按照参数在 \texttt{trainable\_params\_} 中的顺序打包到连续缓冲区，再以 \texttt{bucket} 为单位调用 \texttt{MPI\_Allreduce}。
+Au vu de ces résultats, la configuration retenue à ce stade est :
+\texttt{--grad\_compress 1 --grad\_compress\_mode fp16 --grad\_compress\_interval 8}.
 
-在实现上，\texttt{BucketManager} 负责建立静态分区。每个参数都会被映射到某个 \texttt{bucket}，并记录该参数在连续缓冲区中的偏移量和长度。这里采用两个约束：单个参数不会被切分到多个 \texttt{bucket} 中；特别大的参数可以独占一个 \texttt{bucket}。这样可以让后续的打包（pack）、归约和解包（unpack）逻辑保持简单。
+Même si le chemin de compression à la frontière de communication est désormais en place et que son surcoût est mieux contrôlé, le payload de communication utilise encore des tampons en \texttt{float}. Les résultats rapportés ici couvrent donc surtout la validité du cadre de compression et de la stratégie d'ordonnancement ; ils ne signifient pas encore que le volume d'octets communiqué a déjà fortement diminué. La suite du travail doit porter sur une communication réellement compressée du payload, puis sur une nouvelle évaluation de son gain de bout en bout avec la même décomposition des mesures.
 
-在 \texttt{non-overlap, bucketed} 模式下，梯度同步仍然发生在整个 backward 完成之后，只是同步单位从“参数”变成了“梯度桶”。系统先将多个参数梯度复制到连续的 \texttt{bucket} buffer 中，再对每个 \texttt{bucket} 调用一次 \texttt{MPI\_Allreduce}，最后把结果写回各参数的梯度缓冲区。这里调整的是通信前梯度的组织方式和同步粒度。
+\subsection{Expérience de montée en charge MPI}
 
-\subsection{通信与计算的重叠}
-
-当 bucketing 稳定后，系统又增加了 \texttt{overlap, bucketed} 模式。其触发条件是：某个参数梯度已经可用，且所属 \texttt{bucket} 的活跃参数全部就绪；满足后即可在 backward 过程中提前发起该 \texttt{bucket} 的归约。实现上，这一路径把阻塞式 \texttt{MPI\_Allreduce} 换成 \texttt{MPI\_Iallreduce}，并由 \texttt{BucketedOverlapRuntime} 负责 \texttt{beginStep(...)}、\texttt{onParameterGradReady(...)}、\texttt{onBackwardComplete()} 与 \texttt{finalizeAndGetGlobalBatch()}。三种模式共享同一训练语义：每个 rank 都使用全局平均梯度更新参数，差别在同步粒度和归约发起时机。
-
-\subsection{MPI 扩展性实验}
-
-表~\ref{tab:mpi_scaling} 展示了 MNIST CNN 在 \texttt{local\_batch=64}、\texttt{seed=42} 下随进程数变化的运行结果。这里固定的是每个 rank 的 \texttt{local\_batch}，因此 \texttt{global\_batch} 会随 \texttt{np} 增大。
+Le tableau~\ref{tab:mpi_scaling} présente les résultats obtenus sur le CNN MNIST avec \texttt{local\_batch=64} et \texttt{seed=42} lorsque le nombre de processus varie. Dans cette configuration, \texttt{local\_batch} est fixé pour chaque rank ; \texttt{global\_batch} augmente donc avec \texttt{np}.
 
 \begin{table}[h]
 \centering
 \begin{tabular}{cccccc}
 \hline
-进程数 & local\_batch & global\_batch & 测试准确率 & 耗时 (s) & 相对加速比 \\
+Nb processus & local batch & global batch & Précision en test & Temps (s) & Speedup relatif \\
 \hline
 1 & 64 & 64  & 93.79\% & 31.66 & 1.00$\times$ \\
 2 & 64 & 128 & 91.93\% & 19.49 & 1.62$\times$ \\
 4 & 64 & 256 & 88.63\% & 11.98 & 2.64$\times$ \\
 \hline
 \end{tabular}
-\caption{MNIST CNN（1 epoch，local\_batch=64，seed=42）的多进程扩展结果}
+\caption{Résultats de montée en charge multi-processus pour le CNN MNIST (1 epoch, \texttt{local\_batch=64}, \texttt{seed=42})}
 \label{tab:mpi_scaling}
 \end{table}
 
-进程数从 1 增至 4 时，耗时从 31.66s 降至 11.98s，加速比为 2.64$\times$。该表中的准确率变化同时受到 \texttt{global\_batch} 增大和每个 epoch 更新步数减少的影响。
+Lorsque le nombre de processus passe de 1 à 4, le temps d'exécution diminue de 31.66s à 11.98s, soit un speedup de 2.64$\times$. La variation de précision observée dans ce tableau dépend à la fois de l'augmentation de \texttt{global\_batch} et de la réduction du nombre de mises à jour par epoch.
 
-\subsection{Profile结果：通信与卷积热点}
+Pour mieux comprendre ce qui limite le gain de montée en charge, la suite examine les résultats de profiling décomposés.
 
-当前仓库中的 \texttt{mnist\_sync\_bucketed} 与 \texttt{mnist\_sync\_overlap\_bucketed} 目录可用于展示 \texttt{fwd\_bwd}、\texttt{sync\_total} 与 \texttt{sync\_wait} 等时间项的记录方式。对应 \texttt{metrics.csv} 记录的 \texttt{world\_size} 均为 4；\texttt{bucketed} 的 \texttt{batch\_size} 为 128，\texttt{overlap\_bucketed} 的 \texttt{batch\_size} 为 256。严格的同步模式性能比较需要匹配配置的独立 benchmark。
+\subsection{Résultats de profiling : décomposition des temps de communication}
+
+Les résultats de profiling présentés ici servent principalement à montrer comment se décomposent les postes \texttt{fwd\_bwd}, \texttt{sync\_total} et \texttt{sync\_wait}, et non à établir une hiérarchie strictement comparable entre les différents modes.
 
 \begin{table}[h]
 \centering
 \begin{tabular}{lccc}
 \hline
-同步模式 & fwd\_bwd (s) & sync\_total (s) & sync\_wait (s) \\
+Mode de synchronisation & fwd\_bwd (s) & sync\_total (s) & sync\_wait (s) \\
 \hline
 bucketed         & 7.57 & 1.60 & 1.60 \\
 overlap\_bucketed & 8.25 & 1.09 & 0.97 \\
 \hline
 \end{tabular}
-\caption{\texttt{mnist\_sync\_*} profile 产物中的时间项示例摘录}
+\caption{Extrait illustratif des postes de temps dans le profile de synchronisation}
 \label{tab:mpi_profile}
 \end{table}
 
-\texttt{overlap\_bucketed} 当前按 correctness-only 路径报告；本节的 profile 结果用于定位通信与等待相关时间项。在更大规模任务中，通信时间占比可能上升；重叠收益需要在匹配模型、batch、\texttt{world\_size} 和同步策略的独立 benchmark 中验证。
+\texttt{overlap\_bucketed} reste, à ce stade, dans un périmètre de validation de correction. Les résultats fournis ici servent donc surtout à localiser les coûts de communication et d'attente ; le gain réel lié au chevauchement devra être vérifié séparément dans une configuration strictement alignée.
 
-当前 profiling 产物和输出格式覆盖 \texttt{data}、\texttt{fwd\_bwd}、\texttt{sync} 和 \texttt{optimizer} 这些时间项；本节使用这些时间项说明 MPI profile 记录了哪些阶段。
+\subsection{Autograd : du backward implicite vers un moteur d'exécution explicite}
 
-\subsection{Autograd 从隐式 backward 到显式执行引擎}
+Le chevauchement entre calcul et communication dépend d'un événement runtime plus fin : le moment exact où le gradient d'un paramètre devient disponible. L'ancienne version de l'autodiff savait accumuler les gradients, mais ne rendait pas cet instant explicite. Elle supportait donc mal des mécanismes comme les \emph{ready hooks} au niveau des paramètres, la détection de disponibilité des buckets et la synchronisation chevauchée.
 
-通信重叠依赖一个更细的 runtime 事件：参数梯度何时真正就绪。旧版 autodiff 采用 \texttt{setBackwardFn(...)} 绑定闭包式 \texttt{backwardFn}；训练时，\texttt{loss\_node->backward()} 按拓扑逆序执行这些局部 backward。局部 backward 完成后，梯度贡献会立即写入父节点缓冲区。这个语义可以完成梯度累加，但不会显式给出 final-ready 时刻。参数梯度就绪、profiling hook 和 \texttt{bucket} 全部就绪这些事件因此没有独立状态；\texttt{bucketed overlap} 和参数级 ready hook 需要更明确的调度信息。
+\subsection{Refonte structurelle d'un Engine explicite}
 
-\subsection{显式 Engine 的结构重构}
+Pour cette raison, le projet a regroupé l'ordonnancement du backward dans un \texttt{AutogradEngine} explicite : le moteur maintient de façon centralisée le sous-graphe atteignable en sens inverse, le comptage des contributions de gradient et la \emph{ready queue}, puis déclenche le calcul backward d'un noeud lorsque tous les gradients de sortie nécessaires sont disponibles. En parallèle, la logique backward des opérateurs a été réécrite pour suivre un schéma « sauvegarder le contexte et renvoyer les contributions de gradient », au lieu d'écrire directement les gradients dans les noeuds parents.
 
-为此，项目把 backward 调度集中到 \texttt{AutogradEngine}。节点保留现有外部接口，但内部补充了 \texttt{requires\_grad}、\texttt{is\_leaf}、\texttt{is\_parameter}、按需分配的 \texttt{grad}、显式输入依赖列表 \texttt{inputs}、可选的 \texttt{GradFn} 和按值保存的 \texttt{BackwardContext}。 \texttt{AutogradEngine} 从 loss 节点重建 backward 可达子图，维护每个节点尚未收齐的梯度贡献数；当某节点输出梯度收齐后，再把对应 \texttt{GradFn} 放入 ready queue 执行。本文把该节点的输出梯度记为 \emph{final-ready}。
+Le rôle central de cette refonte est de rendre explicite l'événement \texttt{parameter-ready}. Le runtime distribué peut alors y raccorder le packaging des gradients, les réductions asynchrones et le profiling associé, sans modifier les formules backward propres à chaque couche.
 
-与之配套，算子 backward 逻辑被迁移到 \texttt{GradFn + BackwardContext} 体系中。\texttt{BackwardContext} 负责按值保存 backward 所需缓存，\texttt{GradFn} 只负责计算向输入传播的梯度贡献，不再直接写父节点的 \texttt{grad}。所有梯度累加、贡献合并以及 ready 判定，都统一在 \texttt{AutogradEngine} 中完成。当前这套新语义已经覆盖基础算子（如 \texttt{add}、\texttt{mul}、\texttt{matmul}、\texttt{sum}、\texttt{mean}）、激活函数、损失函数、线性层、\texttt{MaxPool2D} 和 \texttt{Conv2D}。旧的 \texttt{setBackwardFn(...)} 兼容层、历史的 \texttt{parents\_} 边和 legacy reverse-topo 路径都已被移除。
+\subsection{Réduction du coût sur le chemin chaud d'Autograd}
 
-这次重构把 \texttt{parameter-ready} 事件显式化了。分布式 runtime 因而可以在不修改各层 backward 公式的前提下，挂接 \texttt{bucket} 的打包和异步 allreduce。
+Après cette refonte, l'optimisation de \texttt{AutogradEngine} reste limitée au coût de gestion du runtime. Trois points sont principalement visés : densifier localement l'indexation de l'état du sous-graphe backward atteignable afin de réduire les coûts de recherche ; limiter les allocations de petits objets pour diminuer le surcoût de gestion du framework ; et faire converger autant que possible la fusion des gradients vers des accumulations en place sur des tampons contigus.
 
-\subsection{Autograd 热路径的性能压缩}
-
-完成这次重构后，\texttt{AutogradEngine} 的优化继续限定在运行时管理开销。
-
-第一类优化是把一次 \texttt{backward()} 调用中可达子图的状态做局部稠密化索引。相比于依赖指针或 \texttt{shared\_ptr} 的查找结构，engine 会先收集本次 backward 涉及的节点，然后为它们分配本地连续索引，再通过 \texttt{states[index]} 直接访问状态。\texttt{GradientContribution} 对应地直接记录稠密的 \texttt{target\_index}。
-
-第二类优化是减少小对象分配。对于生产路径中绝大多数算子，梯度贡献数目都比较小，因此系统使用固定容量的 inline 容器 \texttt{InlineContributionList<4>} 存储这些小列表，从而避免频繁的小块动态分配。
-
-第三类优化则聚焦于梯度合并本身。底层 \texttt{Matrix} 增加了 \texttt{addInPlace(...)} 原语，而 \texttt{Node::addGrad(...)} 现在只在第一次写入时物化梯度缓冲区，之后都在连续 buffer 上原地累加。与此同时，runtime 还显式区分了首次写入代价 \texttt{engine\_grad\_merge\_first\_write} 和后续累加代价 \texttt{engine\_grad\_merge\_accumulate}，以便区分剩余开销究竟来自 framework 逻辑还是大张量不可避免的内存流量。
-
-当前 profiling 将结论限定在已观测路径：\texttt{AutogradEngine} runtime 占比下降，热点集中到 \texttt{conv2d\_forward\_im2col}、\texttt{conv2d\_forward\_gemm}、\texttt{conv2d\_backward\_dX\_gemm}、\texttt{conv2d\_backward\_dW\_gemm} 和 \texttt{conv2d\_backward\_col2im}。
+Le profiling actuel indique que la part de runtime propre à \texttt{AutogradEngine} a déjà diminué. Les points chauds restants se concentrent davantage sur les opérateurs liés à la convolution, en particulier \texttt{im2col}, le GEMM de la passe avant, les GEMM backward \texttt{dX/dW} et \texttt{col2im}.
 
 
-\addcontentsline{toc}{section}{参考文献}
+\addcontentsline{toc}{section}{Références}
 \begin{thebibliography}{11}
 
 \bibitem{lecun1998}
@@ -884,6 +858,16 @@ Jack J. Dongarra et al.
 ``A set of level 3 basic linear algebra subprograms.''
 \textit{ACM Transactions on Mathematical Software}, 16(1):1--17, 1990.
 
+\bibitem{vanzee2017complex}
+Field G. Van Zee and Tyler M. Smith.
+``Implementing High-Performance Complex Matrix Multiplication via the 3m and 4m Methods.''
+\textit{ACM Transactions on Mathematical Software}, 44(1):7:1--7:36, 2017.
+
+\bibitem{low2016analytical}
+Tze Meng Low, Francisco D. Igual, Tyler M. Smith, and Enrique S. Quintana-Ort{\'i}.
+``Analytical Modeling Is Enough for High-Performance BLIS.''
+\textit{ACM Transactions on Mathematical Software}, 43(2):12:1--12:18, 2016.
+
 \end{thebibliography}
 
 \section*{Glossaire}
@@ -891,269 +875,280 @@ Jack J. Dongarra et al.
 
 \appendix
 
-\section{GEMM实验环境、工作负载与搜索协议}\label{app:gemm_setup}
+\section{Environnement expérimental GEMM, workloads et protocole de recherche}\label{app:gemm_setup}
 
-\subsection{实验环境}
+\subsection{Environnement expérimental}
 
-\subsubsection{硬件平台}
+\subsubsection{Plateforme matérielle}
 
 \begin{table}[H]
 \centering
 \begin{tabular}{p{0.28\textwidth}p{0.62\textwidth}}
 \toprule
-\textbf{组件} & \textbf{规格} \\
+\textbf{Composant} & \textbf{Spécification} \\
 \midrule
-处理器 & AMD Ryzen 9 8940HX，x86\_64架构 \\
-物理核心/逻辑线程 & 16物理核心，32逻辑线程（每核2线程，SMT）\\
-实验限制 & 通过 \texttt{taskset -c 0-7} 限制到8个CPU，并通过 \texttt{lscpu -e=CPU,CORE,SOCKET,NODE} 验证其物理核心映射 \\
-缓存层次 & L1d 32 KiB/核，L2 1 MiB/核，L3 64 MiB（共享）\\
-运行频率 & 锁定在4.0 GHz（禁用Turbo Boost）\\
-内存 & 30 GiB \\
+Processeur & AMD Ryzen 9 8940HX, architecture x86\_64 \\
+Cœurs physiques / threads logiques & 16 cœurs physiques, 32 threads logiques (2 threads par cœur, SMT)\\
+Restriction expérimentale & Limitation à 8 CPU via \texttt{taskset -c 0-7}, avec vérification du mapping sur les cœurs physiques par \texttt{lscpu -e=CPU,CORE,SOCKET,NODE} \\
+Hiérarchie de cache & L1d 32 KiB/cœur, L2 1 MiB/cœur, L3 64 MiB (partagé)\\
+Fréquence d'exécution & Verrouillée à 4.0 GHz (Turbo Boost désactivé)\\
+Mémoire & 30 GiB \\
 \bottomrule
 \end{tabular}
-\caption{GEMM实验硬件配置}
+\caption{Configuration matérielle des expériences GEMM}
 \label{tab:gemm_hardware}
 \end{table}
 
-\subsubsection{软件环境}
+\subsubsection{Environnement logiciel}
 
 \begin{table}[H]
 \centering
 \begin{tabular}{p{0.28\textwidth}p{0.62\textwidth}}
 \toprule
-\textbf{组件} & \textbf{版本/详情} \\
+\textbf{Composant} & \textbf{Version / détails} \\
 \midrule
-操作系统 & Fedora Linux 42 \\
-编译器 & GCC 15.2.1，编译选项 \texttt{-O3 -march=native} \\
-BLAS库 & OpenBLAS（系统版本）\\
-并行模型 & OpenMP 5.0 \\
-向量指令集 & AVX2 / AVX-512（通过 \texttt{-march=native} 自动启用）\\
+Système d'exploitation & Fedora Linux 42 \\
+Compilateur & GCC 15.2.1, options de compilation \texttt{-O3 -march=native} \\
+Bibliothèque BLAS & OpenBLAS (version système)\\
+Modèle parallèle & OpenMP 5.0 \\
+Jeu d'instructions vectorielles & AVX2 / AVX-512 (activé automatiquement via \texttt{-march=native})\\
 \bottomrule
 \end{tabular}
-\caption{GEMM实验软件配置}
+\caption{Configuration logicielle des expériences GEMM}
 \label{tab:gemm_software}
 \end{table}
 
-\subsubsection{测量协议}\label{subsec:gemm_protocol}
+\subsubsection{Protocole de mesure}\label{subsec:gemm_protocol}
 
-测量协议如下：
+Le protocole de mesure est le suivant :
 \begin{itemize}
-    \item \textbf{预热（Warm-up）}：每组测试前执行5次预热迭代，以稳定指令缓存和数据缓存状态；
-    \item \textbf{计时}：程序内部循环2000次，使用 \texttt{std::chrono::high\_resolution\_clock} 精确计时；
-    \item \textbf{硬件计数器}：通过 \texttt{perf stat -r 3} 外部重复3次，采集指令数（Instructions）、
-          周期数（Cycles）、上下文切换（Context Switches）、CPU迁移（CPU Migrations）及缓存缺失（Cache Misses）；
-    \item \textbf{环境隔离}：关键批次之间重启系统，清空页缓存（\texttt{drop\_caches}），
-          通过 \texttt{cpupower} 锁定CPU频率，以减少系统状态异质性。
-          预热是稳定执行路径的主要机制；重启和清空页缓存仅用于降低系统整体状态带来的跨批次干扰。
+    \item \textbf{Préchauffage (warm-up)} : 5 itérations de préchauffage sont exécutées avant chaque série afin de stabiliser l'état des caches d'instructions et de données ;
+    \item \textbf{Mesure de temps} : le programme exécute 2000 itérations en boucle interne, chronométrées avec \texttt{std::chrono::high\_resolution\_clock} ;
+    \item \textbf{Compteurs matériels} : \texttt{perf stat -r 3} répète la mesure 3 fois au niveau externe et collecte le nombre d'instructions, de cycles, de commutations de contexte, de migrations CPU et de défauts de cache ;
+    \item \textbf{Isolation de l'environnement} : les séries critiques sont séparées par un redémarrage du système, un vidage du page cache (\texttt{drop\_caches}) et un verrouillage de la fréquence CPU via \texttt{cpupower}, afin de réduire l'hétérogénéité de l'état système.
+          Le préchauffage reste le principal mécanisme de stabilisation du chemin d'exécution ; le redémarrage et le vidage du page cache servent uniquement à limiter les interférences entre séries.
 \end{itemize}
 
-需特别指出：\texttt{perf} 的 \texttt{:u}（用户态）修饰符会排除内核态上下文切换，
-因此本文统一使用无修饰符的 \texttt{context-switches} 捕获完整调度事件。
-此外，AMD uncore L3事件以system-wide方式采集，短窗口下易受后台进程干扰，故不用于定量比较；
-本文改用per-task的 \texttt{cache-misses} 与 \texttt{cache-references} 作为聚合性内存压力指标。
-\texttt{cache-misses} 仅用于不同配置间的相对比较，不用于精确区分L1/L2/L3来源。
+Le modificateur \texttt{:u} (mode utilisateur) de \texttt{perf} exclut les commutations de contexte en mode noyau.
+Le protocole retient donc systématiquement \texttt{context-switches} sans modificateur afin de capturer l'ensemble des événements d'ordonnancement.
+Par ailleurs, les événements AMD uncore L3 sont collectés en mode system-wide et restent sensibles aux processus d'arrière-plan sur des fenêtres courtes ; ils ne sont donc pas retenus pour la comparaison quantitative.
+Le rapport utilise à la place \texttt{cache-misses} et \texttt{cache-references} en mode per-task comme indicateurs agrégés de pression mémoire.
+\texttt{cache-misses} sert uniquement à la comparaison relative entre configurations, sans attribution précise à L1, L2 ou L3.
 
-\paragraph{CPU余量与实验隔离。}
-GEMM 实验限制在可控的 CPU 核心预算内，不占满全部逻辑线程，以给操作系统、OpenMP 运行时、\texttt{perf} 采集和后台服务保留余量，减少线程迁移、中断和非受控资源竞争。本文据此区分两类配置：一类是限制在已验证物理核心预算内的推荐配置，另一类是 16 线程 SMT/超线程压力测试配置。
+\paragraph{Marge CPU et isolation expérimentale.}
+Les expériences GEMM sont limitées à un budget contrôlé de cœurs CPU, sans occupation complète de tous les threads logiques, afin de laisser une marge au système d'exploitation, au runtime OpenMP, à la collecte \texttt{perf} et aux services d'arrière-plan, et de réduire les migrations de threads, les interruptions et la contention non contrôlée.
+Deux familles de configuration sont retenues : les configurations recommandées, limitées à un budget validé de cœurs physiques, et une configuration de stress à 16 threads avec SMT / hyper-threading.
 
-\subsection{单线程调优使用的工作负载}
+\subsection{Workloads utilisés pour le réglage mono-thread}
 
-参照项目 MLP 和 CNN 的实际层形状，定义了 4 个代表性工作负载族（Workload Family）：
+Quatre familles de workloads représentatives sont définies à partir des formes de couches réellement utilisées dans le MLP et le CNN du projet :
 
 \begin{table}[H]
 \centering
 \begin{tabular}{llrrr}
 \toprule
-\textbf{工作负载族} & \textbf{来源层} & $M$ & $K$ & $N$ \\
+\textbf{Famille de workload} & \textbf{Couche source} & $M$ & $K$ & $N$ \\
 \midrule
-fc\_forward\_mainstream & MLP FC1（hidden=128） & 32 & 784 & 128 \\
-fc\_head\_small\_n      & MLP FC2（output）      & 32 & 128 & 10  \\
+fc\_forward\_mainstream & MLP FC1 (hidden=128) & 32 & 784 & 128 \\
+fc\_head\_small\_n      & MLP FC2 (output)      & 32 & 128 & 10  \\
 conv\_dx\_skinny\_k     & CNN Conv2 backward     & 3200 & 16 & 150 \\
-fc\_wide\_output        & MLP FC1（hidden=256）  & 32 & 784 & 256 \\
+fc\_wide\_output        & MLP FC1 (hidden=256)  & 32 & 784 & 256 \\
 \bottomrule
 \end{tabular}
-\caption{单线程调优使用的代表性工作负载（batch=32）}
+\caption{Workloads représentatifs utilisés pour le réglage mono-thread (batch=32)}
 \label{tab:tuning_workloads}
 \end{table}
 
-\subsection{两轮搜索协议}
+\subsection{Protocole de recherche en deux tours}
 
-\textbf{第一轮（全局候选筛选）}：
-对所有 6 种 AVX2 内核，在各工作负载上扫描多个 $(M_c, N_c, K_c)$ 组合（共 272 个候选）。
-每候选运行 1000 次取中位时间，并辅以 5 次 \texttt{perf stat} 采样记录硬件计数器。
-采用分阶段扫描策略：先固定 $M_c, N_c$ 扫 $K_c$，再固定最优 $K_c$ 扫 $M_c$，最后精扫 $N_c$，
-使得性能变化可明确归因于单一参数轴。
+\textbf{Premier tour (filtrage global des candidats)} :
+pour les 6 noyaux AVX2, plusieurs combinaisons $(M_c, N_c, K_c)$ sont balayées sur chaque workload, soit 272 candidats au total.
+Chaque candidat est exécuté 1000 fois et évalué à partir du temps médian, avec en complément 5 échantillons \texttt{perf stat} pour les compteurs matériels.
+Le balayage suit une stratégie par étapes : $K_c$ est d'abord exploré à $M_c, N_c$ fixés, puis $M_c$ avec le meilleur $K_c$, puis $N_c$ dans une grille plus fine,
+de sorte que les variations de performance restent attribuables à un seul axe paramétrique.
 
-\textbf{第二轮（局部精细化）}：
-保留第一轮中在主流 FC 形状上表现最佳的 5 个 \texttt{KernelShape/Kc} 组合：
-\texttt{8x8/Kc=288}、\texttt{8x8/Kc=384}、\texttt{4x16/Kc=192}、
-\texttt{4x16/Kc=256}、\texttt{4x16/Kc=320}，
-在其最优区域周围加密 $M_c, N_c$ 搜索网格（每行约 75 个组合），进一步精确定位最优参数。
+\textbf{Second tour (raffinement local)} :
+les 5 combinaisons \texttt{KernelShape/Kc} les plus performantes sur les principales formes FC au premier tour sont conservées :
+\texttt{8x8/Kc=288}, \texttt{8x8/Kc=384}, \texttt{4x16/Kc=192},
+\texttt{4x16/Kc=256}, \texttt{4x16/Kc=320},
+et la grille de recherche en $M_c, N_c$ est densifiée autour de leur meilleure région (environ 75 combinaisons au total) afin de localiser plus précisément les paramètres optimaux.
 
-\section{16线程配置下的调度与同步开销诊断}\label{app:smt_diagnosis}
+\section{Diagnostic des coûts d'ordonnancement et de synchronisation en configuration 16 threads}\label{app:smt_diagnosis}
 
-本附录给出第~\ref{sec:gemm_smt}节中三组对照实验的完整数据与推理，
-提供16线程异常现象各项解释的量化支撑。
+Ce diagnostic sert uniquement à fixer le protocole expérimental et ne fait pas partie des conclusions principales sur la performance.
 
-\paragraph{实验 A：矩阵规模对同步开销占比的影响}
-
-实验环境与第~\ref{sec:gemm_smt}节第一部分保持一致。该实验用于说明一个较简单但重要的现象：当矩阵很小时，多线程同步、等待和调度相关的固定开销会在单位浮点运算上被放大。
-这里使用 OMP 作为测量对象，比较 16 线程下 $128\times128$ 与 $1024\times1024$ 两种矩阵规模的总指令数，并计算每操作指令数（Instr/Op）。
-该实验只用于刻画规模效应，不作为 OpenBLAS 内部实现机制的直接证据。
-
-\begin{table}[h]
-\centering
-\begin{tabular}{llll}
-\toprule
-矩阵尺寸 & 16 线程总指令数 & 估算 Instr/Op & 观察 \\
-\midrule
-$128\times128$   & 438.7 B & 0.587 & 同步/等待开销占比较高 \\
-$1024\times1024$ & 132.6 B & 0.128 & 计算占比较高 \\
-\bottomrule
-\end{tabular}
-\caption{矩阵规模对单位操作指令开销的影响（OMP，16 线程）}
-\label{tab:instr_per_op}
-\end{table}
-
-$128\times128$ 的 Instr/Op 约为 $1024\times1024$ 的 4.5 倍。小矩阵的计算量下降后，线程同步、barrier 等固定开销在总成本中的比例更高。该实验为后文理解小矩阵多线程异常提供了规模效应上的解释；16 线程相对 8 线程的全部指令数增长仍需结合 OpenBLAS 128$\times$128 亲和性实验分析。
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.90\textwidth]{../output/ExperienceGEMM/BLAS1/context_switches_vs_threads.png}
-    \caption{BLAS1扩展性实验中的上下文切换次数（未绑定核心）。
-             OMP 64×64的极端值说明极小矩阵过度并行的风险；
-             该图本身不直接反映OpenBLAS 128×128的内部自旋等待机制，
-             后者需结合亲和性对照实验（实验B）解读。}
-    \label{fig:cs_comparison}
-\end{figure}
-
-\paragraph{实验 B：CPU亲和性对OpenBLAS 128$\times$128 16线程异常的影响}
-
-实验环境与第~\ref{sec:gemm_smt}节第一部分保持一致。该实验直接针对 OpenBLAS 的异常配置展开，对比“自由调度（默认）”与“绑定核心（\texttt{OMP\_PROC\_BIND=true, OMP\_PLACES=cores}）”两种条件下，在 OpenBLAS、16 线程、$128\times128$ 矩阵、5000 次迭代中的关键指标。这里的诊断对象是 OpenBLAS 本身，对应正文中对 16 线程异常来源的分析。
+L'élément central de ce contrôle provient d'une expérience d'affinité CPU (OpenBLAS, 16 threads, matrice $128\times128$, 5000 itérations) : en ordonnancement libre, on mesure 2{,}013 commutations de contexte et 13.45\,B instructions ; avec \texttt{OMP\_PROC\_BIND=true, OMP\_PLACES=cores}, les commutations de contexte tombent à 14 ($-99.3\%$) et le nombre total d'instructions à 4.05\,B ($-69.9\%$). Cette observation concerne les surcoûts de la configuration 16 threads, dominés ici par l'ordonnancement et l'attente de synchronisation plutôt que par du calcul supplémentaire.
 
 \begin{table}[H]
 \centering
 \begin{tabular}{lrrl}
 \toprule
-\textbf{指标} & \textbf{自由调度} & \textbf{绑定核心} & \textbf{变化幅度} \\
+\textbf{Indicateur} & \textbf{Libre} & \textbf{Cœurs liés} & \textbf{Variation} \\
 \midrule
-上下文切换（CS） & 2{,}013 & 14          & $-99.3\%$ \\
-总指令数         & 13.45 B  & 4.05 B      & $-69.9\%$ \\
-缓存缺失标准差   & $1.32\%$ & $0.06\%$    & 稳定约22倍 \\
+context switch (CS) & 2{,}013 & 14          & $-99.3\%$ \\
+Instructions totales         & 13.45 B  & 4.05 B      & $-69.9\%$ \\
+Écart-type cache misses      & $1.32\%$ & $0.06\%$    & stabilité multipliée par $\sim 22$ \\
 \bottomrule
 \end{tabular}
-\caption{CPU亲和性对16线程性能的影响（128×128矩阵，5000次迭代）}
+\caption{Effet de l'affinité CPU sur la performance à 16 threads (matrice 128×128, 5000 itérations)}
 \label{tab:affinity_effect}
 \end{table}
 
-施加 CPU 亲和性约束后，指令数从 13.45\,B 降至 4.05\,B，上下文切换从 2{,}013 降至 14，缓存缺失标准差也改善约 22 倍。按这组数据，OpenBLAS $128\times128$ 的 16 线程异常主要对应调度/迁移与同步等待开销；在本文的实验范围内，\texttt{OMP\_PROC\_BIND} 可以作为缓解措施。
+Les expériences suivantes sont donc limitées à 1 à 8 threads physiques avec liaison explicite aux cœurs, afin d'éviter que la variabilité d'ordonnancement propre au SMT n'interfère avec la comparaison des backends.
 
-\paragraph{实验 C：测量窗口稳定性对结果波动的影响}
+La figure~\ref{fig:blas2_scaling} regroupe la comparaison de passage à l'échelle après contrainte d'affinité.
 
-实验环境与第~\ref{sec:gemm_smt}节第一部分保持一致。该实验用于检查测量窗口长度对结果稳定性的影响，因此固定 OMP、16 线程、$128\times128$ 矩阵，在 500 次和 2000 次迭代窗口下各运行 3 次，并比较缓存缺失的变异系数（CV）。这里讨论的是方法学上的稳定性问题，结论主要用于支持正文采用 2000 次标准窗口。
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.90\textwidth]{../output/ExperienceGEMM/BLAS2/scaling_plot_advanced.png}
+\caption{Comparaison de la scalabilité en nombre de threads après contrainte d'affinité CPU (BLAS2).
+             Sur les matrices carrées de $64\times64$ à $512\times512$ couvertes par la figure, et avec 8 threads physiques, \texttt{blas} fournit le temps mesuré le plus faible parmi les implémentations comparées.}
+    \label{fig:blas2_scaling}
+\end{figure}
+
+\section{Le filtrage des paramètres OpenMP blocked / packing}\label{app:blocked_pack_screening}
+
+Cette annexe complète le protocole intégral des expériences de la famille blocked présentées après la section~\ref{sec:gemm_smt}. Les essais portent sur trois variantes : \texttt{omp\_blocked}, \texttt{omp\_blocked\_packb} et \texttt{omp\_blocked\_packab}. Le filtrage se déroule en deux tours : le premier effectue une sélection de paramètres sur les petites matrices carrées $64$, $128$, $256$ et $512$, avec 1, 2, 4 et 8 threads physiques et $1000$ répétitions par défaut ; le second réévalue sur $1024$ et $2048$ le petit nombre de candidats conservés afin de vérifier leur stabilité sur grandes matrices et d'en déduire les paramètres représentatifs.
+
+L'espace de candidats du premier tour n'est pas issu d'une recherche libre complète ; il est construit à partir des contraintes théoriques de résidence en cache données dans le corps du texte. \texttt{omp\_blocked} teste $\texttt{BlockSize}\in\{16,32,48,64,128,256\}$, avec les 3 premières valeurs orientées L1 et les 3 suivantes orientées L2 ; \texttt{omp\_blocked\_packb} se limite à $\texttt{BlockSize}\in\{16,32,48\}$, car l'objectif est d'évaluer une stratégie packed-$B$ orientée L1 ; \texttt{omp\_blocked\_packab} n'utilise plus une taille de bloc unique, mais retient parmi $\texttt{PackM},\texttt{PackN}\in\{32,48,64,96,128\}$ et $\texttt{PackK}\in\{16,32,48,64,96\}$ les combinaisons compatibles avec la contrainte de footprint L1, puis applique le filtrage du premier tour sur cet ensemble.
+
+À l'issue du premier tour, le programme agrège d'abord les résultats, puis sélectionne automatiquement les quelques candidats du second tour à partir du temps moyen inter-threads sur une taille de référence, par défaut la plus grande taille filtrée, soit $512$. La figure~\ref{fig:blocked_small_screening} présente uniquement la synthèse moyenne par thread du premier tour pour \texttt{omp\_blocked} sur les quatre tailles carrées ; elle sert à situer les block sizes les uns par rapport aux autres, sans désigner directement un optimum unique. Les synthèses de candidats et les mesures de revalidation du second tour sont conservées pour vérification ultérieure.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{../output/ExperienceGEMM/Blocked/omp_blocked/summary/screening_small_avg_over_threads.png}
+    \caption{Synthèse du filtrage sur petites matrices pour \texttt{omp\_blocked} entre $64$ et $512$.
+             Après moyenne des résultats à 1, 2, 4 et 8 threads physiques, \texttt{BlockSize=64} apparaît plus souvent dans la zone favorable sur les matrices les plus grandes, sans optimum unique commun à toutes les tailles de matrices et à tous les nombres de threads.}
+    \label{fig:blocked_small_screening}
+\end{figure}
+
+Le CSV de synthèse \texttt{omp\_blocked\_packb} associé à la figure~\ref{fig:blocked_small_screening} indique que,
+dans l'intervalle conservé $\texttt{BlockSize}\in\{16,32,48\}$, les valeurs $32$ et $48$ dominent de façon assez stable $16$ ;
+sur $64\times64$, l'avantage revient le plus souvent à $32$, sur $128\times128$ à $48$,
+et sur $256\times256$ comme sur $512\times512$, la tête alterne fréquemment entre $32$ et $48$.
+Pour \texttt{omp\_blocked\_packab}, les candidats du second tour se concentrent après filtrage sur un petit nombre de combinaisons orientées L1,
+et les paramètres représentatifs finalement retenus sont $(\texttt{PackM},\texttt{PackN},\texttt{PackK})=(32,128,16)$.
+
+\section{Synthèse des résultats de réglage AVX2 en mono-thread}\label{app:avx2_tuning_results}
+
+La figure~\ref{fig:avx2_kernelshape_line} illustre un workload représentatif de couche entièrement connectée, \texttt{fc\_forward\_mainstream\_nn / mlp\_fc1\_b32} ($32\times784\times128$). Pour chaque forme de micro-kernel, seule la meilleure combinaison de paramètres de blocking associée est conservée.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{../output/ExperienceGEMM/GotoBLASBlocked/summary/plots/fc_forward_mainstream_nn_mlp_fc1_b32_gflops_by_kernel_shape.png}
+    \caption{Comparaison mono-thread des GFLOPS pour différentes formes de micro-kernel AVX2 sur le workload de couche entièrement connectée \texttt{mlp\_fc1\_b32}. L'axe horizontal représente la forme du micro-kernel et l'axe vertical la médiane des GFLOPS obtenue avec les meilleurs paramètres de blocking pour cette forme.}
+    \label{fig:avx2_kernelshape_line}
+\end{figure}
+
+Sur ce workload, les formes \texttt{4x16} et \texttt{8x8} dominent nettement : \texttt{4x16} atteint environ $88.6$ GFLOPS et \texttt{8x8} environ $82.1$ GFLOPS, tandis que les autres formes restent pour la plupart entre $43$ et $47$ GFLOPS.
 
 \begin{table}[H]
 \centering
-\begin{tabular}{lrl}
+\begin{tabular}{p{0.24\textwidth}lrrrrrr}
 \toprule
-\textbf{窗口大小} & \textbf{缓存缺失 CV} & \textbf{状态} \\
+\textbf{Famille de workload} & \textbf{Meilleur noyau} & $M_c$ & $N_c$ & $K_c$ &
+\textbf{Personnalisé} & \textbf{OpenBLAS} & \textbf{Écart} \\
+ & & & & & \textbf{($\mu$s)} & \textbf{($\mu$s)} & \\
 \midrule
-500次迭代  & $30.3\%$ & 短窗口波动较大   \\
-2000次迭代 & $1.4\%$  & 标准窗口较稳定   \\
+fc\_forward (b32) & 4x16 & 128 & 576 & 320 & 72.5  & 60.2 & $-17\%$ \\
+fc\_forward (b64) & 4x16 & 192 & 512 & 256 & 132.6 & 110.1 & $-17\%$ \\
+fc\_head (b32)    & 4x16 & --  & --  & --  & 4.76  & 1.14 & $-76\%$ \\
+conv\_dx (b32)    & 8x8  & 160 & 640 & 288 & 744.3 & 647.3 & $-13\%$ \\
+fc\_wide (b32)    & 4x16 & 128 & 768 & 256 & 136.5 & 122.2 & $-10\%$ \\
 \bottomrule
 \end{tabular}
-\caption{迭代窗口大小对测量稳定性的影响（OMP，16线程，128×128）}
-\label{tab:window_stability}
+\caption{Réglage AVX2 en mono-thread : meilleure configuration par famille de workloads et comparaison à OpenBLAS en mono-thread}
+\label{tab:avx2_tuning_results}
 \end{table}
 
-在 OMP $128\times128$、16 线程配置下，2000 次窗口将缓存缺失 CV 从 30.3\% 降至 1.4\%，短窗口随机波动随之下降，因此作为标准测量窗口是合理的。对于其他配置中仍然出现的高方差，仍需结合调度事件、CPU 迁移和实现差异分别解释。这一方法学实验只支持窗口稳定性的判断。
+Sur l'ensemble des workloads résumés au tableau~\ref{tab:avx2_tuning_results}, l'écart à OpenBLAS reste généralement compris entre 10 et 24\% sur les formes courantes, mais atteint 66 à 78\% sur les très petits $N$ (comme \texttt{fc\_head}), où les traitements de bord dominent.
 
-\section{AVX2 blocked-size 候选集合的推导}\label{app:blocked_size_tuning}
+\section{Dérivation de l'ensemble de candidats AVX2 pour les blocked sizes}\label{app:blocked_size_tuning}
 
-本附录补充正文中 $(M_r,N_r,K_c,M_c,N_c)$ 搜索空间缩减的依据。
+Cette annexe complète la justification de la réduction de l'espace de recherche $(M_r,N_r,K_c,M_c,N_c)$ présentée dans le corps du rapport.
 
-\subsection{$m_r$ 与 $n_r$ 的实现相关推导}
+\subsection{Dérivation de $m_r$ et $n_r$ liée à l'implémentation}
 
-当前微内核在每次 $p$ 迭代中执行
+Le micro-kernel courant exécute à chaque itération $p$
 $
 C_r(i,:) \leftarrow C_r(i,:) + A_r(i,p)\,B_r(p,:),
 $
-其中 $0 \le i < m_r$。这里 $B_r(p,:)$ 被一次性装入一个 AVX2 向量寄存器，$A_r(i,p)$ 则通过标量广播参与 FMA。语义上的 $m_r \times n_r$ 小块保持不变；SIMD lane 对应的是 $n_r$ 维度，寄存器方向因此与部分论文示例不同。
+où $0 \le i < m_r$. Ici, $B_r(p,:)$ est chargé d'un seul coup dans un registre vectoriel AVX2, tandis que $A_r(i,p)$ participe au FMA par diffusion scalaire. Le bloc sémantique $m_r \times n_r$ reste inchangé ; les lanes SIMD correspondent à la dimension $n_r$, ce qui donne une orientation des registres différente de celle de certains exemples de la littérature.
 
-令 $N_{\text{vec}}$ 表示一个向量寄存器可容纳的标量数。对 AVX2 \texttt{float32}，有
+On note $N_{\text{vec}}$ le nombre de scalaires contenus dans un registre vectoriel. Pour AVX2 en \texttt{float32}, on a
 $
 N_{\text{vec}} = \frac{256}{32} = 8.
 $
-在参数优化语境中，$n_r$ 至少需要满足向量化粒度约束，并通常取为 $N_{\text{vec}}$ 的整数倍，即 $n_r = t\,N_{\text{vec}}$，其中 $t \in \mathbb{Z}_{\ge 1}$。若一个 $B_r(p,:)$ 在同一次迭代中由两个 YMM 寄存器共同承载，$n_r$ 也可以取 16。本文后续只考虑 $t \in \{1,2\}$，亦即 $n_r \in \{8,16\}$，暂不讨论 $n_r = 24,32$ 这类更宽的 $n$ 方向微内核。
+Dans le cadre de l'optimisation paramétrique, $n_r$ doit au minimum respecter la granularité de vectorisation et se prend généralement comme multiple entier de $N_{\text{vec}}$, soit $n_r = t\,N_{\text{vec}}$ avec $t \in \mathbb{Z}_{\ge 1}$. Si un même $B_r(p,:)$ est porté par deux registres YMM au cours de la même itération, $n_r$ peut aussi valoir 16. La suite ne considère que $t \in \{1,2\}$, donc $n_r \in \{8,16\}$, sans traiter pour l'instant des micro-kernels plus larges en direction $n$, tels que $n_r = 24,32$.
 
-$m_r$ 的约束来自吞吐隐藏和寄存器预算。BLIS 论文中关于微内核的基本条件可写为
+Les contraintes sur $m_r$ proviennent du masquage de latence et du budget de registres. La condition de base issue des travaux BLIS sur les micro-kernels peut s'écrire
 $
 m_r n_r \ge N_{\text{vec}} L_{\text{vfma}} N_{\text{vfma}} = 8 \times 4 \times 2 = 64,
 $
-其中 $L_{\text{vfma}}$ 是向量 FMA 的相关延迟，当前取 4 作为一阶建模值；$N_{\text{vfma}}$ 是每周期可发射的向量 FMA 数，当前取 2 作为一阶建模值，这给出了吞吐下界。
+où $L_{\text{vfma}}$ est la latence dépendante du FMA vectoriel, ici fixée à 4 pour un modèle de premier ordre, et $N_{\text{vfma}}$ le nombre de FMA vectoriels émis par cycle, ici fixé à 2. Cette relation fournit la borne inférieure côté débit.
 
-寄存器预算不能再写成与 $n_r$ 无关的统一形式，因为当 $n_r = 8$ 时，每一行累加器只占 1 个 YMM；当 $n_r = 16$ 时，每一行累加器占 2 个 YMM。令 $t = n_r / N_{\text{vec}} = n_r / 8$，则累加器寄存器数为 $m_r t$。因此，寄存器预算至少应写成依赖 $t$ 的形式：若一次迭代中只额外保留 1 个 $B$ 向量临时寄存器，则有
+Le budget de registres ne peut plus s'écrire sous une forme unique indépendante de $n_r$, car lorsque $n_r = 8$, chaque ligne d'accumulateurs n'occupe qu'un YMM, alors que pour $n_r = 16$, chaque ligne en occupe 2. En posant $t = n_r / N_{\text{vec}} = n_r / 8$, le nombre de registres accumulateurs vaut $m_r t$. Le budget de registres doit donc au minimum dépendre de $t$ : si une itération conserve seulement 1 registre temporaire vectoriel pour $B$, on obtient
 $
 m_r t + 1 + \delta \le N_{\text{reg}} = 16;
 $
-若进一步针对 $n_r = 16$ 采用更保守的建模，即认为两个 $B$ 子向量都需要同时保留，则有
+et, avec un modèle plus conservateur pour $n_r = 16$, en considérant que les deux sous-vecteurs de $B$ doivent être conservés simultanément, on obtient
 $
 m_r t + t + \delta \le N_{\text{reg}} = 16.
 $
-其中 $N_{\text{reg}}$ 是可用向量寄存器数，$\delta$ 是留给广播、地址生成和调度的余量，且 $\delta \in [1,3]$。
+où $N_{\text{reg}}$ est le nombre de registres vectoriels disponibles, et $\delta$ la marge réservée au broadcast, à la génération d'adresses et à l'ordonnancement, avec $\delta \in [1,3]$.
 
-因此必须分情况讨论。当 $n_r = 8$，即 $t = 1$ 时，吞吐下界给出 $m_r \cdot 8 \ge 64 \Rightarrow m_r \ge 8$，而乐观寄存器预算给出 $m_r + 1 + \delta \le 16$。当 $\delta \in [1,3]$ 时，可得到 $8 \le m_r \le 13$，因此当前建模下可保留
+Il faut donc distinguer les cas. Quand $n_r = 8$, soit $t = 1$, la borne de débit donne $m_r \cdot 8 \ge 64 \Rightarrow m_r \ge 8$, tandis que le budget de registres optimiste donne $m_r + 1 + \delta \le 16$. Pour $\delta \in [1,3]$, on obtient $8 \le m_r \le 13$, d'où l'ensemble conservé dans ce modèle :
 $
 m_r \in \{8,9,10,11,12,13\}.
 $
-当 $n_r = 16$，即 $t = 2$ 时，吞吐下界给出 $m_r \cdot 16 \ge 64 \Rightarrow m_r \ge 4$。乐观寄存器预算变为 $2m_r + 1 + \delta \le 16$，更保守的预算写法则为 $2m_r + 2 + \delta \le 16$。按这组约束，$n_r = 16$ 时的可行 $m_r$ 区间更窄；若取稳妥候选，则可写成
+Quand $n_r = 16$, soit $t = 2$, la borne de débit donne $m_r \cdot 16 \ge 64 \Rightarrow m_r \ge 4$. Le budget de registres optimiste devient $2m_r + 1 + \delta \le 16$, et sa version plus conservatrice s'écrit $2m_r + 2 + \delta \le 16$. Sous cet ensemble de contraintes, l'intervalle faisable de $m_r$ est plus étroit pour $n_r = 16$ ; en retenant les candidats les plus sûrs, on obtient
 $
 m_r \in \{4,5,6\},
 $
-而 $m_r = 7$ 只在“$n_r = 16$ 且仅保留 1 个 $B$ 向量临时寄存器”的较乐观预算下才可能保留。
+$m_r = 7$ n'est conservable que dans l'hypothèse plus optimiste où $n_r = 16$ et un seul registre temporaire vectoriel de $B$ est gardé.
 
-本节给出的可行域按 $n_r/8$ 分情况约束：
+Le domaine faisable de cette section se résume alors, selon les cas en $n_r/8$, à :
 
 $$
 \left\{
 \begin{aligned}
 &n_r \in \{8,16\},\\
 &m_r n_r \ge 64,\\
-&m_r \frac{n_r}{8} + 1 + \delta \le 16 \quad \text{(较乐观写法；当 } n_r=16 \text{ 时表示只保留 1 个 } B \text{ 向量临时寄存器)},\\
-&m_r \frac{n_r}{8} + \frac{n_r}{8} + \delta \le 16 \quad \text{(较保守写法；对 } n_r=16 \text{ 等价于同时保留全部 } B \text{ 子向量)}.
+&m_r \frac{n_r}{8} + 1 + \delta \le 16 \quad \text{(version optimiste ; pour } n_r=16 \text{, un seul registre temporaire pour } B\text{)},\\
+&m_r \frac{n_r}{8} + \frac{n_r}{8} + \delta \le 16 \quad \text{(version conservatrice ; pour } n_r=16 \text{, tous les sous-vecteurs de } B\text{)}.
 \end{aligned}
 \right.
 $$
 
-据此，原始可行域中的 $(m_r,n_r)$ 候选组合可写为
+On en déduit que les couples candidats $(m_r,n_r)$ du domaine faisable initial s'écrivent
 $$
 \{(8,8),(9,8),(10,8),(11,8),(12,8),(13,8),(4,16),(5,16),(6,16)\},
 $$
-其中 $(7,16)$ 只在较乐观的寄存器预算下才可能保留，因此这里不将其放入默认候选集合。为控制后续搜索规模，本文后续固定保留的 $(m_r,n_r)$ 候选集合为
+où $(7,16)$ ne reste possible que sous un budget de registres plus optimiste ; il n'est donc pas inclus dans l'ensemble de candidats par défaut. Pour contenir la taille de la recherche ultérieure, l'ensemble finalement retenu pour $(m_r,n_r)$ est
 $
 \{(8,8),(12,8),(13,8),(4,16),(5,16),(6,16)\}.
 $
 
-\subsection{$k_c$ 的缓存模型与候选生成}
+\subsection{Modèle de cache et génération des candidats pour $k_c$}
 
-\subsection*{B.2.1 基于 L1 的 $k_c$ 候选中心}
+\subsection*{B.2.1 Centres candidats de $k_c$ fondés sur L1}
 
-在给定 $(m_r,n_r)$ 后，$k_c$ 的角色是确定 packed $A_r \in \mathbb{R}^{m_r \times k_c}$ 与 $B_r \in \mathbb{R}^{k_c \times n_r}$ 的深度。本文先依据 L1 侧的面板占用关系构造候选中心，再结合对齐与 page-footprint 约束得到离散候选集合。
+Pour un couple $(m_r,n_r)$ donné, $k_c$ fixe la profondeur de packed $A_r \in \mathbb{R}^{m_r \times k_c}$ et de $B_r \in \mathbb{R}^{k_c \times n_r}$. Le rapport construit d'abord des centres candidats à partir de l'occupation des panneaux côté L1, puis en déduit un ensemble discret à l'aide des contraintes d'alignement et de page footprint.
 
-对 AVX2 \texttt{float32}，若以 cache line 为基本单位并记 L1 每路对应 1024B，则可把 $A_r$ 与 $B_r$ 面板的近似 set 压力分别写成与 $m_r k_c$、$n_r k_c$ 成正比的量。简化后，$A_r$ 方向的可用 set 预算上界可写为
+Pour AVX2 en \texttt{float32}, en prenant la cache line comme unité et 1024B par voie de L1, la pression approximative sur les sets des panneaux $A_r$ et $B_r$ s'écrit proportionnellement à $m_r k_c$ et $n_r k_c$. Après simplification, la borne supérieure du budget de sets disponible pour $A_r$ est
 $
 C_{A_r}^{\max}=\left\lfloor \frac{7}{1+n_r/m_r} \right\rfloor,
 $
-再由此得到候选中心
+ce qui donne le centre candidat
 $
 k_c^{\text{center}} \approx \frac{1024\,C_{A_r}^{\max}}{m_r}.
 $
 
-$k_c^{\text{center}}$ 在本文中只作为当前硬件上的候选中心。当前微内核在每个 $p$ 迭代中先读取 $B_r(p,:)$，后广播 $A_r(:,p)$ 的标量；因此，L1 模型在本文中的作用是给出中心值与离散候选的生成起点。
+$k_c^{\text{center}}$ n'est utilisé ici que comme centre candidat sur le matériel courant. Le micro-kernel lit d'abord $B_r(p,:)$ puis diffuse les scalaires de $A_r(:,p)$ à chaque itération $p$ ; le modèle L1 sert donc, dans ce rapport, à fournir une valeur centrale et le point de départ de la discrétisation.
 
-\subsection*{B.2.2 基于 TLB / page-footprint 的 $k_c$ 约束}
+\subsection*{B.2.2 Contraintes sur $k_c$ fondées sur le TLB / page footprint}
 
-仅由 L1 / set-mapping 关系确定 $k_c$ 仍然不够，因为随着 $k_c$ 增大，微面板与宏面板的 page footprint 都会同步扩大。若页大小为 $P$，则微面板级 footprint 近似满足
+La relation L1 / set-mapping ne suffit pas à elle seule pour fixer $k_c$, car l'augmentation de $k_c$ accroît simultanément le page footprint des micro-panneaux et des macro-panneaux. Si la taille de page vaut $P$, le footprint au niveau micro-panneau vérifie approximativement
 
 $$
 \frac{m_r k_c S_{\text{data}}}{P} \lesssim E_{A_r,\mathrm{TLB}},
@@ -1161,7 +1156,7 @@ $$
 \frac{k_c n_r S_{\text{data}}}{P} \lesssim E_{B_r,\mathrm{TLB}},
 $$
 
-这类弱裁剪在本文中只作为提醒，因此后续改用宏面板级裁剪。为把 TLB 层实例化为可执行规则，这里暂定使用 $m_c=128$、$n_c=512$ 作为 provisional panel volumes；它们只服务于当前轮次的 TLB-aware pruning。对 $P=4096$，有
+Cette forme de filtrage reste indicative dans le rapport, qui passe ensuite à un filtrage au niveau macro-panneau. Pour rendre la couche TLB exploitable sous forme de règle, on utilise ici $m_c=128$ et $n_c=512$ comme volumes de panneaux provisoires ; ils servent uniquement au TLB-aware pruning de ce tour. Pour $P=4096$, on obtient
 
 $$
 \operatorname{pages}(A_c) \approx \left\lceil \frac{m_c k_c S_{\text{data}}}{P} \right\rceil
@@ -1175,27 +1170,27 @@ $$
 = \left\lceil \frac{k_c}{2} \right\rceil.
 $$
 
-当前机器的 L1 DTLB 和 L2 DTLB 条目数分别为 72 和 3072。由于 $B_c$ 的页数对本节候选远小于 L2 DTLB 容量，真正有区分度的裁剪来自线程私有的 $A_c$。为给栈、$C$ 块、代码和其他数据保留余量，这里取保守的有效预算 $E_{A,\mathrm{eff}}=0.75 \times 72 = 54$，并采用如下 pruning 规则：若某个候选使 $\operatorname{pages}(A_c) > 54$，则将其从第一轮实验集合中剔除；若 $\operatorname{pages}(A_c) \le 54$ 且 $\operatorname{pages}(B_c) \ll 3072$，则该候选通过当前 TLB 层检查。该层只承担近似过滤作用，不承担新的中心值生成。
+Sur la machine étudiée, les L1 DTLB et L2 DTLB disposent respectivement de 72 et 3072 entrées. Comme le nombre de pages de $B_c$ reste très inférieur à la capacité du L2 DTLB pour les candidats de cette section, le filtrage réellement discriminant provient de $A_c$, privé à chaque thread. Afin de laisser une marge pour la pile, le bloc $C$, le code et les autres données, on retient le budget effectif conservateur $E_{A,\mathrm{eff}}=0.75 \times 72 = 54$, avec la règle de pruning suivante : si un candidat vérifie $\operatorname{pages}(A_c) > 54$, il est retiré de l'ensemble expérimental du premier tour ; si $\operatorname{pages}(A_c) \le 54$ et $\operatorname{pages}(B_c) \ll 3072$, il passe le contrôle de cette couche TLB. Cette couche n'assure qu'un filtrage approximatif et ne génère pas de nouveau centre.
 
-\subsection*{B.2.3 综合 L1 与 TLB 约束的 $k_c$ 候选生成}
+\subsection*{B.2.3 Génération des candidats $k_c$ sous contraintes L1 et TLB}
 
-候选生成分两步进行。第一步，由 L1 模型围绕候选中心生成原始离散集合。若记 $g_k$ 为 $k_c$ 的实现对齐粒度，则有
+La génération des candidats suit deux étapes. La première produit, à partir du modèle L1, un ensemble discret initial autour du centre candidat. En notant $g_k$ la granularité d'alignement de l'implémentation pour $k_c$, on obtient
 
 $$
 \mathcal{K}_{\mathrm{L1}}(m_r,n_r) = \mathrm{Align}_{g_k}\bigl(\{ \alpha\, k_c^{\text{center}}(m_r,n_r) : \alpha \in \mathcal{A}_k \}\bigr),
 $$
 
-其中 $g_k$ 由 packed panel 的步长与外层块循环粒度决定，$\mathcal{A}_k$ 表示围绕 1 的有限比例邻域。为控制第一轮搜索规模，这里取保守实例化 $g_k=32$、$\mathcal{A}_k=\{0.75,1.00,1.25\}$。
+où $g_k$ est déterminé par le pas du packed panel et la granularité des boucles externes en blocs, tandis que $\mathcal{A}_k$ désigne un voisinage multiplicatif fini autour de 1. Pour contenir la taille du premier tour, on prend ici l'instanciation conservatrice $g_k=32$ et $\mathcal{A}_k=\{0.75,1.00,1.25\}$.
 
-第二步，由 TLB / page-footprint 条件对 $\mathcal{K}_{\mathrm{L1}}(m_r,n_r)$ 做一次近似裁剪，得到第一轮实验集合
+La seconde étape applique un filtrage approximatif à $\mathcal{K}_{\mathrm{L1}}(m_r,n_r)$ au moyen des contraintes TLB / page footprint, ce qui donne l'ensemble expérimental du premier tour
 
 $$
 \mathcal{K}_{\mathrm{pruned}}(m_r,n_r) \subseteq \mathcal{K}_{\mathrm{L1}}(m_r,n_r).
 $$
 
-这里的 $k_c^{\text{center}}$、$\mathcal{K}_{\mathrm{L1}}$ 和 $\mathcal{K}_{\mathrm{pruned}}$ 都依赖于给定的 $(m_r,n_r)$。后续实验可以对每个 $(m_r,n_r)$ 分别搜索，也可以把各个候选集合并成一个并集候选池，但层次关系保持不变：L1 先生成，TLB 再裁剪。
+Ici, $k_c^{\text{center}}$, $\mathcal{K}_{\mathrm{L1}}$ et $\mathcal{K}_{\mathrm{pruned}}$ dépendent tous du couple $(m_r,n_r)$ considéré. Les expériences suivantes peuvent soit explorer séparément chaque $(m_r,n_r)$, soit fusionner les ensembles dans un pool commun, sans changer la hiérarchie : génération par L1, puis pruning par TLB.
 
-对第 B.1 节最终保留的 6 组 $(m_r,n_r)$ 候选，按 $C_{A_r}^{\max}=\left\lfloor \frac{7}{1+n_r/m_r} \right\rfloor$ 与 $k_c^{\text{center}} \approx \frac{1024\,C_{A_r}^{\max}}{m_r}$ 计算，可得到表~\ref{tab:appendix_kc_candidates}。表中先给出 $\mathcal{K}_{\mathrm{L1}}(m_r,n_r)$，再给出经 TLB 层筛查后的 $\mathcal{K}_{\mathrm{pruned}}(m_r,n_r)$；其中使 provisional $A_c$ 页数超过 54 的偏大候选被实际剔除。
+Pour les 6 couples $(m_r,n_r)$ finalement retenus à la section B.1, l'application de $C_{A_r}^{\max}=\left\lfloor \frac{7}{1+n_r/m_r} \right\rfloor$ et de $k_c^{\text{center}} \approx \frac{1024\,C_{A_r}^{\max}}{m_r}$ conduit au tableau~\ref{tab:appendix_kc_candidates}. Le tableau présente d'abord $\mathcal{K}_{\mathrm{L1}}(m_r,n_r)$, puis $\mathcal{K}_{\mathrm{pruned}}(m_r,n_r)$ après filtrage par la couche TLB ; les candidats trop grands, pour lesquels le nombre de pages du $A_c$ provisoire dépasse 54, sont effectivement supprimés.
 
 \begin{table}[H]
 \centering
@@ -1211,13 +1206,13 @@ $(5,16)$  & 1 & 204.8 & $\{160,192,256\}$ & $\{160,192,256\}$ \\
 $(6,16)$  & 1 & 170.7 & $\{128,160,224\}$ & $\{128,160,224\}$ \\
 \bottomrule
 \end{tabular}
-\caption{$k_c$ 候选的生成与 TLB 裁剪结果}
+\caption{Génération des candidats $k_c$ et résultat du pruning TLB}
 \label{tab:appendix_kc_candidates}
 \end{table}
 
-这些 $\mathcal{K}_{\mathrm{pruned}}(m_r,n_r)$ 构成第一轮 $k_c$ 搜索候选。它们来自“当前硬件上的中心值 + 32 对齐 + 有限比例邻域”，再经一层 page-footprint / TLB 过滤；例如 $1.25$ 比例产生的 $k_c=480$ 在 $(8,8)$ 这一行中因 provisional $A_c$ 页数达到 60、超过有效 L1 DTLB 预算 54 而被剔除。
+Ces $\mathcal{K}_{\mathrm{pruned}}(m_r,n_r)$ constituent les candidats du premier tour pour la recherche sur $k_c$. Ils proviennent d'un centre calculé sur le matériel courant, d'un alignement à 32 et d'un voisinage multiplicatif fini, puis d'un filtrage page footprint / TLB ; par exemple, le $k_c=480$ issu du facteur $1.25$ est retiré sur la ligne $(8,8)$, car le nombre de pages du $A_c$ provisoire atteint 60, au-dessus du budget effectif de 54 entrées L1 DTLB.
 
-本节约束可概括为
+Les contraintes de cette section se résument à
 
 $$
 \left\{
@@ -1231,13 +1226,13 @@ $$
 \right.
 $$
 
-\subsection{单线程基础 $m_c/n_c$ 候选生成}
+\subsection{Génération des candidats de base mono-thread pour $m_c/n_c$}
 
-\subsection*{B.3.1 基于 cache 的 $m_c/n_c$ 约束}
+\subsection*{B.3.1 Contraintes sur $m_c/n_c$ fondées sur le cache}
 
-$m_c$ 与 $n_c$ 建立在已经筛出的 $(m_r,n_r,k_c)$ 候选之上：给定微内核形状和沿 $k$ 方向的面板深度后，$m_c$ 决定 $A_c \in \mathbb{R}^{m_c \times k_c}$ 的私有工作集高度，$n_c$ 决定 $B_c \in \mathbb{R}^{k_c \times n_c}$ 的共享工作集宽度。本节据此把 cache / TLB 约束推进成单线程或弱并行情形下的基础候选集合。
+$m_c$ et $n_c$ sont construits à partir des candidats $(m_r,n_r,k_c)$ déjà filtrés : une fois la forme du micro-kernel et la profondeur de panneau le long de $k$ fixées, $m_c$ détermine la hauteur du jeu de travail privé $A_c \in \mathbb{R}^{m_c \times k_c}$ et $n_c$ la largeur du jeu de travail partagé $B_c \in \mathbb{R}^{k_c \times n_c}$. La présente section transforme ces contraintes de cache / TLB en ensembles de candidats de base pour le mono-thread ou le parallélisme faible.
 
-$A_c$ 在当前实现中按线程私有工作集处理，$B_c$ 对应多线程路径中的共享读取面板，因此本节先按单线程基础候选讨论其体积。两者的字节规模分别为
+Dans l'implémentation courante, $A_c$ est traité comme jeu de travail privé à chaque thread, tandis que $B_c$ correspond à un panneau partagé en lecture sur le chemin multithread ; la section raisonne donc d'abord sur leurs volumes au titre des candidats de base mono-thread. Leurs tailles en octets sont
 
 $$
 |A_c| = m_c k_c S_{\text{data}},
@@ -1245,7 +1240,7 @@ $$
 |B_c| = k_c n_c S_{\text{data}}.
 $$
 
-基于 cache 层次，可写出最直接的尺度约束
+La hiérarchie de cache conduit alors aux contraintes d'échelle les plus directes
 
 $$
 m_c k_c S_{\text{data}} \lesssim \rho_A S_{\text{private}},
@@ -1253,7 +1248,7 @@ m_c k_c S_{\text{data}} \lesssim \rho_A S_{\text{private}},
 k_c n_c S_{\text{data}} \lesssim \rho_B S_{\text{shared}}.
 $$
 
-其中 $\rho_A,\rho_B \in (0,1)$ 是用于保留冲突、代码和其他工作集余量的建模系数；这些关系式给出 $m_c^{\max}$ 与 $n_c^{\max}$ 的基础尺度上界。对当前机器，单线程基础建模中取每核私有 L2 容量 $S_{\text{private}}=1\text{ MiB}$；为限制单个 $B_c$ 面板的预算，再取保守的 effective shared-cache budget $\rho_B S_{\text{shared}} = 1\text{ MiB}$。再令 $\rho_A = 1/4$，则有
+où $\rho_A,\rho_B \in (0,1)$ sont des coefficients de modélisation destinés à conserver une marge pour les conflits, le code et les autres jeux de travail ; ces relations donnent les bornes d'échelle de base $m_c^{\max}$ et $n_c^{\max}$. Sur la machine courante, le modèle mono-thread de base prend une capacité L2 privée par cœur $S_{\text{private}}=1\text{ MiB}$ ; pour borner le budget d'un panneau $B_c$, il retient aussi un budget effectif conservateur de cache partagé $\rho_B S_{\text{shared}} = 1\text{ MiB}$. Avec $\rho_A = 1/4$, on obtient
 
 $$
 m_c^{\max}(k_c) \approx \frac{\rho_A S_{\text{private}}}{k_c S_{\text{data}}}
@@ -1267,11 +1262,11 @@ n_c^{\max}(k_c) \approx \frac{\rho_B S_{\text{shared}}}{k_c S_{\text{data}}}
 = \frac{262144}{k_c}.
 $$
 
-因此，cache 层在本节中的角色是给出随 $k_c$ 变化的基础尺度上界 $m_c^{\max}(k_c)$ 与 $n_c^{\max}(k_c)$，后续离散候选将在这些上界附近生成。
+La couche cache sert donc ici à fournir les bornes d'échelle de base $m_c^{\max}(k_c)$ et $n_c^{\max}(k_c)$ en fonction de $k_c$, autour desquelles seront générés les candidats discrets.
 
-\subsection*{B.3.2 基于 TLB / page-footprint 的 $m_c/n_c$ 约束}
+\subsection*{B.3.2 Contraintes sur $m_c/n_c$ fondées sur le TLB / page footprint}
 
-仅有 cache 尺度上界仍然不够，因为 $A_c$ 和 $B_c$ 的页覆盖会随 $m_c$ 与 $n_c$ 同步放大。若页大小为 $P$，则两者的近似页覆盖为
+Les bornes de cache ne suffisent pas à elles seules, car la couverture en pages de $A_c$ et $B_c$ augmente avec $m_c$ et $n_c$. Si la taille de page vaut $P$, leur couverture approchée est
 
 $$
 \frac{m_c k_c S_{\text{data}}}{P},
@@ -1279,7 +1274,7 @@ $$
 \frac{k_c n_c S_{\text{data}}}{P},
 $$
 
-对应的近似 TLB 裁剪条件可写为
+Les conditions approximatives de pruning côté TLB deviennent alors
 
 $$
 \frac{m_c k_c S_{\text{data}}}{P} \lesssim E_{A,\text{TLB}},
@@ -1287,7 +1282,7 @@ $$
 \frac{k_c n_c S_{\text{data}}}{P} \lesssim E_{B,\text{TLB}}.
 $$
 
-这些式子在本节中承担第二层 pruning 的作用。当前代码没有控制 huge page、STLB、NUMA 归属或线程绑定，因此这里仍按近似约束处理。对当前机器，取 $P=4096$、L1 DTLB 条目数 72、L2 DTLB 条目数 3072，并采用保守的有效预算 $E_{A,\text{eff}}=54$ 与 $E_{B,\text{eff}}=192$；其中 $192$ 用于第一轮单线程基础候选生成时抑制过宽 $B_c$。则
+Dans cette section, ces relations jouent le rôle d'une seconde couche de pruning. Le code courant ne contrôle ni huge pages, ni STLB, ni appartenance NUMA, ni affinité de thread ; elles restent donc utilisées comme contraintes approchées. Pour la machine étudiée, on prend $P=4096$, 72 entrées en L1 DTLB, 3072 en L2 DTLB, et les budgets effectifs conservateurs $E_{A,\text{eff}}=54$ et $E_{B,\text{eff}}=192$ ; la valeur $192$ sert à éliminer dès le premier tour les panneaux $B_c$ trop larges. On obtient alors
 
 $$
 \operatorname{pages}(A_c) \approx \frac{m_c k_c}{1024},
@@ -1295,11 +1290,11 @@ $$
 \operatorname{pages}(B_c) \approx \frac{k_c n_c}{1024}.
 $$
 
-于是，本节使用的 TLB-aware pruning 规则为：若某个 $m_c$ 候选使 $\operatorname{pages}(A_c) > 54$，则将其从 $\mathcal{M}_{\text{cache}}$ 中剔除；若某个 $n_c$ 候选使 $\operatorname{pages}(B_c) > 192$，则将其从 $\mathcal{N}_{\text{cache}}$ 中剔除。这里的 $E_{B,\text{eff}}$ 小于硬件 L2 DTLB 容量，用于在第一轮基础搜索中先裁掉过宽的 $B_c$ 面板。
+La règle de TLB-aware pruning employée ici est donc la suivante : si un candidat $m_c$ vérifie $\operatorname{pages}(A_c) > 54$, il est retiré de $\mathcal{M}_{\text{cache}}$ ; si un candidat $n_c$ vérifie $\operatorname{pages}(B_c) > 192$, il est retiré de $\mathcal{N}_{\text{cache}}$. Le choix $E_{B,\text{eff}}$ reste inférieur à la capacité matérielle du L2 DTLB afin d'éliminer dès la recherche de base du premier tour les panneaux $B_c$ trop larges.
 
-\subsection*{B.3.3 综合 cache 与 TLB 约束的单线程基础候选生成}
+\subsection*{B.3.3 Génération des candidats de base mono-thread sous contraintes cache et TLB}
 
-对给定的 $(m_r,n_r,k_c)$ 候选，首先由 cache 上界生成原始离散集合
+Pour un candidat $(m_r,n_r,k_c)$ donné, les bornes de cache génèrent d'abord les ensembles discrets initiaux
 
 $$
 \mathcal{M}_{\text{cache}}(m_r,n_r,k_c)
@@ -1311,7 +1306,7 @@ $$
 = \operatorname{Align}^{\downarrow}_{g_n}\bigl(\{\gamma\, n_c^{\max}(k_c) : \gamma \in \mathcal{A}_n\}\bigr),
 $$
 
-再由 TLB / page-footprint 做一次裁剪，得到
+puis un pruning TLB / page footprint produit
 
 $$
 \mathcal{M}_{\text{pruned}} \subseteq \mathcal{M}_{\text{cache}},
@@ -1319,7 +1314,7 @@ $$
 \mathcal{N}_{\text{pruned}} \subseteq \mathcal{N}_{\text{cache}}.
 $$
 
-为控制第一轮单线程基础搜索规模，这里取 $g_m=32$、$g_n=64$，并令 $\mathcal{A}_m=\mathcal{A}_n=\{0.5,0.75,1.0\}$。这里的 $\operatorname{Align}^{\downarrow}$ 表示向下对齐到不超过目标值的最近粒度倍数。按同一规则，可对第 B.2 节保留下来的全部 $(m_r,n_r,k_c)$ 组合逐项构造单线程基础候选，如表~\ref{tab:appendix_round1_pruned} 所示。
+Pour contenir la taille de la recherche de base du premier tour en mono-thread, on prend $g_m=32$, $g_n=64$ et $\mathcal{A}_m=\mathcal{A}_n=\{0.5,0.75,1.0\}$. Ici, $\operatorname{Align}^{\downarrow}$ désigne l'alignement vers le bas sur le multiple de granularité le plus proche qui ne dépasse pas la valeur cible. En appliquant cette même règle à toutes les combinaisons $(m_r,n_r,k_c)$ conservées à la section B.2, on obtient les candidats de base mono-thread du tableau~\ref{tab:appendix_round1_pruned}.
 
 \begin{table}[H]
 \centering
@@ -1346,19 +1341,19 @@ $(6,16,160)$  & $409.6$ & $\{192,288,384\}$  & $\{192,288\}$  & $1638.4$ & $\{76
 $(6,16,224)$  & $292.6$ & $\{128,192,288\}$  & $\{128,192\}$  & $1170.3$ & $\{576,832,1152\}$    & $\{576,832\}$ \\
 \bottomrule
 \end{tabular}
-\caption{第一轮单线程基础候选中的 $M_c/N_c$ 裁剪结果}
+\caption{Résultat du pruning sur $M_c/N_c$ pour les candidats de base mono-thread du premier tour}
 \label{tab:appendix_round1_pruned}
 \end{table}
 
-表~\ref{tab:appendix_round1_pruned} 给出的 $\mathcal{M}_{\text{pruned}}$ 与 $\mathcal{N}_{\text{pruned}}$ 构成了单线程或弱并行情形下的基础候选集合。它们对应“cache 先给基础尺度，TLB 再裁掉偏大的点”这一两层结构。后续实验再讨论这些基础候选如何进一步收缩。
+Les ensembles $\mathcal{M}_{\text{pruned}}$ et $\mathcal{N}_{\text{pruned}}$ du tableau~\ref{tab:appendix_round1_pruned} constituent la base de candidats pour le mono-thread ou le parallélisme faible. Ils suivent une structure à deux niveaux : le cache fournit l'échelle initiale, puis le TLB retire les points trop larges. Les expériences suivantes examinent ensuite comment resserrer encore ces candidats.
 
-第一轮单线程 coarse screening 覆盖了全部保留的 $(m_r,n_r,k_c)$ 组合；在此基础上，只对局部优胜的 5 组 \texttt{KernelShape/Kc} 继续做第二轮精筛。第二轮使用的更密 $M_c/N_c$ 网格如表~\ref{tab:appendix_round2_grids} 所示。
+Le coarse screening mono-thread du premier tour couvre l'ensemble des combinaisons $(m_r,n_r,k_c)$ conservées ; sur cette base, seules les 5 combinaisons \texttt{KernelShape/Kc} localement gagnantes sont prolongées au second tour. La grille plus dense utilisée pour $M_c/N_c$ au second tour est donnée au tableau~\ref{tab:appendix_round2_grids}.
 
 \begin{table}[H]
 \centering
 \begin{tabular}{lll l p{0.23\textwidth} p{0.23\textwidth} r}
 \toprule
-\textbf{内核} & \textbf{$m_r$} & \textbf{$n_r$} & \textbf{$k_c$} & \textbf{$M_c$ 候选} & \textbf{$N_c$ 候选} & \textbf{组合数} \\
+\textbf{Noyau} & \textbf{$m_r$} & \textbf{$n_r$} & \textbf{$k_c$} & \textbf{Candidats $M_c$} & \textbf{Candidats $N_c$} & \textbf{Nb. de combinaisons} \\
 \midrule
 \texttt{8x8}  & 8 & 8  & 288 & $\{96,128,160,192\}$ & $\{448,512,576,640\}$ & 16 \\
 \texttt{8x8}  & 8 & 8  & 384 & $\{64,96,128\}$ & $\{320,384,448,512\}$ & 12 \\
@@ -1367,10 +1362,33 @@ $(6,16,224)$  & $292.6$ & $\{128,192,288\}$  & $\{128,192\}$  & $1170.3$ & $\{57
 \texttt{4x16} & 4 & 16 & 320 & $\{96,128,160\}$ & $\{384,448,512,576\}$ & 12 \\
 \bottomrule
 \end{tabular}
-\caption{第二轮精筛使用的 $M_c/N_c$ 候选网格}
+\caption{Grille de candidats $M_c/N_c$ utilisée pour le filtrage fin du second tour}
 \label{tab:appendix_round2_grids}
 \end{table}
 
-因此，第二轮总候选数为 $16+12+20+15+12=75$。这些组合在第一轮已知优胜区域附近补足中间点，从而提高单线程 blocked-size 结论的稳定性。
+Le nombre total de candidats au second tour est donc $16+12+20+15+12=75$. Ces combinaisons ajoutent les points intermédiaires autour des régions déjà identifiées comme favorables au premier tour, ce qui renforce la stabilité des conclusions sur les blocked sizes en mono-thread.
+
+\section{Complément sur la heatmap de réglage thread-aware $kCacheBlockM/N_c$}\label{app:mc_nc_heatmap}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.84\textwidth]{../Docs/report/image-3.png}
+    \caption{Heatmap représentative du réglage thread-aware de \texttt{kCacheBlockM}/$N_c$ ($T=4$, \texttt{fc\_wide\_output\_nn}).
+             La zone de haute performance se concentre surtout sur la ligne \texttt{kCacheBlockM}$=8$ (soit $M_c=64$ effectif), tandis que la direction $N_c$ forme un plateau relativement plat.}
+    \label{fig:mc_nc_heatmap_t4}
+\end{figure}
+
+\section{Expérience complémentaire de montée en charge sur matrices carrées fixes}\label{app:fixed_square_scaling}
+
+En complément des workloads du projet décrits plus haut, une expérience supplémentaire de montée en charge a été menée sur quatre tailles fixes de matrices carrées : 64×64, 128×128, 256×256 et 512×512. La figure~\ref{fig:scaling_4way_all_impls} rassemble les résultats de \texttt{blas}, \texttt{omp}, \texttt{omp\_blocked}, \texttt{omp\_blocked\_packab}, \texttt{omp\_gotoblas\_avx2} et du chemin AVX-512 unroll+prefetch sur l'intervalle 1--8 threads physiques.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.96\textwidth]{../output/ExperienceGEMM/scaling_plot_advanced_4way.png}
+    \caption{Expérience complémentaire de montée en charge sur matrices carrées fixes avec plusieurs implémentations. Les quatre sous-figures correspondent respectivement à 64×64, 128×128, 256×256 et 512×512 ; l'axe vertical représente le temps d'exécution et l'axe horizontal le nombre de threads.}
+    \label{fig:scaling_4way_all_impls}
+\end{figure}
+
+La figure~\ref{fig:scaling_4way_all_impls} montre que, pour 64×64, \texttt{blas} reste proche d'un comportement quasi mono-thread et varie peu avec le nombre de threads, tandis que les chemins OpenMP n'atteignent généralement ce niveau qu'autour de 4 à 8 threads. Entre 128×128 et 512×512, les courbes de temps de \texttt{omp\_gotoblas\_avx2} et de \texttt{omp\_gotoblas\_avx512\_unroll\_prefetch} décroissent plus rapidement ; parmi les tailles fixes et l'intervalle 1--8 threads représentés ici, la seconde variante reste en général légèrement meilleure que le chemin AVX2.
 
 \end{document}
