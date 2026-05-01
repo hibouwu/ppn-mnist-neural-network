@@ -1,6 +1,6 @@
 # MLP & Moteur d'Autodifférentiation pour MNIST
 
-[English](../README.md) | **[Français](README_fr.md)** | [中文](README_zh.md)
+[English](../README.md) | **[Français](README_fr.md)** | [中文](README_zh.md) | [العربية](README_ar.md) 
 
 Ce dépôt contient l'implémentation complète d'un réseau de neurones multicouche (MLP) écrit "from scratch" en C++.
 

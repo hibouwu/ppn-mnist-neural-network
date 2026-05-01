@@ -1,6 +1,6 @@
 # MLP 与 MNIST 自动微分引擎
 
-[English](../README.md) | [Français](README_fr.md) | **[中文](README_zh.md)**
+[English](../README.md) | [Français](README_fr.md) | **[中文](README_zh.md)** | [العربية](README_ar.md) 
 
 本项目包含了一个使用 C++ 从零编写的多层感知机 (MLP) 神经网络的完整实现。
 
