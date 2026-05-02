@@ -18,6 +18,7 @@
 %%%%%%%%%%%%%%%%%%%%%
 % Mise en page et utilitaires
 \usepackage{float}
+\usepackage{placeins}
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{geometry}
@@ -254,7 +255,7 @@ packing 则是在 blocking 之外，将后续需要反复读取的面板（panel
 
 \subsubsection{三层分块模型}
 
-GotoBLAS 将 $C = A \cdot B$（规模 $M \times K \times N$）分解为三层嵌套循环及最内层微内核，如图~\ref{fig:gotoblas_overview} 所示。
+GotoBLAS 将 $C = A \cdot B$（规模 $M \times K \times N$）分解为三层嵌套循环及最内层微内核~\cite{vanzee2017complex,low2016analytical}，如图~\ref{fig:gotoblas_overview} 所示。
 
 \begin{figure}[H]
     \centering
@@ -312,15 +313,13 @@ AVX2 blocked-size 候选集合的详细推导见附录~\ref{app:blocked_size_tun
 
 \subsubsection{线程感知块参数调优}
 
-在当前代码中，线程感知主要体现在调度粒度而非缓存块参数本身。也就是说，进入并行区后程序会根据线程数计算更细的 \texttt{task\_m}，而强扩展性实验本身只使用最终选定的固定 blocked-size 配置，不再展开其中间调参与推理过程。
+在当前代码中，线程感知主要体现在调度粒度而非缓存块参数本身：进入并行区后，程序会根据线程数计算更细的 \texttt{task\_m}。因此，后续强扩展性实验只使用最终选定的固定 blocked-size 配置。
 
-本文后续强扩展性实验采用的固定配置为：AVX2 路径使用 $\texttt{avx2\_8x8},\ K_c=384,\ M_c=64,\ N_c=448$，AVX-512 路径使用 $\texttt{avx512\_8x32},\ K_c=160,\ M_c=64,\ N_c=448$。其中 $M_c=64$ 为有效行数（代码常量 \texttt{kCacheBlockM}$=8$，有效值$= 8 \times M_r = 8 \times 8 = 64$）。代表性的线程感知 \texttt{kCacheBlockM}/$N_c$ 热图见附录图~\ref{fig:mc_nc_heatmap_t4}；从该图可见，高性能区域集中在 \texttt{kCacheBlockM}$=8$（即有效 $M_c=64$）一行，而 $N_c$ 方向表现为相对平坦的平台。
+本文后续强扩展性实验采用固定配置：AVX2 路径使用 $\texttt{avx2\_8x8},\ K_c=384,\ M_c=64,\ N_c=448$，AVX-512 路径使用 $\texttt{avx512\_8x32},\ K_c=160,\ M_c=64,\ N_c=448$。附录图~\ref{fig:mc_nc_heatmap_t4} 给出的线程感知 \texttt{kCacheBlockM}/$N_c$ 热图也表明，高性能区域仍集中在 \texttt{kCacheBlockM}$=8$（即有效 $M_c=64$）一行，而 $N_c$ 方向相对较平。
 
 \subsubsection{强扩展性实验（Strong Scaling）}
 
-以固定问题规模、变化线程数（$T \in \{1,2,4,8\}$）的强扩展性实验，
-对比了AVX2 GotoBLAS、AVX-512 GotoBLAS与OpenBLAS三种实现，
-测试集涵盖9个工作负载（MLP、CNN卷积和方阵形状）。
+强扩展性实验在固定问题规模下取 $T \in \{1,2,4,8\}$，对比 AVX2 GotoBLAS、AVX-512 GotoBLAS 与 OpenBLAS 三种实现；测试集覆盖 9 个来自 MLP、CNN 卷积和方阵的工作负载。
 
 \begin{figure}[H]
     \centering
@@ -329,7 +328,7 @@ AVX2 blocked-size 候选集合的详细推导见附录~\ref{app:blocked_size_tun
     \label{fig:strong_scaling_geomean}
 \end{figure}
 
-图~\ref{fig:strong_scaling_geomean} 的统计口径是 9 个 fixed-config workload 的几何平均。按这一口径，8 线程下 AVX2 和 AVX512 GotoBLAS 的 speedup 均约为 $3.23\times$，而 OpenBLAS 约为 $2.72\times$。逐 workload 的结果则来自 fixed-config strong-scaling comparison：在多数 workload 上，OpenBLAS 的绝对 GFLOPS 更高；GotoBLAS 路径主要用于比较 blocking、packing 和 OpenMP 组织，并在部分方阵和少数卷积相关 GEMM 形状上保持竞争力。
+图~\ref{fig:strong_scaling_geomean} 给出了这 9 个 workload 的几何平均。OpenBLAS 仍保持最高的 GFLOPS，而 GotoBLAS AVX2 与 AVX512 的线程扩展更平稳：按这一口径，8 线程下两条 GotoBLAS 路径的 speedup 均约为 $3.23\times$，OpenBLAS 约为 $2.72\times$。若看逐 workload 结果，则多数情况下 OpenBLAS 仍领先，GotoBLAS 路径主要用于比较 blocking、packing 与 OpenMP 组织。
 
 \subsection{Unrolled+Prefetch实现思路}
 
@@ -340,9 +339,23 @@ AVX2 blocked-size 候选集合的详细推导见附录~\ref{app:blocked_size_tun
 
 \section{损失函数、优化器与训练循环}
 
-在当前主训练入口中，损失函数固定为 \texttt{CrossEntropyLoss}：模型前向输出类别 logits，损失层在内部执行数值稳定的 softmax 与交叉熵计算，并返回整个 batch 的标量 loss。代码中也保留了 \texttt{MSELoss} 实现，但当前分类路径统一使用 \texttt{CrossEntropyLoss}。
+当前主训练入口的分类路径统一使用 \texttt{CrossEntropyLoss}：模型前向输出类别 logits，并由损失层在内部完成数值稳定的 softmax 与交叉熵计算。代码中也保留了 \texttt{MSELoss}，但这里不使用。
 
-优化器方面，当前实现了 \texttt{SGD}、\texttt{MomentumSGD} 和 \texttt{AdamW} 三条路径。图~\ref{fig:optimizer_compare} 汇总了三种优化器在 MNIST MLP 上的 20 epoch 训练曲线。
+优化器方面，当前实现了 \texttt{SGD}、\texttt{MomentumSGD}~\cite{qian1999momentum} 和 \texttt{AdamW}~\cite{loshchilov2019decoupled} 三条路径。
+
+对于 \texttt{SGD}，参数按当前梯度直接更新：
+\[
+\theta_{t+1}=\theta_t-\eta g_t.
+\]
+\texttt{MomentumSGD} 在此基础上引入速度项，用指数平滑的历史梯度稳定更新方向：
+\[
+v_{t+1}=\mu v_t-\eta g_t,\qquad \theta_{t+1}=\theta_t+v_{t+1},
+\]
+并可按配置启用 Nesterov 修正。\texttt{AdamW} 则进一步维护梯度的一阶矩与二阶矩估计，并把 weight decay 从自适应更新中解耦。
+
+训练配置在构图完成后根据命令行参数选择优化器，并在每个训练 step 中先清空梯度，再在 backward 与可能的分布式同步完成后，按全局 batch 大小做缩放并执行参数更新。\texttt{Trainer::runEpoch(...)} 统一承担训练与评估两条路径：前者执行前向、损失计算、反向传播与参数更新，后者只保留前向与指标统计。这一训练循环随后也构成 CNN、ResNet 与分布式实验的共同基础。
+
+图~\ref{fig:optimizer_compare} 汇总了三种优化器在 MNIST MLP 上的 20 epoch 训练曲线。
 
 \begin{figure}[h]
 \centering
@@ -351,25 +364,15 @@ AVX2 blocked-size 候选集合的详细推导见附录~\ref{app:blocked_size_tun
 \label{fig:optimizer_compare}
 \end{figure}
 
-三者的实现思路分别对应不同的参数更新机制。对于 \texttt{SGD}，参数按当前梯度直接更新：
-\[
-\theta_{t+1}=\theta_t-\eta g_t.
-\]
-\texttt{MomentumSGD} 在此基础上引入速度项，用指数平滑的历史梯度稳定更新方向：
-\[
-v_{t+1}=\mu v_t-\eta g_t,\qquad \theta_{t+1}=\theta_t+v_{t+1},
-\]
-并可按配置启用 Nesterov 修正。\texttt{AdamW} 则进一步维护梯度的一阶矩与二阶矩估计，并把 weight decay 从自适应更新中解耦，从而在保持收敛稳定性的同时改善正则化行为。
-
-训练配置在构图完成后根据命令行参数选择优化器，并在每个训练 step 中先清空梯度，再在 backward 与可能的分布式同步完成后，按全局 batch 大小做缩放并执行参数更新。\texttt{Trainer::runEpoch(...)} 统一承担训练与评估两条路径：前者执行前向、损失计算、反向传播与参数更新，后者只保留前向与指标统计。因此，损失函数、优化器与训练循环构成了后续 CNN、ResNet 与分布式实验共享的同一训练主线。
+\texttt{SGD} 的收敛最慢，最终测试精度也最低；\texttt{MomentumSGD} 在这里取得了最高的测试精度；\texttt{AdamW} 则达到接近的最终水平，但在训练初期收敛更快。
 
 \section{卷积算子的实现和优化}
 
-本节为未来 CNN 中的卷积进行实现，重点分析 \texttt{im2col/GEMM/col2im} 主链路的计算组织及其优化空间。
+二维卷积在每个空间位置上对局部邻域做加权求和，并在整张图像上共享同一组权重。这样，它既能提取局部模式，又比直接作用于展平图像的全连接层使用更少参数；在当前实现中，这一算子采用 \texttt{im2col/GEMM/col2im} 路径~\cite{jia2014caffe}，以复用现有的 GEMM 后端，基线配置下实际对应的是 OpenBLAS。
 
 \subsection{卷积层的初始实现方式}
 
-\texttt{Conv2DLayer} 在 reference backend 中把卷积前向改写为 \texttt{im2col} 后的一次 GEMM：
+在 reference backend 中，\texttt{Conv2DLayer} 通过 \texttt{im2col} 将输入的局部感受野整理为矩阵各行，再把卷积前向改写为一次 GEMM：
 \[
 \texttt{im2col}(X) \in \mathbb{R}^{(N \cdot H_{out} \cdot W_{out}) \times (C_{in}\cdot k_H \cdot k_W)},
 \]
@@ -379,67 +382,57 @@ W \in \mathbb{R}^{C_{out} \times (C_{in}\cdot k_H \cdot k_W)},
 \[
 Y = \texttt{im2col}(X)\cdot W^T + b.
 \]
+\[
+Y \in \mathbb{R}^{(N \cdot H_{out} \cdot W_{out}) \times C_{out}},
+\qquad
+\operatorname{reshape}(Y) \in \mathbb{R}^{N \times C_{out} \times H_{out} \times W_{out}}.
+\]
 
-这一选择复用了 \texttt{MathOps::matmul} 路径。在当前实现中，卷积成本分布在 \texttt{im2col}、GEMM、输出重排、\texttt{dW/dX} 和 \texttt{col2im} 这些阶段上。本节分析仅针对这条 \texttt{im2col/GEMM/col2im} 链路。
+这一实现复用了 \texttt{MathOps::matmul} 路径。在当前实现中，卷积层的总成本分布在 \texttt{im2col}、GEMM、输出重排、梯度计算 \texttt{dW/dX} 和 \texttt{col2im} 等阶段上；本节以前向主链路 \texttt{im2col/GEMM/col2im} 为主线，并在必要时把它放回前向与反向的整体成本中讨论。
 
-\subsection{卷积层并行化与优化策略}
+\subsection{卷积层并行化与切分策略}
 
-在当前项目的 CNN 实现中，卷积层采用 \texttt{im2col + GEMM} 路径。该方案的优势在于能够复用已有的高性能矩阵乘法后端，但卷积层的性能上限并不完全由 GEMM 决定。实际运行中，其总开销主要来自三部分：前向阶段的 \texttt{im2col} 数据重排、矩阵乘法本体，以及反向阶段的 \texttt{col2im} 和梯度相关 GEMM。因此，即使 GEMM 本身已经较快，卷积层仍可能因数据重排和线程调度开销而成为训练瓶颈。
+在当前项目的 CNN 实现中，卷积层采用 \texttt{im2col + GEMM} 路径，因此其性能并不只由 GEMM 决定；总成本同时还包括 \texttt{im2col}、\texttt{col2im} 以及 backward 中的相关 GEMM。本节优化的目标不是单独加速某个 kernel，而是改善整条卷积链路的总吞吐：降低数据重排开销、改善多线程扩展性，并尽量减轻小规模任务中的并行负收益。
 
-基于上述观察，本节的优化目标并非孤立地加速某个 kernel，而是围绕卷积主路径开展端到端的并行化整理：在保持数值语义不变的前提下，降低重排阶段的额外开销，改善多线程扩展性，并尽量减轻小规模任务中的并行负收益。换言之，本文关注的是卷积链路的整体吞吐，而非单个 kernel 的峰值速度。
+围绕这一目标，最核心的选择是并行切分维度。理论上，任务可以沿 batch 维、输出通道维、输出空间维（$H_{out}\times W_{out}$）或归约维度划分，但本实现优先采用“输出元素独立”的原则，即由各线程负责互不重叠的输出块，以避免额外的锁和原子操作。对于前向路径，\texttt{im2col} 按样本和空间块划分，GEMM 直接复用底层矩阵乘法后端的并行策略；对于反向路径，\texttt{dW}、\texttt{dX} 和 \texttt{col2im} 也尽量围绕输出块组织，以降低冲突写入风险。
 
-\subsection{并行化切分策略}
-
-卷积前向与反向的并行化首先面临切分维度的选择。理论上，任务可以沿 batch 维、输出通道维、输出空间维（$H_{out}\times W_{out}$）或归约维度划分，但不同方案在负载均衡、缓存复用和写冲突风险方面存在明显差异。
-
-本实现优先采用“输出元素独立”的切分原则，即由各线程负责互不重叠的输出块，以避免额外的锁或原子操作。对于前向路径，\texttt{im2col} 阶段按样本和输出空间块划分，保证线程写入区域互不重叠；GEMM 阶段则直接复用底层矩阵乘法的并行策略，不在卷积层重复进行细粒度线程管理。对于反向路径，\texttt{dW} 与 \texttt{dX} 的矩阵化计算同样围绕输出块组织，\texttt{col2im} 则通过分块散射与边界保护降低冲突写入风险。
-
-需要指出的是，并行切分并非越细越优。当任务粒度过小时，线程创建、barrier 同步和调度迁移等固定成本会显著上升，这一现象在 MNIST 这类小尺寸输入上尤为明显。因此，切分策略必须在并行度与单任务计算密度之间取得平衡：既要提供足够的任务以利用多核资源，也要避免将计算拆分为大量短任务而导致效率下降。
+不过，切分粒度并非越细越好。当任务过短时，线程创建、同步和调度迁移等固定成本会迅速上升，这一现象在 MNIST 这类小尺寸输入上尤其明显。因此，实际策略仍需在可用并行度与单任务计算密度之间取得平衡。
 
 \subsection{实现细节与工程取舍}
 
 在工程实现层面，优化主要集中在三个方面。第一，改进内存访问连续性：通过调整 \texttt{im2col/col2im} 的循环顺序与索引计算方式，使内层循环尽可能落在连续地址上，从而提高缓存行利用率并降低地址计算开销。第二，优化临时缓冲区管理：在可行范围内复用中间 buffer，减少训练过程中的重复分配与释放，降低 allocator 抖动。第三，优化线程调度策略：优先采用更稳定的静态划分方式，在任务负载较为规则时减少 runtime 调度开销与线程迁移。
 
-上述改动的共同特征是“不改变数学语义，只整理执行路径”。换言之，卷积前向与反向结果与基线实现保持一致，优化仅发生在计算组织、数据布局和并行调度层面。这样的策略有两个直接好处：其一，便于验证正确性，因为误差应主要来自浮点舍入顺序差异；其二，能够与现有 autodiff 和优化器流程保持兼容，无需重写训练主循环。
+上述改动的共同特征是“不改变数学语义，只整理执行路径”。换言之，卷积前向与反向结果与基线实现保持一致，优化仅发生在计算组织、数据布局和并行调度层面，因此既便于验证正确性，也能与现有 autodiff 和优化器流程保持兼容。
 
-\subsection{实验协议与对照设置}
+\subsection{对照与观测指标}
 
-为评估并行化带来的收益，实验采用与前文一致的可复现实验范式：固定硬件环境与编译选项，在相同输入形状和 batch 配置下，对基线卷积路径与并行优化路径进行对照。线程数通常取 $\{1,2,4,8\}$，并保持一致的线程绑定策略，以避免调度噪声掩盖实现差异。每组测试均包含预热迭代和重复测量，并以中位时间作为主要统计量，同时结合标准差评估结果稳定性。
+这里的比较沿用前文一致的可复现实验范式：固定输入 shape、batch、硬件环境、编译选项和线程绑定策略。所考察的 shape 首先对应当前 CNN 实现在 MNIST 上的两层卷积及其 backward；线程数通常取 $\{1,2,4,8\}$，并通过预热、重复测量、中位时间和标准差评估结果。
 
-在指标设计上，本文不仅报告单次卷积前向时间，还分别记录 \texttt{im2col}、卷积 GEMM、\texttt{col2im} 以及 backward 相关阶段的耗时，以区分“算子本体收益”与“链路端到端收益”。如果只观察 GEMM，往往会高估整体优化效果；而分项计时则能够更准确地揭示瓶颈迁移方向，即性能提升究竟来自计算加速、重排优化，还是并行调度改进。
-
-\subsection{结果分析：收益、边界与瓶颈迁移}
-
-实验结果表明，卷基层并行优化在中等及以上工作负载下能够带来稳定收益，且前向与反向总时长均较基线下降。这说明性能提升并非来自单一阶段，而是 \texttt{im2col/GEMM/col2im} 整体链路协同改进的结果。
-
-其适用边界同样较为明确：当输入尺寸或 batch 较小时，并行收益会被固定调度成本部分抵消，小规模问题对过度并行依然敏感。因此，本节优化的意义不仅在于缩短卷积时间，也在于更清晰地暴露后续瓶颈；下一步仍需继续围绕卷积重排开销、backward 路径和 kernel 形状匹配做进一步优化。
+观测指标分别跟踪 \texttt{im2col}、卷积 GEMM、输出重排、\texttt{col2im} 和 backward 各阶段耗时，以区分主链路收益与整层端到端收益。
 
 \section{CNN架构的实现}
 
-本章说明当前 CNN 路径如何接入现有训练框架。代码通过 \texttt{NeuralNetwork} 接口复用训练器、优化器、自动求导和数据加载；新增部分集中在 \texttt{Conv2D}、\texttt{MaxPool2D} 和 \texttt{CNNNetwork}。
+本章说明当前 CNN 路径如何接入现有训练框架。其核心思路是在尽量复用既有训练与计算基础设施的前提下，只调整引入 CNN 所必需的网络抽象层。
 
-\subsection{整体实现思路}
+\subsection{当前 CNN 结构与数据流}
 
-CNN 的接入保持原有训练器、损失函数、优化器以及 \texttt{Node}/\texttt{Matrix} 计算框架不变，只在网络抽象层增加统一接口 \texttt{NeuralNetwork}，让 \texttt{MLPNetwork} 与 \texttt{CNNNetwork} 共用训练逻辑。软件分层也保持原状：底层是 \texttt{Matrix} 与矩阵乘法，中间层是 \texttt{Node}/\texttt{MathOps}，上层新增 \texttt{Conv2DLayer}、\texttt{MaxPool2DLayer} 和 \texttt{CNNNetwork}。
-
-\subsection{LeNet 风格网络结构}
-
-当前 CNN 路径采用一套适配 MNIST 的 LeNet 风格结构。每个样本先以 $(N,784)$ 进入网络，再在前向传播内部解释为 $(N,1,28,28)$ 的单通道图像。网络主体由两层卷积、两层池化和三层全连接组成，其 shape 变化如图~\ref{fig:cnn_architecture_flow} 所示。
+\subsubsection{整体结构}
 
 \begin{figure}[H]
 \centering
+\captionsetup{skip=4pt}
 \begin{tikzpicture}[
-    x=1cm, y=1cm,
-    every node/.style={font=\footnotesize},
+    x=0.92cm, y=0.92cm,
+    every node/.style={font=\scriptsize},
     block/.style={
         draw,
         rounded corners=4pt,
         align=center,
-        minimum height=1.95cm,
+        minimum height=1.8cm,
         fill=gray!4,
-        inner sep=4pt
+        inner sep=3pt
     },
-    arrow/.style={->, line width=0.8pt}
+    arrow/.style={->, line width=0.8pt, draw=gray!70}
 ]
 % row 1
 \node[block, text width=2.6cm] (input) at (0,0)
@@ -451,24 +444,24 @@ CNN 的接入保持原有训练器、损失函数、优化器以及 \texttt{Node
 \node[block, text width=2.9cm] (pool1) at (7.6,0)
     {\textbf{MaxPool2D $(2\times2,\ s=2)$}\\[2pt]$(N,6,28,28)\rightarrow(N,6,14,14)$};
 
-\node[block, text width=3.5cm] (conv2) at (11.6,0)
+\node[block, text width=3.5cm] (conv2) at (11.4,0)
     {\textbf{Conv2D $(5\times5,\ s=1,\ p=0)$ + ReLU}\\[2pt]$(N,6,14,14)\rightarrow(N,16,10,10)$\\[2pt]参数量: $2416$};
 
 % row 2
-\node[block, text width=2.9cm] (pool2) at (2.0,-2.9)
+\node[block, text width=2.9cm] (pool2) at (11.4,-2.9)
     {\textbf{MaxPool2D $(2\times2,\ s=2)$}\\[2pt]$(N,16,10,10)\rightarrow(N,16,5,5)$};
 
-\node[block, text width=2.4cm] (flat) at (5.5,-2.9)
+\node[block, text width=2.4cm] (flat) at (7.7,-2.9)
     {\textbf{Flatten}\\[2pt]$(N,16,5,5)\rightarrow(N,400)$};
 
-\node[block, text width=3.5cm] (fc1) at (9.7,-2.9)
+\node[block, text width=3.5cm] (fc1) at (3.7,-2.9)
     {\textbf{Linear $400\rightarrow120$ + ReLU}\\[2pt]$(N,400)\rightarrow(N,120)$\\[2pt]参数量: $48120$};
 
 % row 3
-\node[block, text width=3.5cm] (fc2) at (5.0,-5.8)
+\node[block, text width=3.5cm] (fc2) at (3.7,-5.8)
     {\textbf{Linear $120\rightarrow84$ + ReLU}\\[2pt]$(N,120)\rightarrow(N,84)$\\[2pt]参数量: $10164$};
 
-\node[block, text width=3.0cm] (fc3) at (9.2,-5.8)
+\node[block, text width=3.0cm] (fc3) at (7.9,-5.8)
     {\textbf{Linear $84\rightarrow10$}\\[2pt]$(N,84)\rightarrow(N,10)$\\[2pt]参数量: $850$};
 
 % arrows row 1
@@ -476,29 +469,35 @@ CNN 的接入保持原有训练器、损失函数、优化器以及 \texttt{Node
 \draw[arrow] (conv1.east) -- (pool1.west);
 \draw[arrow] (pool1.east) -- (conv2.west);
 
-% row 1 -> row 2 : route downward into the next stage
-\draw[arrow] (conv2.south) -- ++(0,-0.55) -| (pool2.north);
+% row 1 -> row 2
+\draw[arrow] (conv2.south) -- (pool2.north);
 
 % arrows row 2
-\draw[arrow] (pool2.east) -- (flat.west);
-\draw[arrow] (flat.east) -- (fc1.west);
+\draw[arrow] (pool2.west) -- (flat.east);
+\draw[arrow] (flat.west) -- (fc1.east);
 
-% row 2 -> row 3 : route downward into the next stage
-\draw[arrow] (fc1.south) -- ++(0,-0.65) -| (fc2.north);
+% row 2 -> row 3
+\draw[arrow] (fc1.south) -- (fc2.north);
 
 % arrows row 3
 \draw[arrow] (fc2.east) -- (fc3.west);
 
 % total params
-\node[anchor=center, font=\small\bfseries] at (7.1,-7.35) {总可训练参数量: $61706$};
+\node[anchor=center, font=\small\bfseries] at (5.8,-7.2) {总可训练参数量: $61706$};
 \end{tikzpicture}
 \caption{当前 CNN 路径的网络结构与各阶段 shape 变化。}
 \label{fig:cnn_architecture_flow}
 \end{figure}
 
+新增组件各有不同作用。卷积层通过权重共享提取局部模式；在 MNIST 的 \(28\times28\) 输入上，\(5\times5\) 卷积核已经能覆盖较有意义的局部区域，同时又不会把参数量抬得过高。池化层负责后续的空间降采样；这里选择 \emph{MaxPooling}，是因为它可以在不增加可训练参数的前提下保留局部最强响应，并较快压缩后续层的计算规模。末端的全连接分类头则在特征已经压缩后，对剩余通道和空间信息做全局混合，并映射到类别 logits。
+
+因此，这里选用受 LeNet~\cite{lecun1998} 启发的“两层卷积 + 两层池化 + 三层线性层”短结构，主要是为了在保持 MNIST 上代表性的同时，将训练和分析成本控制在较低水平。
+
+当前 CNN 路径先把每个样本从 $(N,784)$ 解释为 $(N,1,28,28)$ 的单通道图像，其 shape 变化如图~\ref{fig:cnn_architecture_flow} 所示。
+
 整套网络总计约 $61706$ 个可训练参数。这个规模对应当前的 MNIST CNN 路径，并覆盖卷积、池化、特征展平和分类头四类计算。
 
-\subsection{前向数据流与形状传播}
+\subsubsection{前向数据流、存储表示与统一接口}
 
 该网络的前向路径与图~\ref{fig:cnn_architecture_flow} 一致：输入先由 $(N,784)$ 解释为 $(N,1,28,28)$，随后依次经过两层卷积、两层池化、特征展平和三层全连接分类头。
 
@@ -506,55 +505,42 @@ CNN 的接入保持原有训练器、损失函数、优化器以及 \texttt{Node
 \[
 \texttt{idx} = c \times H \times W + h \times W + w.
 \]
-这样做的优点是避免重写一套新的底层张量存储与算子系统，并使卷积层可以直接复用现有矩阵运算接口；代价则是每一层都需要显式传递形状信息，并在实现中谨慎处理 reshape 与索引。
+这样做的优点是避免重写一套新的底层张量存储，并使卷积层可以直接复用现有矩阵运算接口；代价则是每一层都需要显式传递形状信息，并在实现中谨慎处理 reshape 与索引。完成两次卷积和池化之后，特征图会继续展平为 $(N,400)$，再送入全连接分类头。
 
-\subsection{池化层与全连接分类头}
-
-\texttt{MaxPool2DLayer} 负责空间下采样。当前实现使用最大池化；前向阶段记录每个窗口中最大值的位置，反向阶段把梯度散射回对应输入位置。池化层本身不含可训练参数。
-
-两次卷积和池化之后，特征图尺寸从 $(N,1,28,28)$ 变为 $(N,16,5,5)$。随后网络在 \texttt{forward()} 中直接执行展平，把它改写为 $(N,400)$，再送入三层全连接分类头。展平在网络内部作为一步 reshape 处理。
-
-\subsection{接口抽象与代码组织}
-
-为使训练器同时支持 MLP、LeNet 风格 CNN 和后续的 ResNet 变体，当前实现没有为每类模型分别编写独立训练流程，而是在网络层之上引入了统一的 \texttt{NeuralNetwork} 抽象。该接口只保留训练主循环真正需要的两项能力：一是根据输入执行前向传播，二是返回全部可训练参数。这样一来，训练器、损失函数、优化器以及梯度清零与参数更新逻辑都可以保持不变，模型差异被限制在网络内部结构本身。
-
-在这一组织方式下，卷积层、池化层和全连接层都被视为网络内部的组成部件，而不是训练框架层面的特殊分支。也就是说，无论底层模型是 \texttt{MLPNetwork}、\texttt{CNNNetwork} 还是 \texttt{ResNetNetwork}，训练器看到的始终是同一种接口：输入数据进入 \texttt{forward()}，反向传播后再通过参数列表交给优化器更新。这样的设计将“模型结构变化”和“训练流程变化”尽量解耦，使卷积网络的接入能够建立在已有 MLP 训练基础之上，而不需要重写整个执行框架。
-
-从代码组织的角度看，新增内容主要沿“层实现 $\rightarrow$ 网络组合 $\rightarrow$ 训练入口”这一层次展开：卷积层与池化层负责局部算子语义，\texttt{CNNNetwork} 和 \texttt{ResNetNetwork} 负责具体结构拼装，主程序再通过命令行参数选择实例化哪一种网络。相应地，原有的损失函数、优化器、自动求导节点和矩阵计算后端基本保持原状。后文讨论的卷积优化、训练 profile 以及分布式同步路径，也都是在这一统一训练框架上继续展开的。
-
-\subsection{设计取舍与当前状态}
-
-当前 CNN 主线仍以 LeNet 风格结构和 \texttt{im2col + matmul} 卷积路径为主，底层继续复用统一的 \texttt{Matrix} 存储与训练框架。ResNet 扩展已经接入，但尚未展开系统性的超参数调优与基准测试；BatchNorm 等更完整的组件也仍留待后续工作。
+为避免在 MLP、CNN 和 ResNet 之间分别维护独立训练循环，这些模型统一暴露 \texttt{NeuralNetwork} 接口，只保留前向传播与可训练参数访问两项能力。这样，训练器、损失函数和优化器都可以保持不变，而 \texttt{CNNNetwork} 与 \texttt{ResNetNetwork} 只负责在“层实现 $\rightarrow$ 网络组合 $\rightarrow$ 训练入口”这一层次上补充各自的结构。
 
 \subsection{运行验证}
 
 \begin{table}[h]
 \centering
-\begin{tabular}{lcc}
+\begin{tabular}{lccc}
 \hline
-模型 & 训练轮数 & 测试准确率 \\
+模型 & 训练轮数 & 测试准确率 & 总 wall-clock 时间 \\
 \hline
-MLP & 1 & 80.10\% \\
-MLP & 3 & 87.12\% \\
-MLP & 5 & 89.00\% \\
-CNN & 1 & 88.82\% \\
+MLP & 1 & 90.57\% & 0.96\,s \\
+MLP & 5 & 94.28\% & 3.39\,s \\
+CNN & 1 & 96.08\% & 25.54\,s \\
 \hline
 \end{tabular}
-\caption{CNN 与 MLP 在 MNIST 上的测试准确率对比（batch=256，seed=42）}
+\caption{CNN 与 MLP 在 MNIST 上的粗粒度对比（\texttt{batch=256}，\texttt{seed=42}）。最后一列给出一次运行中观测到的总 wall-clock 时间。}
 \label{tab:cnn_mlp_acc}
 \end{table}
 
-在这组 batch=256、seed=42 的粗粒度对比中，CNN 训练 1 个 epoch 达到 88.82\%，接近 MLP 训练 5 个 epoch 的 89.00\%。这组结果主要用于说明 CNN 主路径已经稳定跑通，并在当前设置下达到与 MLP 相近的 MNIST 精度水平。
+CNN 训练 1 个 epoch 即达到 96.08\%，高于 MLP 训练 5 个 epoch 的 94.28\%。但它的运行成本也明显更高：CNN 1 个 epoch 为 25.54\,s，而 MLP 1 个 epoch 为 0.96\,s、5 个 epoch 为 3.39\,s。
 
 \subsection{ResNet 结构扩展}
 
-在完成 LeNet 风格 CNN 之后，项目进一步加入了 \texttt{ResNetNetwork}，为后续更深卷积网络实验提供基础。ResNet 的核心思想是残差连接：每个 block 不再只学习一个完整映射 $H(x)$，而是学习相对于输入的残差 $F(x)$，最终输出写为
+在当前这条短 CNN 路径之外，一旦面向更大、更复杂的数据集，其模型容量就会很快显得不足。项目因此进一步加入了 \texttt{ResNetNetwork}，以引入更深且更易训练的卷积结构。ResNet~\cite{he2016resnet} 的核心思想是残差连接：一个 block 会把计算拆成两条分支，主分支通过若干卷积产生残差项 $F(x)$，shortcut 分支则尽量直接传递输入 $x$。在最简单的情形下，block 的输出写为
 \[
-y = F(x) + x.
+H(x) = x + F(x).
+\]
+也就是说，block 不再从零学习一个完整映射，而只需要学习在输入基础上补上的修正量 $F(x)$。当输入输出的空间尺寸或通道数不一致时，shortcut 就不再直接等于 $x$，而是改为一个投影 $P(x)$，此时输出写为
+\[
+y = F(x) + P(x).
 \]
 这种结构可以缓解深层网络训练中的梯度退化问题，使网络在增加深度时仍保持较好的可优化性。
 
-当前 ResNet 扩展仍遵循统一的 \texttt{NeuralNetwork} 接口，因此可以直接接入同一套训练器、损失函数、优化器和自动求导系统，并作为一种可选模型纳入现有训练主线。换言之，训练循环本身不需要为 ResNet 单独分支：模型仍通过统一的前向接口产生输出，并通过参数列表交给优化器更新。这样的设计使残差结构能够在不重写训练框架的前提下接入现有系统，也便于直接检验其与自动求导主线的兼容性。
+当前 ResNet 扩展仍遵循统一的 \texttt{NeuralNetwork} 接口，因此可以直接接入现有训练链路，而无需为其单独编写一套训练循环。这样的设计既避免了重写训练框架，也便于直接检验残差结构与自动求导主线的兼容性。
 
 \subsubsection{结构与下采样策略}
 
@@ -562,31 +548,62 @@ y = F(x) + x.
 
 \subsubsection{BasicBlock}
 
-当前 ResNet 的基本单元是 \texttt{BasicBlock}。每个 block 包含两层 $3\times3$ 卷积：
-\[
-x \rightarrow \mathrm{Conv}_{3\times3} \rightarrow \sigma
-\rightarrow \mathrm{Conv}_{3\times3}
-\rightarrow + \rightarrow \sigma,
-\]
-其中 $\sigma$ 表示配置的激活函数。若输入输出通道数相同且 stride 为 $1$，shortcut 直接使用输入本身；否则，block 会额外构造一个 $1\times1$ projection 卷积，使 shortcut 的通道数和空间尺寸与主分支输出一致。
+当前 ResNet 的基本单元是 \texttt{BasicBlock}。如图~\ref{fig:resnet_basicblock_cn} 所示，它包含一条主分支和一条 shortcut 分支：主分支依次执行两层 $3\times3$ 卷积，而 shortcut 在与主分支结果相加后再经过最终激活 $\sigma$。
 
-因此，一个 residual block 的计算可以写为：
+\begin{figure}[H]
+\centering
+\captionsetup{skip=4pt}
+\begin{tikzpicture}[
+    x=0.95cm, y=0.95cm,
+    every node/.style={font=\scriptsize},
+    block/.style={
+        draw,
+        rounded corners=3pt,
+        align=center,
+        minimum height=0.95cm,
+        fill=gray!4,
+        inner sep=3pt
+    },
+    sum/.style={circle, draw, minimum size=5.5mm, inner sep=0pt, fill=gray!4},
+    junction/.style={circle, fill=gray!70, inner sep=1.2pt},
+    arrow/.style={->, line width=0.8pt, draw=gray!70}
+]
+\node (input) at (0,0) {$x$};
+\node[junction] (split) at (0.9,0) {};
+\node[block, text width=1.9cm] (conv1) at (2.8,0) {$3\times3$ Conv\\+$\sigma$};
+\node[block, text width=1.6cm] (conv2) at (5.2,0) {$3\times3$ Conv};
+\node[sum] (add) at (7.3,0) {$+$};
+\node[block, text width=0.9cm] (act) at (8.8,0) {$\sigma$};
+\node (output) at (10.0,0) {$y$};
+\node[block, text width=2.0cm] (shortcut) at (4.1,-1.7) {Shortcut\\恒等或\\$1\times1$投影};
+
+\draw[arrow] (input.east) -- (split);
+\draw[arrow] (split) -- (conv1.west);
+\draw[arrow] (conv1.east) -- (conv2.west);
+\draw[arrow] (conv2.east) -- (add.west);
+\draw[arrow] (add.east) -- (act.west);
+\draw[arrow] (act.east) -- (output);
+\draw[arrow] (split) |- (shortcut.west);
+\draw[arrow] (shortcut.east) -| (add.south);
+\end{tikzpicture}
+\caption{当前 ResNet 实现中一个 \texttt{BasicBlock} 的残差结构示意。}
+\label{fig:resnet_basicblock_cn}
+\end{figure}
+
+记 $P(x)$ 为 shortcut 路径；当输入输出尺寸不变时，它是恒等映射，否则为一个 $1\times1$ 投影。这里的 $\sigma$ 表示 block 中使用的激活函数，在当前默认配置下为 ReLU。于是，一个 residual block 的计算可以写为：
 \[
-F(x) = W_2 \sigma(W_1 x),
+\begin{aligned}
+F(x) &= W_2\bigl(\sigma(W_1x)\bigr),\\
+y &= \sigma\bigl(F(x)+P(x)\bigr).
+\end{aligned}
 \]
-\[
-y = \sigma(F(x) + P(x)),
-\]
-其中 $P(x)$ 是 shortcut 路径。当形状不变时，$P(x)=x$；当下采样或通道数变化时，$P(x)$ 由 $1\times1$ 卷积实现。
 各 stage 之间通过 stride 为 $2$ 的卷积完成下采样，并在 shortcut 路径上同步使用 $1\times1$ projection，以保证主分支与 shortcut 在空间尺寸和通道数上保持一致。
+该 ResNet 扩展已经接入代码，并显式处理了恒等 shortcut 与投影 shortcut 两种情况。不过，这一部分尚未展开系统性的超参数调优与深入 benchmark。若要继续面向更复杂数据集提升性能，后续仍需进一步补充 BatchNorm、全局平均池化和更系统的训练配置。
 
-\subsubsection{总结}
-
-当前 ResNet 实现的重点在于验证残差结构能够稳定接入现有自动求导框架，并为项目提供比 LeNet 更深的 CNN 基础。若要继续面向更复杂数据集提升性能，仍需进一步补充 BatchNorm、全局平均池化和更系统的训练配置。
-
+\FloatBarrier
 \section{基于 Optuna 的超参数自动搜索}
 
-除手工调参外，项目还引入 \texttt{Optuna} 组织自动化超参数搜索。其动机在于：早期 MNIST 实验已经表明，学习率、batch size、激活函数和优化器会显著影响收敛行为；进入 CNN 路径后，若继续依赖手工枚举，实验成本会迅速上升。因此，这里将 HPO 视为训练流程的自然延伸，而不是后续附加的脚本工具。
+除手工调参外，项目还引入 \texttt{Optuna}~\cite{akiba2019optuna} 组织自动化超参数搜索。其动机在于：早期 MNIST 实验已经表明，学习率、batch size、激活函数和优化器会显著影响收敛行为；进入 CNN 路径后，若继续依赖手工枚举，实验成本会迅速上升。因此，这里将 HPO 视为训练流程的自然延伸，而不是后续附加的脚本工具。
 
 在实现上，每个 trial 独立执行一次训练，并以 \texttt{test\_acc} 作为目标值。评价指标既可以取训练过程中的最佳测试精度，也可以取最后一个 epoch 的测试精度，即
 \[
@@ -598,13 +615,13 @@ y = \sigma(F(x) + P(x)),
 \]
 对应的 study 采用最大化方向。
 
-搜索空间主要覆盖几类最敏感的训练参数：学习率在 $[10^{-4}, 2\times10^{-2}]$ 上按对数尺度采样，batch size 从 $\{32,64,128\}$ 中选择，激活函数在 \texttt{relu}、\texttt{leaky\_relu}、\texttt{gelu} 和 \texttt{tanh} 之间比较，初始化方式在 \texttt{he} 与 \texttt{xavier} 之间切换。优化器部分采用条件搜索：\texttt{sgd} 仅搜索 \texttt{weight\_decay}，\texttt{momentum\_sgd} 额外搜索 \texttt{momentum} 与 \texttt{nesterov}，\texttt{adamw} 则进一步搜索 \texttt{beta1}、\texttt{beta2} 和 \texttt{eps}。这样可以避免无意义组合，并将 trial 数量集中到更有效的参数区域。
+搜索空间覆盖最敏感的训练参数：学习率、batch size、激活函数、初始化方式和优化器。优化器部分采用条件搜索，以避免无意义组合，并把 trial 预算集中到更有效的参数区域。
 
-实验结果会连同参数配置和运行上下文一并保存，以便后续复查和复现；执行层面同时支持进程内并行与 MPI worker 模式，从而提高搜索吞吐量。当前保留的一组 CNN HPO 结果中，40 个 trial、每个 trial 训练 3 个 epoch 的设置达到了 \(\mathrm{best\ test\_acc}=0.9891\)。这一结果表明，自动搜索能够找到与手工经验略有差异、但在短训练预算下更优的配置。
+实验结果会连同参数配置和运行上下文一并保存。执行层面同时支持进程内并行与 MPI worker 模式。当前保留的一组 CNN HPO 结果中，40 个 trial、每个 trial 训练 3 个 epoch 的设置达到了 \(\mathrm{best\ test\_acc}=0.9891\)；作为对照，默认手动配置在同样预算下可达到 \(98.45\%\)。因此，最优 HPO trial 的提升幅度并不大，约为 \(+0.46\) 个百分点。
 
 \section{Tiny-ImageNet 数据集迁移与输入管线}
 
-在 CNN 路径和分布式训练接入后，实验对象从 MNIST 扩展到 \texttt{Tiny-ImageNet}。这一迁移不仅扩大了输入规模，也引入了 JPEG 图像解码、卷积训练和分布式同步等更完整的系统负载，因此能够更充分地暴露当前实现的适用范围与瓶颈。
+在 CNN 路径和分布式训练接入后，实验对象从 MNIST 扩展到 \texttt{Tiny-ImageNet}，即 ImageNet 的一个缩小变体~\cite{deng2009imagenet}。这一迁移不仅扩大了输入规模，也引入了 JPEG 图像解码、卷积训练和分布式同步等更完整的系统负载，因此能够更充分地暴露当前实现的适用范围与瓶颈。
 
 \subsection{迁移动机与数据特征}
 
@@ -618,8 +635,7 @@ MNIST 足以验证 MLP、损失函数和自动求导等基础路径，但不足�
 
 当前 Tiny-ImageNet 路径已经接入加载逻辑和训练循环。本节提到的评估对应训练集与验证集分离的训练/评估设置。
 
-\begin{figure}[h]
-\centering
+\begin{center}
 \begin{tikzpicture}
 \begin{axis}[
     width=0.92\textwidth,
@@ -711,21 +727,24 @@ MNIST 足以验证 MLP、损失函数和自动求导等基础路径，但不足�
 \addlegendentry{测试准确率}
 \end{axis}
 \end{tikzpicture}
-\caption{Tiny-ImageNet 40 epoch 训练曲线摘要（world\_size=4，batch=128，per\_param 同步）。上图展示训练损失与每轮耗时，下图展示训练准确率与测试准确率。}
+\captionof{figure}{Tiny-ImageNet 40 epoch 训练曲线摘要（world\_size=4，batch=128，per\_param 同步）。上图展示训练损失与每轮耗时，下图展示训练准确率与测试准确率。}
 \label{fig:tiny_imagenet_curve}
-\end{figure}
+\end{center}
 
-图~\ref{fig:tiny_imagenet_curve} 显示，训练准确率持续上升至 47\%，但测试准确率在第 5 epoch 后即开始回落，第 40 epoch 仅 7.24\%，表明在当前 LeNet 风格 CNN 结构和无数据增强的配置下，模型在 Tiny-ImageNet 上出现严重过拟合。
+图~\ref{fig:tiny_imagenet_curve} 显示，训练准确率持续上升至 47\%，但测试准确率在第 5 epoch 后即开始回落，第 40 epoch 仅 7.24\%，表明在当前 LeNet 风格 CNN 结构~\cite{lecun1998} 和无数据增强的配置下，模型在 Tiny-ImageNet 上出现严重过拟合。
 
+\clearpage
 \subsection{当前范围与后续工作}
 
-目前，这一路径已经能够稳定完成 \texttt{Tiny-ImageNet} 的数据装载与训练执行，但输入侧和模型侧都仍存在明显限制。输入管线尚未引入异步预取、解码重叠、缓存和更完整的数据增强；模型与算子层面也仍需继续观察 \texttt{im2col/col2im}、卷积 backward 以及卷积与 GEMM 之间的数据重排成本。后续工作因此仍需同时沿输入系统与模型训练两条方向推进。我们计划在后续在集群上进行ResNet和IST的训练，以提升 Tiny-ImageNet 的测试准确率。
+目前，这一路径已经能够稳定完成 \texttt{Tiny-ImageNet} 的数据装载与训练执行，但仍有明显限制。输入管线尚未覆盖异步预取、解码重叠、缓存和更完整的数据增强；模型侧则仍需继续检查 \texttt{im2col/col2im}、卷积 backward 以及卷积与 GEMM 之间的数据重排成本。后续工作因此仍需并行推进输入系统与模型训练，并计划在集群上继续开展 ResNet 和 IST 训练，以提升 Tiny-ImageNet 的测试准确率。
 
 \section{分布式训练、梯度同步与运行时整理}
 
+本节介绍当前项目中的分布式训练路径：从同步数据并行出发，再讨论为降低同步开销而引入的运行时重组。重点不是证明多 rank 已能运行，而是分析通信粒度、计算与通信重叠以及梯度压缩会如何改变一次分布式训练 step 的真实成本。
+
 \subsection{同步数据并行与梯度聚合}
 
-当前分布式训练采用同步数据并行：每个 \texttt{rank} 都维护一份完整模型副本，并仅在本地数据分片上执行前向与反向传播。设第 $r$ 个 rank 在某一步得到的梯度和为 $g_r$，则全局梯度先通过归约得到
+当前分布式训练采用同步数据并行：逻辑上的模型仍然只有一套，但它会被复制到每个 \texttt{rank} 上，从而让多个 batch 可以在同一节点或多个节点上并行处理，而每个 rank 只负责自己的本地数据分片~\cite{sergeev2018horovod}。每一步结束后，这些模型副本再通过梯度聚合重新同步，使它们随后执行同一组参数更新。设第 $r$ 个 rank 在某一步得到的梯度和为 $g_r$，则全局梯度先通过归约得到
 \[
 g_{\mathrm{sum}}=\sum_{r=0}^{\mathrm{world\_size}-1} g_r.
 \]
@@ -739,7 +758,7 @@ g_{\mathrm{global}}
 =\frac{1}{B_{\mathrm{global}}}g_{\mathrm{sum}}
 =\frac{1}{B_{\mathrm{global}}}\sum_{r=0}^{\mathrm{world\_size}-1} g_r.
 \]
-所有 rank 随后共享同一个平均梯度更新参数，因此模型副本在每一步后仍保持一致。真正的难点不在数学定义，而在于如何组织梯度同步；最朴素的逐参数阻塞式归约会引入大量小规模通信开销，因此并不适合作为长期方案。
+所有 rank 随后共享同一个平均梯度更新参数，因此模型副本在每一步后仍保持一致。真正的难点不在数学定义，而在于同步组织方式：逐参数阻塞式归约会引入大量小规模通信开销。
 
 \subsection{从逐参数同步到梯度 Bucketing}
 
@@ -751,7 +770,7 @@ g_{\mathrm{global}}
 
 \subsection{梯度压缩：实现路径与阶段结果}
 
-梯度压缩的目标，是在尽量保持收敛与最终精度稳定的前提下降低同步成本。早期接入的是训练器侧的本地压缩路径，即在梯度同步结束后、\texttt{optimizer.step} 之前对梯度执行压缩变换；这一做法会改变梯度表示，但不会减少 \texttt{AllReduce} 的通信字节量，因此难以带来通信侧收益。这一观察直接推动了后续“将压缩前移到通信边界”的改造。
+梯度压缩~\cite{alistarh2017qsgd} 的目标，是在尽量保持收敛稳定的前提下降低同步成本。早期路径是在训练器侧、同步完成后再做本地压缩；它会改变梯度表示，却不会减少 \texttt{AllReduce} 的通信字节量，因此后来被前移到了通信边界。
 
 在本次迭代中，压缩逻辑被前移到分布式同步运行时，形成
 \[
@@ -775,7 +794,7 @@ g_{\mathrm{global}}
 基于上述结果，当前阶段的推荐配置为：
 \texttt{--grad\_compress 1 --grad\_compress\_mode fp16 --grad\_compress\_interval 8}。
 
-需要强调的是：本阶段虽然已经完成通信边界压缩路径的工程落地与开销控制，但通信 payload 目前仍使用 float 缓冲区，因此当前结论更准确地说属于“压缩框架与调度策略有效”，尚不能等同于“通信字节量已经显著下降”。后续若继续推进，工作重点应转向真实 payload 的压缩通信，并在同一套分解指标体系下重新评估其端到端收益。
+需要强调的是：当前虽然已经完成通信边界压缩路径的落地，但通信 payload 仍使用 float 缓冲区。因此，这里的结果主要说明压缩框架与调度策略已经成立；真实 payload 压缩通信的端到端收益仍需单独评估。
 
 \subsection{MPI 扩展性实验}
 
@@ -820,25 +839,8 @@ overlap\_bucketed & 8.25 & 1.09 & 0.97 \\
 
 \texttt{overlap\_bucketed} 当前仍以正确性验证为主，因此这里的结果主要用于定位通信与等待开销；真正的重叠收益仍需在完全匹配的配置下另行验证。
 
-\subsection{Autograd 从隐式 backward 到显式执行引擎}
-
-通信重叠依赖一个更细的运行时事件：参数梯度何时真正就绪。旧版 autodiff 可以完成梯度累加，但不会显式给出这一时刻，因此难以直接支撑参数级 ready hook、bucket 就绪判定和重叠式同步。
-
-\subsection{显式 Engine 的结构重构}
-
-为此，项目将 backward 调度集中到显式的 \texttt{AutogradEngine} 中：由引擎统一维护反向可达子图、梯度贡献计数以及 ready queue，并在节点输出梯度收齐后再触发相应的反向计算。与之配套，算子 backward 逻辑也被改写为“保存上下文并返回梯度贡献”的形式，而不再直接写回父节点梯度。
-
-这次重构的关键作用，是把 \texttt{parameter-ready} 事件显式化。这样，分布式运行时就能够在不修改各层 backward 公式的前提下，挂接梯度打包、异步归约和相关 profiling。
-
-\subsection{Autograd 热路径的性能压缩}
-
-完成这次重构后，\texttt{AutogradEngine} 的优化继续限定在运行时管理开销，重点包括三方面：其一，将反向可达子图状态做局部稠密化索引，以减少查找成本；其二，减少小对象分配，以压缩框架管理开销；其三，把梯度合并尽量收敛为连续缓冲区上的原地累加。
-
-当前 profiling 的结论是：\texttt{AutogradEngine} 自身的运行时占比已经下降，剩余热点更集中在卷积相关算子，尤其是 \texttt{im2col}、前向 GEMM、反向 \texttt{dX/dW} GEMM 和 \texttt{col2im} 等路径上。
-
-
 \addcontentsline{toc}{section}{参考文献}
-\begin{thebibliography}{11}
+\begin{thebibliography}{20}
 
 \bibitem{lecun1998}
 Yann LeCun, Léon Bottou, Yoshua Bengio, and Patrick Haffner.
@@ -859,6 +861,46 @@ Field G. Van Zee and Tyler M. Smith.
 Tze Meng Low, Francisco D. Igual, Tyler M. Smith, and Enrique S. Quintana-Ort{\'i}.
 ``Analytical Modeling Is Enough for High-Performance BLIS.''
 \textit{ACM Transactions on Mathematical Software}, 43(2):12:1--12:18, 2016.
+
+\bibitem{he2016resnet}
+Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun.
+``Deep Residual Learning for Image Recognition.''
+\textit{Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, pages 770--778, 2016.
+
+\bibitem{akiba2019optuna}
+Takuya Akiba, Shotaro Sano, Toshihiro Yanase, Takeru Ohta, and Masanori Koyama.
+``Optuna: A Next-generation Hyperparameter Optimization Framework.''
+\textit{Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining}, pages 2623--2631, 2019.
+
+\bibitem{jia2014caffe}
+Yangqing Jia, Evan Shelhamer, Jeff Donahue, Sergey Karayev, Jonathan Long, Ross Girshick, Sergio Guadarrama, and Trevor Darrell.
+``Caffe: Convolutional Architecture for Fast Feature Embedding.''
+\textit{Proceedings of the 22nd ACM International Conference on Multimedia}, pages 675--678, 2014.
+
+\bibitem{sergeev2018horovod}
+Alexander Sergeev and Mike Del Balso.
+``Horovod: Fast and Easy Distributed Deep Learning in TensorFlow.''
+\textit{arXiv preprint arXiv:1802.05799}, 2018.
+
+\bibitem{deng2009imagenet}
+Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei.
+``ImageNet: A Large-Scale Hierarchical Image Database.''
+\textit{Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, pages 248--255, 2009.
+
+\bibitem{qian1999momentum}
+Ning Qian.
+``On the Momentum Term in Gradient Descent Learning Algorithms.''
+\textit{Neural Networks}, 12(1):145--151, 1999.
+
+\bibitem{loshchilov2019decoupled}
+Ilya Loshchilov and Frank Hutter.
+``Decoupled Weight Decay Regularization.''
+\textit{International Conference on Learning Representations (ICLR)}, 2019.
+
+\bibitem{alistarh2017qsgd}
+Dan Alistarh, Demjan Grubic, Jerry Li, Ryota Tomioka, and Milan Vojnovic.
+``QSGD: Communication-Efficient SGD via Gradient Quantization and Encoding.''
+\textit{Advances in Neural Information Processing Systems (NeurIPS)}, 30, 2017.
 
 \end{thebibliography}
 
@@ -989,7 +1031,7 @@ fc\_wide\_output        & MLP FC1（hidden=256）  & 32 & 784 & 256 \\
 
 据此，后续实验统一限制在 1 至 8 个物理线程并强制绑定核心，以避免 SMT 配置下的调度波动混入 backend 比较。
 
-图~\ref{fig:blas2_scaling} 与表~\ref{tab:blas_optimal} 给出施加亲和性约束后的线程扩展性对比及最优配置汇总。
+图~\ref{fig:blas2_scaling} 给出施加亲和性约束后的线程扩展性对比。
 
 \begin{figure}[H]
     \centering
