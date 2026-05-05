@@ -1316,6 +1316,47 @@ int main(int argc, char** argv) {
 
         for (std::uint64_t epoch = first_epoch_to_run; epoch <= final_epoch_to_run; ++epoch) {
             current_epoch_for_artifacts = epoch;
+
+            if (cfg.train_mode == "ist" &&
+                cfg.ist_resample_every > 0 &&
+                ist_ownership_plan &&
+                epoch > first_epoch_to_run &&
+                ((epoch - first_epoch_to_run) %
+                 static_cast<std::uint64_t>(cfg.ist_resample_every) == 0)) {
+                const unsigned int resample_seed =
+                    static_cast<unsigned int>(ist_partition_seed_effective + epoch);
+                try {
+                    *ist_ownership_plan = ist::buildOwnershipPlan(
+                        model->getParameters(),
+                        dist.rank(),
+                        dist.worldSize(),
+                        resample_seed);
+                    trainer.onIstOwnershipMasksUpdated();
+
+                    std::ostringstream local_summary;
+                    local_summary << "epoch=" << epoch
+                                  << ", rank=" << dist.rank()
+                                  << ", seed=" << resample_seed
+                                  << ", owned=" << ist_ownership_plan->owned_elements
+                                  << "/" << ist_ownership_plan->total_elements
+                                  << " (" << std::fixed << std::setprecision(4)
+                                  << (ist::ownershipRatio(*ist_ownership_plan) * 100.0) << "%)";
+                    const auto all_rank_summaries = dist.allGatherStrings(local_summary.str());
+                    if (isMaster) {
+                        std::cout << "[IST] Ownership plan resampled (every "
+                                  << cfg.ist_resample_every
+                                  << " epochs)." << std::endl;
+                        for (const auto& summary : all_rank_summaries) {
+                            std::cout << "[IST] " << summary << std::endl;
+                        }
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "Error resampling IST ownership plan at epoch "
+                              << epoch << ": " << e.what() << std::endl;
+                    return 1;
+                }
+            }
+
             #ifdef PROFILE_MATMUL
             matmulProfileEpochReset();
             #endif

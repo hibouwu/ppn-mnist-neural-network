@@ -252,6 +252,12 @@ Metrics Trainer::evaluate() {
     return m;
 }
 
+void Trainer::onIstOwnershipMasksUpdated() {
+    ist_local_step_counter_ = 0;
+    ist_snapshots_.clear();
+    ist_snapshots_initialized_ = false;
+}
+
 // Shared implementation for training and evaluation.
 Metrics Trainer::runEpoch(bool training) {
     using Clock = std::chrono::steady_clock;

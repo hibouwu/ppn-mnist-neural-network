@@ -100,6 +100,9 @@ public:
     // One evaluation epoch (no parameter updates)
     Metrics evaluate();
 
+    // Reset IST local window/snapshots after ownership masks are refreshed.
+    void onIstOwnershipMasksUpdated();
+
 private:
     NeuralNetwork&   model_;
     LossFunction& lossFn_;
