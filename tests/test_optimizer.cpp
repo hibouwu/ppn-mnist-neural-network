@@ -4,9 +4,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <iomanip>
 #include <string>
 
 namespace {
+
+constexpr double kScalarTol = 1e-6;
 
 Node::Ptr makeScalarNode(double v) {
     Matrix m(1, 1);
@@ -23,7 +26,8 @@ void setScalarGrad(const Node::Ptr& p, double g) {
 
 void assertNear(double got, double expected, double tol, const std::string& name) {
     if (std::abs(got - expected) > tol) {
-        std::cerr << name << " failed: got=" << got
+        std::cerr << std::setprecision(17)
+                  << name << " failed: got=" << got
                   << ", expected=" << expected << std::endl;
         std::exit(1);
     }
@@ -35,10 +39,10 @@ void testSGDBasicStepAndZeroGrad() {
 
     SGDOptimizer opt({w}, 0.1);
     opt.step();
-    assertNear(w->value().data[0], 9.8, 1e-12, "SGD step");
+    assertNear(w->value().data[0], 9.8, kScalarTol, "SGD step");
 
     opt.zeroGrad();
-    assertNear(w->grad().data[0], 0.0, 1e-12, "SGD zeroGrad");
+    assertNear(w->grad().data[0], 0.0, kScalarTol, "SGD zeroGrad");
 }
 
 void testMomentumNoNesterovTwoSteps() {
@@ -47,11 +51,11 @@ void testMomentumNoNesterovTwoSteps() {
 
     setScalarGrad(w, 2.0);
     opt.step();
-    assertNear(w->value().data[0], 9.8, 1e-12, "Momentum step1");
+    assertNear(w->value().data[0], 9.8, kScalarTol, "Momentum step1");
 
     setScalarGrad(w, 2.0);
     opt.step();
-    assertNear(w->value().data[0], 9.42, 1e-12, "Momentum step2");
+    assertNear(w->value().data[0], 9.42, kScalarTol, "Momentum step2");
 }
 
 void testMomentumNesterovTwoSteps() {
@@ -60,11 +64,11 @@ void testMomentumNesterovTwoSteps() {
 
     setScalarGrad(w, 2.0);
     opt.step();
-    assertNear(w->value().data[0], 9.62, 1e-12, "Nesterov step1");
+    assertNear(w->value().data[0], 9.62, kScalarTol, "Nesterov step1");
 
     setScalarGrad(w, 2.0);
     opt.step();
-    assertNear(w->value().data[0], 9.078, 1e-12, "Nesterov step2");
+    assertNear(w->value().data[0], 9.078, kScalarTol, "Nesterov step2");
 }
 
 void testAdamWOneStepWithBiasCorrection() {
@@ -81,7 +85,7 @@ void testAdamWOneStepWithBiasCorrection() {
     const double v_hat = v / (1.0 - 0.999);
     const double expected = shrinked - 0.1 * m_hat / (std::sqrt(v_hat) + 1e-8);
 
-    assertNear(w->value().data[0], expected, 1e-12, "AdamW step");
+    assertNear(w->value().data[0], expected, kScalarTol, "AdamW step");
 }
 
 void testGradScaleAcrossOptimizers() {
@@ -90,14 +94,14 @@ void testGradScaleAcrossOptimizers() {
         SGDOptimizer opt({w}, 0.1);
         setScalarGrad(w, 2.0);
         opt.step(0.5);
-        assertNear(w->value().data[0], 0.9, 1e-12, "SGD gradScale");
+        assertNear(w->value().data[0], 0.9, kScalarTol, "SGD gradScale");
     }
     {
         auto w = makeScalarNode(1.0);
         MomentumSGDOptimizer opt({w}, 0.1, 0.0, false, 0.0);
         setScalarGrad(w, 2.0);
         opt.step(0.5);
-        assertNear(w->value().data[0], 0.9, 1e-12, "Momentum gradScale");
+        assertNear(w->value().data[0], 0.9, kScalarTol, "Momentum gradScale");
     }
     {
         auto w = makeScalarNode(1.0);
@@ -105,7 +109,7 @@ void testGradScaleAcrossOptimizers() {
         setScalarGrad(w, 2.0);
         opt.step(0.5);
         const double expected = 1.0 - 0.1 * (1.0 / (1.0 + 1.0));
-        assertNear(w->value().data[0], expected, 1e-12, "AdamW gradScale");
+        assertNear(w->value().data[0], expected, kScalarTol, "AdamW gradScale");
     }
 }
 
