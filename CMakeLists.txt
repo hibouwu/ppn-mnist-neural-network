@@ -49,7 +49,11 @@ if(NOT OPENBLAS_INCLUDE_DIR OR NOT OPENBLAS_LIB)
     message(FATAL_ERROR "OpenBLAS not found: set OPENBLAS_INCLUDE_DIR and OPENBLAS_LIB")
 endif()
 if(NOT JPEG_LIB)
-    message(FATAL_ERROR "libjpeg not found")
+    message(WARNING "libjpeg not found: Tiny ImageNet support disabled")
+    set(JPEG_LIB "")
+    set(PPN_HAVE_JPEG 0)
+else()
+    set(PPN_HAVE_JPEG 1)
 endif()
 
 set(PPN_HAVE_VTUNE 0)
@@ -174,6 +178,7 @@ if(ENABLE_MPI)
 endif()
 
 add_compile_definitions(USE_OPENBLAS)
+add_compile_definitions(PPN_HAVE_JPEG=${PPN_HAVE_JPEG})
 include_directories(${OPENBLAS_INCLUDE_DIR})
 
 # Inclure les headers
@@ -205,6 +210,9 @@ list(APPEND SOURCES ${GEMM_SOURCES} ${AUTOGRAD_SOURCES} ${DISTRIBUTED_SOURCES} $
 list(FILTER SOURCES EXCLUDE REGEX "src/main.cpp$")
 list(FILTER SOURCES EXCLUDE REGEX "src/gpu/cudnn_conv_forward.cpp$")
 list(FILTER SOURCES EXCLUDE REGEX "src/gpu/cudnn_conv_backward.cpp$")
+if(NOT PPN_HAVE_JPEG)
+    list(FILTER SOURCES EXCLUDE REGEX "src/tiny_imagenet_dataset.cpp$")
+endif()
 
 # Exécutables
 add_executable(test_matrix tests/test_matrix.cpp ${SOURCES})

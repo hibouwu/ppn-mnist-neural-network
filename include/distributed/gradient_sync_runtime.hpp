@@ -38,7 +38,7 @@ public:
     StepBoundaryBucketedSync(const DistributedContext& dist,
                             const std::vector<Node::Ptr>& params,
                             std::size_t bucket_size_bytes,
-                            const CommCompressionConfig& grad_compression_cfg);
+                            const CommCompressionConfig& grad_compression_cfg = CommCompressionConfig{});
 
     std::uint64_t sync(std::uint64_t local_batch);
     SyncStepProfile lastStepProfile() const { return last_profile_; }
@@ -60,7 +60,7 @@ public:
     BucketedOverlapRuntime(const DistributedContext& dist,
                            const std::vector<Node::Ptr>& params,
                            std::size_t bucket_size_bytes,
-                           const CommCompressionConfig& grad_compression_cfg);
+                           const CommCompressionConfig& grad_compression_cfg = CommCompressionConfig{});
 
     void beginStep(std::uint64_t local_batch) override;
     void planStep(const std::vector<Node::Ptr>& reachable_leaf_params) override;

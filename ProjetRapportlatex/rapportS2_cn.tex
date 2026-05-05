@@ -736,7 +736,7 @@ MNIST 足以验证 MLP、损失函数和自动求导等基础路径，但不足�
 \clearpage
 \subsection{当前范围与后续工作}
 
-目前，这一路径已经能够稳定完成 \texttt{Tiny-ImageNet} 的数据装载与训练执行，但仍有明显限制。输入管线尚未覆盖异步预取、解码重叠、缓存和更完整的数据增强；模型侧则仍需继续检查 \texttt{im2col/col2im}、卷积 backward 以及卷积与 GEMM 之间的数据重排成本。后续工作因此仍需并行推进输入系统与模型训练，并计划在集群上继续开展 ResNet 和 IST 训练，以提升 Tiny-ImageNet 的测试准确率。
+目前，这一路径已经能够稳定完成 \texttt{Tiny-ImageNet} 的数据装载与训练执行，但仍有明显限制。输入管线尚未覆盖异步预取、解码重叠、缓存和更完整的数据增强；模型侧则仍需继续检查 \texttt{im2col/col2im}、卷积 backward 以及卷积与 GEMM 之间的数据重排成本。后续工作仍需并行推进输入系统与模型训练，以提升 Tiny-ImageNet 的测试准确率。
 
 \section{分布式训练、梯度同步与运行时整理}
 
@@ -815,7 +815,14 @@ g_{\mathrm{global}}
 \label{tab:mpi_scaling}
 \end{table}
 
-进程数从 1 增至 4 时，耗时从 31.66s 降至 11.98s，加速比为 2.64$\times$。该表中的准确率变化同时受到 \texttt{global\_batch} 增大和每个 epoch 更新步数减少的影响。
+进程数从 1 增至 4 时，耗时从 31.66s 降至 11.98s，加速比为 2.64$\times$。该表中的准确率变化同时受到 \texttt{global\_batch} 增大和每个 epoch 更新步数减少的影响。图~\ref{fig:mpi_speedup} 将实测加速比与理想线性加速对比。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.68\linewidth]{../output/ExperienceIST/mpi_speedup.png}
+  \caption{MNIST CNN 随 MPI 进程数的实测加速比（虚线为理想线性加速，1 epoch，local\_batch=64，seed=42）。}
+  \label{fig:mpi_speedup}
+\end{figure}
 
 为进一步理解扩展性收益受限的原因，下面转向分项 profiling 结果。
 
@@ -838,6 +845,101 @@ overlap\_bucketed & 8.25 & 1.09 & 0.97 \\
 \end{table}
 
 \texttt{overlap\_bucketed} 当前仍以正确性验证为主，因此这里的结果主要用于定位通信与等待开销；真正的重叠收益仍需在完全匹配的配置下另行验证。
+
+\section{受 IST 启发的参数归属与周期同步}
+
+本文不复现标准 IST，而采用一种受其启发的参数归属方案。每个 rank 仍持有完整模型副本，并在本地执行完整前向与反向传播；区别在于参数更新阶段：完整参数向量被 ownership mask 划分给不同 rank，每个 rank 在一个同步窗口内只更新自己负责的参数位置，窗口结束后再通过参数增量合并恢复全局一致模型。
+
+设模型参数展平后为 \(\theta \in \mathbb{R}^d\)，MPI 进程数为 \(R\)。对第 \(r\) 个 rank，定义一个 0/1 ownership mask
+\[
+m^{(r)} \in \{0,1\}^d, \qquad r=0,\ldots,R-1,
+\]
+并要求每个参数位置恰好由一个 rank 拥有：
+\[
+\sum_{r=0}^{R-1} m_i^{(r)} = 1, \qquad i=1,\ldots,d.
+\]
+
+在第 \(s\) 个同步窗口开始时，所有 rank 共享同一参数快照 \(\theta_s\)。窗口长度记为
+\[
+K = \texttt{ist\_local\_steps}.
+\]
+第 \(r\) 个 rank 在第 \(t\) 个本地 step 上，根据本地 mini-batch 计算完整模型梯度
+\[
+g_{s,t}^{(r)}
+=
+\nabla_\theta \ell\!\left(\theta_{s,t}^{(r)};\mathcal{B}_{s,t}^{(r)}\right),
+\]
+但实际更新时只保留自己负责的参数位置：
+\[
+\theta_{s,t+1}^{(r)}
+=
+\theta_{s,t}^{(r)}
+-
+\eta \left(m^{(r)} \odot g_{s,t}^{(r)}\right).
+\]
+因此，mask 作用于参数更新阶段，而不是把前向或反向传播限制在显式子网中。
+
+窗口结束后，第 \(r\) 个 rank 只提交自己负责部分的参数增量：
+\[
+\Delta_s^{(r)}
+=
+m^{(r)} \odot
+\left(\theta_{s,K}^{(r)}-\theta_s\right).
+\]
+由于不同 rank 的 mask 互不重叠，全局增量可通过求和式全规约得到：
+\[
+\Delta_s
+=
+\operatorname{MPI\_Allreduce}_{\mathrm{sum}}
+\left(\Delta_s^{(r)}\right)
+=
+\sum_{r=0}^{R-1}\Delta_s^{(r)}.
+\]
+随后所有 rank 同步到同一组参数：
+\[
+\theta_{s+1} = \theta_s + \Delta_s.
+\]
+
+该过程不同于普通同步 SGD。普通同步 SGD 每一步都会聚合各 rank 对同一组参数计算出的梯度均值；而这里在一个同步窗口内，每个 rank 只改变自己拥有的参数块，非归属参数保持为窗口开始时的快照。因此，该方法应理解为一种降低同步频率的近似训练策略，而不是对逐步全量同步 SGD 的等价改写。
+
+当前实现中，ownership plan 根据参数张量形状生成 mask：对类似全连接权重的二维参数按输出维划分，对一维参数或其他参数按元素划分。为避免参数长期固定绑定到同一 rank，程序支持通过 \texttt{--ist\_resample\_every} 在若干 epoch 后重新生成 ownership plan。这一机制可以缓解固定参数归属在非 IID 数据划分下带来的偏差风险，但不构成与同步 SGD 等价的理论保证。
+
+需要注意的是，当前通信仍采用 dense delta 向量进行 \texttt{MPI\_Allreduce}。因此单次同步的数据维度仍接近完整参数维度，尽管其中许多位置为零。现阶段收益主要来自把通信从每一步同步改为每 \(K\) 步同步一次；若未来要进一步降低单次通信量，则需要引入稀疏通信或仅传输归属索引。
+
+\subsection{集群验证与消融实验}
+
+在 zen.univ-lille.fr 集群上，我们首先进行了 IST 路径的可运行性验证与小规模消融实验。
+实验配置为 Tiny-ImageNet、ResNet、MPI world\_size=2、\texttt{batch=64}、
+\texttt{lr=0.01}，优化器为 \texttt{momentum\_sgd}。
+
+图~\ref{fig:ist_k_ablation} 给出了 seed=42、1 epoch 下的初步 \(K\) 值消融，
+比较 dense 路径、IST（\(K=1\)）与 IST（\(K=4\)）的验证准确率和每 epoch 耗时。
+该实验主要用于确认 IST 路径可以稳定运行，并观察不同同步窗口长度对耗时和早期准确率的影响；
+由于只包含 1 个 epoch 和单个随机种子，不能作为最终精度结论。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\linewidth]{../output/ExperienceIST/ist_k_ablation.png}
+  \caption{dense、IST（\(K=1\)）与 IST（\(K=4\)）在 seed=42、1 epoch 下的验证准确率（左）
+           与平均 epoch 耗时（右）对比（Tiny-ImageNet，MPI world\_size=2）。}
+  \label{fig:ist_k_ablation}
+\end{figure}
+
+随後，图~\ref{fig:ist_dense_multiseed_time} 比较了 dense 与 IST（\(K=4\)）
+在三个随机种子 \(\{42,\,43,\,44\}\)、2 epoch 运行中的平均每 epoch 耗时。
+在这组记录中，IST（\(K=4\)）的平均 epoch 耗时约为 dense 的 $98.9\%$，
+说明降低同步频率在当前配置下带来了约 $1\%$ 的时间下降。
+不过该差异仍较小，且可能受到集群负载和随机初始化影响；
+因此这里更适合作为工程可行性验证，而不是强性能结论。
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\linewidth]{../output/ExperienceIST/ist_epoch_time_per_seed_2ep.png}
+  \caption{dense 与 IST（\(K=4\)）在三个随机种子下的平均 epoch 耗时对比
+           （2 epoch，Tiny-ImageNet，MPI world\_size=2）。
+           在该小规模实验中，IST（\(K=4\)）的耗时略低于 dense。}
+  \label{fig:ist_dense_multiseed_time}
+\end{figure}
 
 \addcontentsline{toc}{section}{参考文献}
 \begin{thebibliography}{20}
@@ -901,6 +1003,12 @@ Ilya Loshchilov and Frank Hutter.
 Dan Alistarh, Demjan Grubic, Jerry Li, Ryota Tomioka, and Milan Vojnovic.
 ``QSGD: Communication-Efficient SGD via Gradient Quantization and Encoding.''
 \textit{Advances in Neural Information Processing Systems (NeurIPS)}, 30, 2017.
+
+\bibitem{yuan2022ist}
+Binhang Yuan, Cameron R. Wolfe, Chen Dun, Yuxin Tang, Anastasios Kyrillidis, and Chris Jermaine.
+``Distributed Learning of Fully Connected Neural Networks using Independent Subnet Training.''
+\textit{Proceedings of the VLDB Endowment}, 15(8):1581--1590, 2022.
+\url{https://www.vldb.org/pvldb/vol15/p1581-wolfe.pdf}.
 
 \end{thebibliography}
 

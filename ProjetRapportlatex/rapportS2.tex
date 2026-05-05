@@ -392,7 +392,7 @@ Y \in \mathbb{R}^{(N \cdot H_{out} \cdot W_{out}) \times C_{out}},
 \operatorname{reshape}(Y) \in \mathbb{R}^{N \times C_{out} \times H_{out} \times W_{out}}.
 \]
 
-Ce choix réutilise le chemin \texttt{MathOps::matmul}. Dans l'implémentation actuelle, le coût total de la couche se répartit entre \texttt{im2col}, GEMM, la réorganisation de la sortie, le calcul des gradients \texttt{dW/dX} et \texttt{col2im}. Dans cette section, le fil conducteur reste le chemin avant principal \texttt{im2col/GEMM/col2im}, replacé lorsque nécessaire dans le coût plus large des passes avant et arrière.
+Ce choix réutilise le chemin \texttt{MathOps::matmul}. Dans l'implémentation actuelle, le coût total de la couche se répartit entre \texttt{im2col}, GEMM, la réorganisation de la sortie, le calcul des gradients \texttt{dW/dX} et \texttt{col2im}. Dans cette section, le fil conducteur reste le chemin avant principal \texttt{im2col/GEMM/bias+reshape}, tandis que \texttt{col2im} est traité dans la passe arrière (gradient \texttt{dX}) au sein du coût global de la couche.
 
 \subsection{Parallélisation de la couche de convolution et stratégie de découpage}
 
@@ -739,9 +739,9 @@ La figure~\ref{fig:tiny_imagenet_curve} montre que la précision d'entraînement
 
 \subsection{Périmètre actuel et suite du travail}
 
-À ce stade, ce chemin permet déjà de charger \texttt{Tiny-ImageNet} et d'exécuter l'entraînement de manière stable, mais des limites nettes subsistent encore. Le pipeline d'entrée ne couvre pas encore la prélecture asynchrone, le chevauchement avec le décodage, le cache ni une augmentation de données plus complète ; côté modèle, le coût de \texttt{im2col/col2im}, du backward convolutif et des transferts entre convolution et GEMM reste à examiner. La suite du travail doit donc progresser en parallèle sur le système d'entrée et sur l'entraînement du modèle, avec des entraînements de ResNet et d'IST sur cluster pour améliorer la précision de test sur Tiny-ImageNet.
+À ce stade, ce chemin permet déjà de charger \texttt{Tiny-ImageNet} et d'exécuter l'entraînement de manière stable, mais des limites nettes subsistent encore. Le pipeline d'entrée ne couvre pas encore la prélecture asynchrone, le chevauchement avec le décodage, le cache ni une augmentation de données plus complète ; côté modèle, le coût de \texttt{im2col/col2im}, du backward convolutif et des transferts entre convolution et GEMM reste à examiner. La suite du travail doit donc progresser en parallèle sur le système d'entrée et sur l'entraînement du modèle afin d'améliorer la précision de test sur Tiny-ImageNet.
 
-\section{Entraînement distribué, synchronisation des gradients et réorganisation du runtime}
+\section{Entraînement distribué}
 
 Cette section présente le chemin distribué actuel, du parallélisme de données synchrone aux réorganisations du runtime destinées à réduire le coût de synchronisation. L'enjeu est d'évaluer comment la granularité de communication, le chevauchement calcul/communication et la compression des gradients modifient le coût réel d'un step distribué.
 
@@ -842,6 +842,89 @@ overlap\_bucketed & 8.25 & 1.09 & 0.97 \\
 
 \texttt{overlap\_bucketed} reste, à ce stade, dans un périmètre de validation de correction. Les résultats fournis ici servent donc surtout à localiser les coûts de communication et d'attente ; le gain réel lié au chevauchement devra être vérifié séparément dans une configuration strictement alignée.
 
+\section{Chemin inspiré d'IST : attribution de paramètres et synchronisation périodique}
+
+Le chemin présenté ici ne reproduit pas l'IST standard (\textit{Independent Subnet Training}), mais une variante inspirée de cette idée~\cite{yuan2022ist}. Chaque \texttt{rank} conserve une copie complète du modèle et exécute localement la propagation avant et la rétropropagation complètes ; la différence apparaît au moment de la mise à jour des paramètres. Le vecteur de paramètres complet est réparti entre les \texttt{rank}s au moyen d'un \textit{ownership mask}, de sorte que chaque \texttt{rank} ne mette à jour, à l'intérieur d'une fenêtre de synchronisation, que les coordonnées dont il a la responsabilité. En fin de fenêtre, les incréments de paramètres sont fusionnés pour reconstruire un modèle global cohérent.
+
+En notant \(\theta \in \mathbb{R}^d\) le vecteur de paramètres aplati et \(R\) le nombre de processus MPI, on définit pour chaque \texttt{rank} \(r\) un masque binaire
+\[
+m^{(r)} \in \{0,1\}^d, \qquad r=0,\ldots,R-1,
+\]
+avec la contrainte qu'une coordonnée de paramètre appartient à un seul \texttt{rank} :
+\[
+\sum_{r=0}^{R-1} m_i^{(r)} = 1, \qquad i=1,\ldots,d.
+\]
+
+Au début de la fenêtre de synchronisation \(s\), tous les \texttt{rank}s partagent le même instantané \(\theta_s\). La longueur de fenêtre est
+\[
+K = \texttt{ist\_local\_steps}.
+\]
+Au pas local \(t\), le \texttt{rank} \(r\) calcule sur son mini-batch le gradient du modèle complet
+\[
+g_{s,t}^{(r)}
+=
+\nabla_\theta \ell\!\left(\theta_{s,t}^{(r)};\mathcal{B}_{s,t}^{(r)}\right),
+\]
+mais la mise à jour ne conserve que les coordonnées qui lui appartiennent :
+\[
+\theta_{s,t+1}^{(r)}
+=
+\theta_{s,t}^{(r)}
+-
+\eta \left(m^{(r)} \odot g_{s,t}^{(r)}\right).
+\]
+Le calcul avant/arrière reste donc complet ; le masque n'intervient qu'à la mise à jour des paramètres.
+
+À la fin de la fenêtre, le \texttt{rank} \(r\) ne soumet que l'incrément associé à ses propres coordonnées :
+\[
+\Delta_s^{(r)}
+=
+m^{(r)} \odot
+\left(\theta_{s,K}^{(r)}-\theta_s\right).
+\]
+Comme les masques ne se chevauchent pas, l'incrément global s'obtient par un \texttt{MPI\_Allreduce} en mode somme :
+\[
+\Delta_s
+=
+\text{\texttt{MPI\_Allreduce}}_{\mathrm{sum}}
+\left(\Delta_s^{(r)}\right)
+=
+\sum_{r=0}^{R-1}\Delta_s^{(r)}.
+\]
+Tous les \texttt{rank}s reviennent alors à la même valeur
+\[
+\theta_{s+1} = \theta_s + \Delta_s.
+\]
+
+Ce schéma n'est pas équivalent à un SGD synchrone classique. Dans un SGD synchrone ordinaire, chaque pas agrège les gradients calculés par les \texttt{rank}s sur le même vecteur logique de paramètres. Ici, à l'intérieur d'une fenêtre, chaque \texttt{rank} ne modifie que son bloc de paramètres, tandis que les autres coordonnées restent à leur valeur de début de fenêtre. Il faut donc l'interpréter comme une stratégie approchée visant à réduire la fréquence de synchronisation, et non comme une reformulation strictement équivalente du SGD synchrone pas à pas.
+
+Dans l'implémentation actuelle, l'\textit{ownership plan} est généré à partir de la forme des tenseurs de paramètres : les poids matriciels de type couche pleinement connectée sont découpés suivant la dimension de sortie, tandis que les paramètres unidimensionnels ou les autres tenseurs sont répartis élément par élément. Le paramètre \texttt{--ist\_resample\_every} permet de régénérer périodiquement cet \textit{ownership plan} afin d'éviter une attribution fixe lorsque les partitions de données ne sont pas IID. Cette précaution améliore le comportement pratique, sans constituer une garantie d'équivalence avec le SGD synchrone.
+
+Enfin, la communication reste aujourd'hui formulée comme un vecteur \textit{dense} d'incréments passé à \texttt{MPI\_Allreduce}. Même si de nombreuses positions valent zéro, le volume transmis par synchronisation reste donc proche de la dimension complète des paramètres. Le bénéfice principal observé à ce stade vient de la réduction de la fréquence de synchronisation, et non d'une baisse garantie du volume de communication par appel. Pour réduire aussi le coût d'une synchronisation individuelle, il faudrait introduire une communication creuse, par exemple en ne transmettant que les couples indice-valeur des coordonnées possédées.
+
+\subsection{Validation sur cluster et petite étude d'ablation}
+
+Sur le cluster \texttt{zen.univ-lille.fr}, nous avons d'abord vérifié que ce chemin inspiré d'IST était exécutable de bout en bout, puis mené une petite étude d'ablation. La configuration retenue pour cette validation est \texttt{Tiny-ImageNet} avec \texttt{ResNet}, \texttt{world\_size=2}, \texttt{batch=64}, \texttt{lr=0.01} et l'optimiseur \texttt{momentum\_sgd}.
+
+La figure~\ref{fig:ist_k_ablation_fr} présente une première ablation sur la longueur de fenêtre \(K\) avec \texttt{seed=42} et un seul epoch. Elle compare le chemin dense, IST (\(K=1\)) et IST (\(K=4\)) à la fois en précision de validation et en temps moyen par epoch. L'objectif de cette expérience n'est pas d'établir une conclusion définitive sur la précision, mais de confirmer que le chemin IST fonctionne de manière stable sur cluster et d'observer l'effet d'une fenêtre de synchronisation plus longue sur le coût d'exécution.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\linewidth]{../output/ExperienceIST/ist_k_ablation.png}
+  \caption{Comparaison entre le chemin dense, IST (\(K=1\)) et IST (\(K=4\)) pour \texttt{seed=42} sur un epoch : précision de validation (gauche) et temps moyen par epoch (droite), sous \texttt{Tiny-ImageNet} avec \texttt{world\_size=2}.}
+  \label{fig:ist_k_ablation_fr}
+\end{figure}
+
+La figure~\ref{fig:ist_dense_multiseed_time_fr} compare ensuite le temps moyen par epoch entre le chemin dense et IST (\(K=4\)) sur trois graines \(\{42,43,44\}\), avec 2 epochs. Dans cette série, IST (\(K=4\)) représente en moyenne environ \(98.9\%\) du temps du chemin dense, soit un gain de l'ordre de \(1\%\). Cet écart reste modeste et peut encore dépendre de la charge du cluster ainsi que de l'initialisation aléatoire ; il doit donc être lu comme une validation de faisabilité et non comme une conclusion de performance forte.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\linewidth]{../output/ExperienceIST/ist_epoch_time_per_seed_2ep.png}
+  \caption{Temps moyen par epoch pour le chemin dense et IST (\(K=4\)) sur trois graines aléatoires, avec 2 epochs, sous \texttt{Tiny-ImageNet} et \texttt{world\_size=2}. Dans cette campagne réduite, IST (\(K=4\)) est légèrement plus rapide que le chemin dense.}
+  \label{fig:ist_dense_multiseed_time_fr}
+\end{figure}
+
+\clearpage
 \addcontentsline{toc}{section}{Références}
 \begin{thebibliography}{20}
 
@@ -914,6 +997,12 @@ Alexander Sergeev and Mike Del Balso.
 Dan Alistarh, Demjan Grubic, Jerry Li, Ryota Tomioka, and Milan Vojnovic.
 ``QSGD: Communication-Efficient SGD via Gradient Quantization and Encoding.''
 \textit{Advances in Neural Information Processing Systems (NeurIPS)}, 30, 2017.
+
+\bibitem{yuan2022ist}
+Binhang Yuan, Cameron R. Wolfe, Chen Dun, Yuxin Tang, Anastasios Kyrillidis, and Chris Jermaine.
+``Distributed Learning of Fully Connected Neural Networks using Independent Subnet Training.''
+\textit{Proceedings of the VLDB Endowment}, 15(8):1581--1590, 2022.
+\url{https://www.vldb.org/pvldb/vol15/p1581-wolfe.pdf}.
 
 \end{thebibliography}
 

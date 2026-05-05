@@ -67,6 +67,7 @@ ProjetRapportlatex/*.vrb
 ProjetRapportlatex/*.snm
 ProjetRapportlatex/*.nav
 ProjetRapportlatex/*.pdf
+*.bbl
 
 # Experience 
 *.data

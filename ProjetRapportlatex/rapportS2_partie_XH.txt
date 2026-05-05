@@ -1,0 +1,250 @@
+\section{基于 Optuna 的超参数自动搜索}
+
+在第一阶段实验中，项目主要通过手工网格搜索比较学习率、batch size、隐藏层宽度和激活函数等超参数。进入 CNN 主线之后，手工枚举的成本明显上升：卷积网络本身训练时间更长，同时还需要比较优化器、初始化方式、正则化强度以及并行执行配置。因此，本项目引入 \texttt{Optuna} 作为自动化超参数搜索工具，将一组训练实验组织为可复现、可汇总的 HPO 流程。
+
+当前 HPO 入口位于 \texttt{scripts/ExperienceHPO/optuna\_hpo.py}。该脚本以 \texttt{ppn\_train} 为底层训练程序，每个 trial 都会构造一条独立的训练命令，并将输出写入单独目录。目标函数读取该 trial 生成的 \texttt{metrics.csv}，以测试集精度 \texttt{test\_acc} 作为优化目标。根据参数 \texttt{--metric} 的不同，评价指标可以选择训练过程中最好的测试精度，也可以选择最后一个 epoch 的测试精度：
+\[
+\mathrm{score} =
+\begin{cases}
+\max_e \mathrm{test\_acc}_e, & \texttt{metric=best},\\
+\mathrm{test\_acc}_{E}, & \texttt{metric=last}.
+\end{cases}
+\]
+Optuna 的 study 采用最大化方向，即寻找使测试精度最高的超参数组合。
+
+\subsection{搜索空间设计}
+
+当前脚本的搜索空间围绕 CNN 训练中最敏感的几类参数展开。学习率使用对数尺度采样：
+\[
+\eta \in [10^{-4}, 2\times 10^{-2}],
+\]
+因为学习率通常跨数量级变化，线性采样容易浪费大量 trial。batch size 从 $\{32,64,128\}$ 中选择，激活函数从 \texttt{relu}、\texttt{leaky\_relu}、\texttt{gelu}、\texttt{tanh} 中选择，初始化方式在 \texttt{he} 与 \texttt{xavier} 之间比较。
+
+优化器部分采用条件搜索。若 trial 选择 \texttt{sgd}，脚本只进一步搜索 \texttt{weight\_decay}；若选择 \texttt{momentum\_sgd}，则额外搜索 \texttt{momentum}、\texttt{nesterov} 和 \texttt{weight\_decay}；若选择 \texttt{adamw}，则搜索 \texttt{weight\_decay}、\texttt{beta1}、\texttt{beta2} 和 \texttt{eps}。这种条件式搜索避免了无意义参数组合，也使每个优化器只暴露其真正相关的自由度。
+
+\begin{table}[H]
+\centering
+\caption{Optuna HPO 搜索空间}
+\label{tab:optuna_search_space}
+\begin{tabular}{p{0.30\textwidth}p{0.55\textwidth}}
+\toprule
+\textbf{参数} & \textbf{搜索范围} \\
+\midrule
+\texttt{learning\_rate} & $[10^{-4}, 2\times10^{-2}]$，对数采样 \\
+\texttt{batch\_size} & $\{32,64,128\}$ \\
+\texttt{activation} & \texttt{relu}, \texttt{leaky\_relu}, \texttt{gelu}, \texttt{tanh} \\
+\texttt{init} & \texttt{he}, \texttt{xavier} \\
+\texttt{optimizer} & \texttt{sgd}, \texttt{momentum\_sgd}, \texttt{adamw} \\
+\texttt{momentum} & $[0.80,0.99]$，仅用于 \texttt{momentum\_sgd} \\
+\texttt{nesterov} & $\{0,1\}$，仅用于 \texttt{momentum\_sgd} \\
+\texttt{weight\_decay} & 按优化器条件采样 \\
+\texttt{beta1}, \texttt{beta2}, \texttt{eps} & 仅用于 \texttt{adamw} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{实验组织与可复现性}
+
+每个 trial 都会被写入独立目录 \texttt{trial\_XXXX}，其中保存标准输出日志和 \texttt{metrics.csv}。搜索结束后，脚本会导出 \texttt{trials.csv}，记录所有 trial 的状态、得分和参数；同时生成 \texttt{best.txt}，保存最佳 trial、最佳得分、最佳参数以及一条可直接复现实验的训练命令。
+
+此外，脚本还会生成 \texttt{run\_meta.json}，记录 run id、二进制路径、数据目录、trial 数、epoch 数、随机种子、study 名称、评价指标和 MPI 相关配置。这样，HPO 结果不再只是终端输出，而是一组带上下文的结构化 artifact。后续如果需要复查某次实验，可以从 \texttt{run\_meta.json} 和 \texttt{best.txt} 中恢复当时的执行条件。
+
+\subsection{并行搜索支持}
+
+当前 HPO 脚本支持两类并行模式。第一类是 Optuna 进程内部的并行，即通过 \texttt{--n\_jobs} 在单个 Python 进程内并发运行多个 trial。第二类是 MPI 相关模式，包括两种不同语义：一种是每个 trial 内部使用 \texttt{mpiexec -n k} 启动分布式训练；另一种是脚本本身在 MPI 下运行，让多个 MPI rank 作为 Optuna worker 共同消费同一个 study。
+
+为了支持多个 worker 共享搜索状态，脚本在 MPI worker 模式下会自动使用 \texttt{JournalStorage}，并将 journal 文件写入当前 run 目录。若显式使用 SQLite storage，则 rank 0 会先创建 study，其他 rank 等待 ready 文件后再加载。这部分设计的核心目的不是改变模型数学语义，而是提高 HPO 实验吞吐量，使多个训练配置能够并行探索。
+
+\subsection{已有搜索结果示例}
+
+在当前输出目录中，一次保留的 CNN HPO 结果显示，40 个 trial、每个 trial 训练 3 个 epoch 的搜索中，最佳 trial 达到：
+\[
+\mathrm{best\ test\_acc}=0.9891.
+\]
+对应配置为：学习率 $0.0116558511$，batch size 为 $32$，激活函数为 \texttt{gelu}，初始化为 \texttt{he}，优化器为 \texttt{momentum\_sgd}，momentum 为 $0.8663$，启用 Nesterov，并使用约 $1.34\times10^{-4}$ 的 weight decay。
+
+这个结果说明，自动搜索能够发现与手工经验略有差异的组合。例如，手工实验中 ReLU 往往是默认选择，而在这次短 epoch 搜索中，\texttt{gelu + he + momentum\_sgd} 获得了更好的早期验证表现。不过，该结果仍应理解为短训练预算下的最佳配置，正式结论还需要使用更长 epoch 进行确认。
+
+\section{ResNet 网络结构实现}
+
+在完成 LeNet 风格 CNN 之后，项目进一步加入了 \texttt{ResNetNetwork}，为后续更深卷积网络实验提供基础。ResNet 的核心思想是残差连接：每个 block 不再只学习一个完整映射 $H(x)$，而是学习相对于输入的残差 $F(x)$，最终输出写为
+\[
+y = F(x) + x.
+\]
+这种结构可以缓解深层网络训练中的梯度退化问题，使网络在增加深度时仍保持较好的可优化性。
+
+当前实现位于 \texttt{include/resnet\_network.hpp} 和 \texttt{src/resnet\_network.cpp}。它仍然遵循项目已有的 \texttt{NeuralNetwork} 接口，因此可以直接接入同一套训练器、损失函数、优化器和自动求导系统。主程序中通过 \texttt{--model resnet} 构建该模型。
+
+\subsection{默认网络配置}
+
+默认的 \texttt{ResNetConfig} 面向 MNIST 输入，输入形状为 $1\times28\times28$，类别数为 $10$。网络首先经过一个 stem 卷积层，然后进入三个 stage。每个 stage 的通道数分别为 $16$、$32$、$64$，每个 stage 包含两个 residual block。
+
+\begin{table}[H]
+\centering
+\caption{默认 ResNet 配置}
+\label{tab:resnet_config}
+\begin{tabular}{p{0.30\textwidth}p{0.55\textwidth}}
+\toprule
+\textbf{配置项} & \textbf{默认值} \\
+\midrule
+输入形状 & $1\times28\times28$ \\
+Stem 通道数 & $16$ \\
+Stage 通道数 & $\{16,32,64\}$ \\
+每个 stage 的 block 数 & $\{2,2,2\}$ \\
+卷积核大小 & $3\times3$ \\
+类别数 & $10$ \\
+卷积后端 & \texttt{reference} 或 \texttt{onednn} \\
+默认激活函数 & \texttt{relu} \\
+默认初始化 & \texttt{he} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+在 MNIST 默认配置下，空间尺寸变化为：
+\[
+28\times28 \rightarrow 28\times28 \rightarrow 14\times14 \rightarrow 7\times7.
+\]
+最后一个 stage 输出 $64$ 个通道，因此分类器前的展平维度为
+\[
+64 \times 7 \times 7 = 3136.
+\]
+随后使用一个全连接层输出 $10$ 维 logits。按当前卷积层和线性层均包含 bias 计算，默认 ResNet 约有 $2.05\times10^5$ 个可训练参数。
+
+\subsection{BasicBlock 的实现}
+
+当前 ResNet 的基本单元是 \texttt{BasicBlock}。每个 block 包含两层 $3\times3$ 卷积：
+\[
+x \rightarrow \mathrm{Conv}_{3\times3} \rightarrow \sigma
+\rightarrow \mathrm{Conv}_{3\times3}
+\rightarrow + \rightarrow \sigma,
+\]
+其中 $\sigma$ 表示配置的激活函数。若输入输出通道数相同且 stride 为 $1$，shortcut 直接使用输入本身；否则，block 会额外构造一个 $1\times1$ projection 卷积，使 shortcut 的通道数和空间尺寸与主分支输出一致。
+
+因此，一个 residual block 的计算可以写为：
+\[
+F(x) = W_2 \sigma(W_1 x),
+\]
+\[
+y = \sigma(F(x) + P(x)),
+\]
+其中 $P(x)$ 是 shortcut 路径。当形状不变时，$P(x)=x$；当下采样或通道数变化时，$P(x)$ 由 $1\times1$ 卷积实现。
+
+\subsection{形状传播与下采样策略}
+
+ResNet 的 stage 之间通过 stride 为 $2$ 的卷积完成下采样。具体而言，每个 stage 的第一个 block 会检查是否需要降低空间分辨率：当 \texttt{stage > 0} 且 \texttt{block == 0} 时，第一层卷积使用 stride $2$，同时 shortcut 路径也使用 stride $2$ 的 $1\times1$ projection。这样可以在进入新 stage 时同时完成空间下采样和通道扩张。
+
+这一策略保持了经典 ResNet 的基本设计：同一个 stage 内保持尺寸不变，不同 stage 之间降低分辨率并增加通道数。对于 MNIST，尺寸从 $28$ 降到 $14$，再降到 $7$，既减少了后续计算量，也让更高层特征拥有更大的感受野。
+
+\subsection{与当前 CNN 主线的关系}
+
+从工程角度看，ResNet 并不是完全独立的新训练框架，而是在已有 CNN 基础上的模块化扩展。它继续复用 \texttt{Conv2DLayer}、\texttt{LinearLayer}、激活函数接口、\texttt{MathOps::add}、自动求导节点以及统一的 \texttt{NeuralNetwork} 抽象。因此，训练循环不需要区分 MLP、CNN 或 ResNet，只需要调用：
+\[
+\texttt{model->forward(x)}
+\]
+并从
+\[
+\texttt{model->getParameters()}
+\]
+获取参数交给优化器。
+
+这种设计的优点是改动范围较小，能够快速验证残差结构是否与现有自动求导系统兼容。对应测试 \texttt{tests/test\_resnet\_network.cpp} 已覆盖两类基本行为：第一，前向传播在 MNIST 输入下输出形状为 $(N,10)$；第二，经过交叉熵损失反向传播后，所有参数梯度保持有限值，并且至少存在非零梯度。这说明残差加法、projection shortcut 和卷积参数都已正确接入计算图。
+
+\subsection{当前边界}
+
+当前 ResNet 实现仍是一个轻量级版本，重点在于打通残差网络的结构语义，而不是复现完整工业级 ResNet。它尚未加入 BatchNorm，也没有使用全局平均池化，而是直接展平最后的特征图后接线性分类器。此外，默认实现仍依赖现有 \texttt{Conv2DLayer} 后端，因此整体性能会受到卷积实现、\texttt{im2col} 重排以及反向传播路径的影响。
+
+因此，当前 ResNet 的合理定位是：它为项目提供了比 LeNet 更深、更接近现代 CNN 的结构基础，并验证了残差连接可以融入现有 C++ 自动求导框架；但若要在 Tiny-ImageNet 等更复杂数据集上获得稳定高精度，还需要继续加入 BatchNorm、全局平均池化、更合适的数据增强以及更系统的超参数搜索。
+
+
+------------------------
+
+
+\section{卷基层并行化与优化策略}
+
+在当前项目的 CNN 主线中，卷积层采用 \texttt{im2col + GEMM} 路径实现。该路径的优势是能够复用已有的高性能矩阵乘法后端，但其性能上限并不只由 GEMM 决定。实际运行中，卷积层总成本由三部分共同构成：前向阶段的 \texttt{im2col} 重排、矩阵乘法本体、以及反向阶段的 \texttt{col2im} 与梯度相关 GEMM。这意味着，即使 GEMM 已经较快，卷积层仍可能因为数据重排与线程调度成本而成为训练瓶颈。
+
+基于这一观察，本节的优化目标不是单点“加速某个函数”，而是围绕卷积主路径做端到端并行化整理：在保持数值语义不变的前提下，降低重排阶段的额外开销、改善多线程扩展性，并尽量减少小规模任务下的并行负收益。换言之，本文关注的是“卷积链路整体吞吐”而非“孤立 kernel 的峰值速度”。
+
+\subsection{并行化切分策略}
+
+卷积前向与反向的并行化首先面临切分维度选择问题。理论上可沿 batch 维、输出通道维、输出空间维（$H_{out}\times W_{out}$）或归约维度做任务划分，但不同切分方式在负载均衡、缓存复用和写冲突风险上差异明显。
+
+本实现优先采用“输出元素独立”的切分原则，即让每个线程负责互不重叠的输出块，从而避免额外锁或原子操作。对前向路径而言，\texttt{im2col} 阶段按样本与输出空间块划分，保证线程写入目标区域不重叠；GEMM 阶段复用底层矩阵乘法并行策略，不在卷积层重复做细粒度线程管理。对反向路径而言，\texttt{dW} 与 \texttt{dX} 的矩阵化计算同样沿输出块组织，\texttt{col2im} 则通过分块散射和边界保护减少冲突写入风险。
+
+需要说明的是，并行切分并非越细越好。当单个任务粒度过小，线程创建、barrier 同步和调度迁移等固定成本会显著抬升，尤其在 MNIST 这类小图像输入上更为明显。因此，切分策略必须在“并行度”与“单任务计算密度”之间取得平衡：既要提供足够任务以利用多核，又要避免把计算拆成大量短任务而导致效率下降。
+
+\subsection{实现细节与工程取舍}
+
+在工程实现中，优化重点放在三个方面。第一是内存访问连续性：\texttt{im2col/col2im} 的循环顺序与索引计算按行主序访问习惯重排，尽量让内层循环落在连续地址上，以提高缓存行利用率并降低地址计算成本。第二是临时缓冲区管理：在可行范围内复用中间 buffer，减少训练步骤中的重复分配与释放，降低 allocator 抖动。第三是线程调度策略：优先采用更稳定的静态划分方式，在任务负载相对规则时减少 runtime 调度开销和线程迁移。
+
+这些改动的共同特征是“不改变数学语义，只整理执行路径”。也就是说，卷积前向与反向结果保持与基线实现一致，优化发生在计算组织、数据布局和并行调度层。这样的策略有两个直接好处：一方面便于验证正确性（误差应只来自浮点舍入顺序差异）；另一方面也使优化可以与现有 autodiff 与优化器流程兼容，不需要重写训练主循环。
+
+\subsection{实验协议与对照设置}
+
+为评估并行化收益，实验采用与前文一致的可复现实验范式：固定硬件与编译选项，在相同输入形状、相同 batch 配置下，对“基线卷积路径”和“并行优化路径”进行对照。线程数通常取 $\{1,2,4,8\}$，并保持线程绑定策略一致，以避免调度噪声掩盖实现差异。每组测试包含预热迭代与重复测量，统计中位时间，并结合标准差观察稳定性。
+
+指标上，本文不只报告单次卷积前向时间，还分别记录 \texttt{im2col}、卷积 GEMM、\texttt{col2im} 与 backward 相关阶段耗时，以区分“算子本体收益”和“链路端到端收益”。若仅观察 GEMM，容易高估优化效果；而分项计时能够更准确地说明瓶颈迁移方向，即性能提升到底来自计算加速、重排优化，还是并行调度改进。
+
+\subsection{结果分析：收益、边界与瓶颈迁移}
+
+实验结果表明，卷基层并行优化在中等及以上工作负载下可带来稳定收益，尤其当输出特征图和通道数足够大时，多线程扩展更接近理想加速趋势。与基线相比，优化后实现在前向与反向总时长上均有下降，说明收益并非来自单一阶段，而是 \texttt{im2col/GEMM/col2im} 整体路径协同改进的结果。
+
+同时，结果也呈现出明确边界：在较小输入或较小 batch 条件下，并行收益会被固定调度成本部分抵消，甚至出现“线程数增加但总时间下降有限”的情况。这一现象与前文 GEMM 小矩阵实验的结论一致，即小问题规模对过度并行高度敏感。换言之，卷积并行化的有效性依赖于任务粒度；当粒度不足时，应优先减少并行开销而非盲目提高线程数。
+
+从系统角度看，本节优化的价值不仅是“缩短卷积时间”，更重要的是推动瓶颈迁移：当框架层与通信层开销被逐步压缩后，性能画像更清晰地暴露出卷积相关 kernel 的真实上限。这为后续工作提供了更明确的方向，即继续针对卷积重排开销、backward 路径和 kernel 形状匹配做专项优化，而不是在已非主瓶颈处投入过多精力。
+
+\subsection{小结}
+
+本节围绕 CNN 卷积主路径完成了并行化与执行路径整理，核心思路是“保持语义不变，优化计算组织”。实践结果说明：在合适任务规模下，该策略能够显著改善卷积层吞吐，并为端到端训练加速提供可观贡献；在小规模场景下，其收益受并行固定成本约束，仍需通过更细致的粒度控制与调度策略进一步提升稳定性。
+
+
+
+--------------------------------------------------
+
+
+\section{梯度压缩：实现路径与阶段结果}
+
+本项目中的梯度压缩工作分为两部分：其一是\textbf{单核（本地）梯度压缩}，其二是\textbf{通信边界梯度压缩}。两者关注点不同：前者主要影响参数更新前的梯度表示与优化行为，后者主要面向分布式同步路径中的通信相关成本。为了避免概念混淆，本节先统一说明梯度压缩的目标，再分别给出两条实现路径的状态与实验结论。
+
+\subsection{梯度压缩的目标与基本思路}
+
+梯度压缩的核心目标是降低分布式训练中的同步成本，同时尽量保持收敛与最终精度。工程上常见做法包括低精度量化（如 fp16/bf16）与稀疏化（如 top-k）。这类方法本质上是在“通信效率”和“优化噪声”之间做折中：压缩越强，潜在带宽收益越大，但对训练动态的扰动风险也越高。因此，本项目采用“先打通路径、再分解计时、最后做参数调优”的推进方式，而不是直接给出单一压缩率结论。
+
+\subsection{单核（本地）梯度压缩路径}
+
+项目最早接入的是训练器侧本地压缩路径：在梯度同步结束后、\texttt{optimizer.step} 之前，对参数梯度做压缩变换。当前支持两种模式：\texttt{fp16-like} 量化与 \texttt{topk} 稀疏化，相关开关由命令行参数控制（如 \texttt{--grad\_compress}、\texttt{--grad\_compress\_mode}、\texttt{--grad\_topk\_ratio}、\texttt{--grad\_compress\_interval}）。
+
+这一阶段的主要结论是：若压缩仅发生在同步之后，它不会减少 AllReduce 的通信字节量，因此很难带来通信侧收益。对应实验也显示，在该旧路径下开启压缩会引入额外计算开销，而不是带来同步时间下降。这一观察直接推动了后续“压缩前移到通信边界”的改造。
+
+\subsection{通信边界梯度压缩路径（本次完成重点）}
+
+在本次迭代中，压缩逻辑被前移到分布式同步运行时，形成
+\[
+\texttt{compress} \rightarrow \texttt{AllReduce} \rightarrow \texttt{decompress} \rightarrow \texttt{step}
+\]
+的执行框架，并统一接入 \texttt{bucketed} 与 \texttt{overlap\_bucketed} 路径。实现上新增了 \texttt{encode/decode} 钩子、runtime 接管开关与双重压缩保护，同时引入分解计时指标：
+\texttt{sync\_encode\_time\_s}、\texttt{sync\_comm\_time\_s}、\texttt{sync\_decode\_time\_s}。
+
+在压缩核实现方面，初版 fp16-like（基于 \texttt{frexp/ldexp/nearbyint}）开销过高，随后替换为位运算快速量化实现；并将触发策略由“按 bucket 索引间隔”修正为“按 step 间隔”，即 \texttt{grad\_compress\_interval = N} 表示每 \(N\) 个 step 执行一次压缩。扫描 \(\{2,4,8\}\) 后，\texttt{interval=8} 在当前平台下给出最佳折中。
+
+\subsection{阶段A结果与推荐配置}
+
+在 \(\texttt{world\_size}=2\)、MNIST、MLP(\(128\))、\(\texttt{batch}=64\)、\(\texttt{seed}=42\) 条件下，三次重复中位数结果如下：
+
+\begin{itemize}
+  \item \textbf{bucketed}: \texttt{fp16+i8} 相对 baseline 为
+  \texttt{avg\_step\_time\_ms} \(+1.84\%\)，
+  \texttt{samples\_per\_s} \(-1.80\%\)，
+  \texttt{test\_acc} \(-0.02\%\)；
+  \item \textbf{overlap\_bucketed}: \texttt{fp16+i8} 相对 baseline 为
+  \texttt{avg\_step\_time\_ms} \(+1.58\%\)，
+  \texttt{samples\_per\_s} \(-1.54\%\)，
+  \texttt{test\_acc} \(-0.02\%\)。
+\end{itemize}
+
+由此可将当前阶段推荐配置设为：
+\texttt{--grad\_compress 1 --grad\_compress\_mode fp16 --grad\_compress\_interval 8}。
+
+\subsection{当前边界与后续方向}
+
+需要强调：本阶段虽然已经完成“通信边界压缩路径”的工程落地与开销控制，但通信 payload 仍使用 float 缓冲区，因此当前结论属于“压缩框架与调度策略有效”，尚不等同于“通信字节量已显著下降”。若继续推进下一阶段，应转向真实 payload 压缩通信（如 half/bf16 buffer 归约），并在相同分解指标体系下重新评估其端到端收益。与此同时，\texttt{overlap\_bucketed} 当前仍为 correctness-only 状态，其结果仅用于工程可行性与开销分析，不作为 overlap 收益的最终资格结论。
