@@ -766,6 +766,91 @@ void test_bucketed_runtime_filters_frozen_and_non_parameter_leaves(DistributedCo
 
 }
 
+void test_compression_disabled_preserves_grads() {
+    int argc = 0;
+    char** argv = nullptr;
+    DistributedContext dist(argc, argv);
+
+    auto p = makeParam(1, 1, 0.0);
+    seedGrad(p, 0.1);
+    const Scalar original = p->grad().data[0];
+
+    StepBoundaryBucketedSync sync(dist, {p}, kBucketElemBytes);
+    sync.sync(1);
+
+    assert(p->grad().data[0] == original);
+}
+
+void test_compression_fp16_quantizes_grads_step_boundary() {
+    int argc = 0;
+    char** argv = nullptr;
+    DistributedContext dist(argc, argv);
+
+    auto p = makeParam(1, 1, 0.0);
+    seedGrad(p, 0.1);
+    const Scalar original = p->grad().data[0];
+
+    CommCompressionConfig cfg;
+    cfg.enabled = true;
+    cfg.mode = "fp16";
+    cfg.interval = 1;
+    StepBoundaryBucketedSync sync(dist, {p}, kBucketElemBytes, cfg);
+    sync.sync(1);
+
+    // 0.1f has non-zero low-13 mantissa bits so fp16 quantization changes it
+    assert(p->grad().data[0] != original);
+    assert(std::abs(p->grad().data[0] - original) < 0.01f);
+}
+
+void test_compression_interval_skips_off_steps() {
+    int argc = 0;
+    char** argv = nullptr;
+    DistributedContext dist(argc, argv);
+
+    auto p = makeParam(1, 1, 0.0);
+
+    CommCompressionConfig cfg;
+    cfg.enabled = true;
+    cfg.mode = "fp16";
+    cfg.interval = 2;
+    StepBoundaryBucketedSync sync(dist, {p}, kBucketElemBytes, cfg);
+
+    // Step 1: step_index=1, 1%2=1 → skip quantization
+    seedGrad(p, 0.1);
+    const Scalar original = p->grad().data[0];
+    sync.sync(1);
+    assert(p->grad().data[0] == original);
+
+    // Step 2: step_index=2, 2%2=0 → quantize
+    seedGrad(p, 0.1);
+    sync.sync(1);
+    assert(p->grad().data[0] != original);
+}
+
+void test_compression_fp16_quantizes_grads_overlap_runtime() {
+    int argc = 0;
+    char** argv = nullptr;
+    DistributedContext dist(argc, argv);
+
+    auto p = makeParam(1, 1, 2.0);
+    auto c = constant(Matrix(1, 1, 0.1f));
+    auto loss = MathOps::sum(MathOps::mul(p, c));
+
+    CommCompressionConfig cfg;
+    cfg.enabled = true;
+    cfg.mode = "fp16";
+    cfg.interval = 1;
+    BucketedOverlapRuntime runtime(dist, {p}, kBucketElemBytes, cfg);
+    runtime.beginStep(1);
+    runBackwardWithRuntime(runtime, loss);
+    runtime.finalizeAndGetGlobalBatch();
+
+    // grad of p w.r.t. loss = c = 0.1f, which has non-zero low-13 mantissa bits
+    const Scalar expected_unquantized = 0.1f;
+    assert(p->grad().data[0] != expected_unquantized);
+    assert(std::abs(p->grad().data[0] - expected_unquantized) < 0.01f);
+}
+
 int runMpiContractTests(int argc, char** argv) {
     DistributedContext dist(argc, argv);
     test_bucketed_runtime_layout_mismatch_fails_fast(dist);
@@ -796,6 +881,10 @@ int runLocalDistributedSyncTests() {
     test_bucketed_runtime_finalize_negative_paths();
     test_bucketed_runtime_shared_bucket_pack_safe_multiple_parameters();
     test_bucketed_baseline_and_overlap_match_parameter_grads();
+    test_compression_disabled_preserves_grads();
+    test_compression_fp16_quantizes_grads_step_boundary();
+    test_compression_interval_skips_off_steps();
+    test_compression_fp16_quantizes_grads_overlap_runtime();
     std::cout << "Distributed sync tests passed!" << std::endl;
     return 0;
 }
