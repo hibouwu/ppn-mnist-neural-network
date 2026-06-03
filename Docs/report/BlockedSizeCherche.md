@@ -4,7 +4,6 @@
 
 <img src="image-1.png" alt="GEMM blocked-size modeling overview" width="720">
 
-
 ## 1. 符号与建模对象
 
 当前实现的宏内核围绕固定的寄存器块 $C_r$ 展开，其中
@@ -15,16 +14,16 @@ A_r \in \mathbb{R}^{m_r \times k_c}, \qquad
 B_r \in \mathbb{R}^{k_c \times n_r}.
 $$
 
-`pack_a_micro_panel` 将 $A_r$ 重排为
+`pack_a_micro_panel` 将 $A_r$ 重排为 $P_A$：
 
 $$
-\texttt{packed\_A}[p \cdot m_r + i] = A_r(i,p),
+P_A[p \cdot m_r + i] = A_r(i,p),
 $$
 
-`pack_b_micro_panel` 将 $B_r$ 重排为
+`pack_b_micro_panel` 将 $B_r$ 重排为 $P_B$：
 
 $$
-\texttt{packed\_B}[p \cdot n_r + j] = B_r(p,j).
+P_B[p \cdot n_r + j] = B_r(p,j).
 $$
 
 因此，对固定的 $p$，$A_r(:,p)$ 作为 $m_r$ 个标量连续存放，$B_r(p,:)$ 作为 $n_r$ 个连续元素连续存放。外层块仍记为
@@ -68,13 +67,11 @@ $$
 本节偏离条件可概括为
 
 $$
-\left\{
 \begin{aligned}
-&S_{\text{data}} = 4,\\
-&\text{SIMD 方向沿 } n_r,\\
-&A_c \text{ 为线程私有工作集},\quad B_c \text{ 为线程共享工作集}.
+S_{\text{data}} &= 4,\\
+\text{SIMD 方向} &\text{沿 } n_r,\\
+A_c &\text{ 为线程私有工作集},\quad B_c \text{ 为线程共享工作集}.
 \end{aligned}
-\right.
 $$
 
 ## 3. $m_r$ 与 $n_r$ 的实现相关推导
@@ -92,14 +89,12 @@ $m_r$ 的约束来自吞吐隐藏和寄存器预算。BLIS 论文中关于微内
 综上，本节给出的可行域不再是统一的 $m_r \le 13$，而是依赖 $n_r/8$ 的分情况约束：
 
 $$
-\left\{
 \begin{aligned}
-&n_r \in \{8,16\},\\
-&m_r n_r \ge 64,\\
-&m_r \frac{n_r}{8} + 1 + \delta \le 16 \quad \text{(较乐观写法；当 } n_r=16 \text{ 时表示只保留 1 个 } B \text{ 向量临时寄存器)},\\
-&m_r \frac{n_r}{8} + \frac{n_r}{8} + \delta \le 16 \quad \text{(较保守写法；对 nr​=16 等价于同时保留全部 B 子向量)}.
+n_r &\in \{8,16\},\\
+m_r n_r &\ge 64,\\
+m_r \frac{n_r}{8} + 1 + \delta &\le 16 \quad \text{(较乐观写法；当 } n_r=16 \text{ 时表示只保留 1 个 } B \text{ 向量临时寄存器)},\\
+m_r \frac{n_r}{8} + \frac{n_r}{8} + \delta &\le 16 \quad \text{(较保守写法；对 nr​=16 等价于同时保留全部 B 子向量)}.
 \end{aligned}
-\right.
 $$
 
 据此，原始可行域中的 $(m_r,n_r)$ 候选组合可写为
@@ -153,18 +148,18 @@ $$
 这类弱裁剪通常只起提醒作用，因此本文采用更强的宏面板级裁剪。为把 TLB 层实例化为可执行规则，这里暂定使用 $m_c=128$、$n_c=512$ 作为 provisional panel volumes；它们只服务于当前轮次的 TLB-aware pruning，不代表最终 blocking 结论。对 $P=4096$，有
 
 $$
-\operatorname{pages}(A_c) \approx \left\lceil \frac{m_c k_c S_{\text{data}}}{P} \right\rceil
+\mathrm{pages}(A_c) \approx \left\lceil \frac{m_c k_c S_{\text{data}}}{P} \right\rceil
 = \left\lceil \frac{128 \cdot k_c \cdot 4}{4096} \right\rceil
 = \left\lceil \frac{k_c}{8} \right\rceil,
 $$
 
 $$
-\operatorname{pages}(B_c) \approx \left\lceil \frac{k_c n_c S_{\text{data}}}{P} \right\rceil
+\mathrm{pages}(B_c) \approx \left\lceil \frac{k_c n_c S_{\text{data}}}{P} \right\rceil
 = \left\lceil \frac{k_c \cdot 512 \cdot 4}{4096} \right\rceil
 = \left\lceil \frac{k_c}{2} \right\rceil.
 $$
 
-当前机器的 L1 DTLB 和 L2 DTLB 条目数分别为 72 和 3072。由于 $B_c$ 的页数对本节候选远小于 L2 DTLB 容量，真正有区分度的裁剪来自线程私有的 $A_c$。为给栈、$C$ 块、代码和其他数据保留余量，这里取保守的有效预算 $E_{A,\mathrm{eff}}=0.75 \times 72 = 54$，并采用如下 pruning 规则：若某个候选使 $\operatorname{pages}(A_c) > 54$，则将其从第一轮实验集合中剔除；若 $\operatorname{pages}(A_c) \le 54$ 且 $\operatorname{pages}(B_c) \ll 3072$，则该候选通过当前 TLB 层检查。该层只承担近似过滤作用，不承担新的中心值生成。
+当前机器的 L1 DTLB 和 L2 DTLB 条目数分别为 72 和 3072。由于 $B_c$ 的页数对本节候选远小于 L2 DTLB 容量，真正有区分度的裁剪来自线程私有的 $A_c$。为给栈、$C$ 块、代码和其他数据保留余量，这里取保守的有效预算 $E_{A,\mathrm{eff}}=0.75 \times 72 = 54$，并采用如下 pruning 规则：若某个候选使 $\mathrm{pages}(A_c) > 54$，则将其从第一轮实验集合中剔除；若 $\mathrm{pages}(A_c) \le 54$ 且 $\mathrm{pages}(B_c) \ll 3072$，则该候选通过当前 TLB 层检查。该层只承担近似过滤作用，不承担新的中心值生成。
 
 ### 4.3 综合 L1 与 TLB 约束的 $k_c$ 候选生成
 
@@ -200,15 +195,13 @@ $$
 本节约束可概括为
 
 $$
-\left\{
 \begin{aligned}
-&C_{A_r} + C_{B_r} \le W_{L1} - 1,\\
-&C_{A_r} \le \left\lfloor \frac{W_{L1}-1}{1+n_r/m_r} \right\rfloor,\\
-&k_c^{\text{center}} \approx \frac{1024\,C_{A_r}}{m_r},\\
-&\mathcal{K}_{\mathrm{L1}}(m_r,n_r) = \mathrm{Align}_{g_k}\bigl(\{ \alpha\, k_c^{\text{center}}(m_r,n_r) : \alpha \in \mathcal{A}_k \}\bigr),\\
-&\mathcal{K}_{\mathrm{pruned}}(m_r,n_r) \subseteq \mathcal{K}_{\mathrm{L1}}(m_r,n_r).
+C_{A_r} + C_{B_r} &\le W_{L1} - 1,\\
+C_{A_r} &\le \left\lfloor \frac{W_{L1}-1}{1+n_r/m_r} \right\rfloor,\\
+k_c^{\text{center}} &\approx \frac{1024\,C_{A_r}}{m_r},\\
+\mathcal{K}_{\mathrm{L1}}(m_r,n_r) &= \mathrm{Align}_{g_k}\bigl(\{ \alpha\, k_c^{\text{center}}(m_r,n_r) : \alpha \in \mathcal{A}_k \}\bigr),\\
+\mathcal{K}_{\mathrm{pruned}}(m_r,n_r) &\subseteq \mathcal{K}_{\mathrm{L1}}(m_r,n_r).
 \end{aligned}
-\right.
 $$
 
 ## 5. 单线程基础 $m_c / n_c$ 候选生成
@@ -270,12 +263,12 @@ $$
 这些式子并不是精确硬约束，因为当前代码并不控制 huge page、STLB、NUMA 归属或线程绑定；在本节中，它们只承担对 cache 生成候选做第二层 pruning 的作用，而不是新的中心值来源。对当前机器，取 $P=4096$、L1 DTLB 条目数 72、L2 DTLB 条目数 3072，并采用保守的有效预算 $E_{A,\text{eff}}=54$ 与 $E_{B,\text{eff}}=192$；其中 $192$ 不是 L2 DTLB 的硬件条目数，而只是第一轮单线程基础候选生成中用于抑制过宽 $B_c$ 的保守有效预算。则
 
 $$
-\operatorname{pages}(A_c) \approx \frac{m_c k_c}{1024},
+\mathrm{pages}(A_c) \approx \frac{m_c k_c}{1024},
 \qquad
-\operatorname{pages}(B_c) \approx \frac{k_c n_c}{1024}.
+\mathrm{pages}(B_c) \approx \frac{k_c n_c}{1024}.
 $$
 
-于是，本节使用的 TLB-aware pruning 规则为：若某个 $m_c$ 候选使 $\operatorname{pages}(A_c) > 54$，则将其从 $\mathcal{M}_{\text{cache}}$ 中剔除；若某个 $n_c$ 候选使 $\operatorname{pages}(B_c) > 192$，则将其从 $\mathcal{N}_{\text{cache}}$ 中剔除。这里的 $E_{B,\text{eff}}$ 明显小于硬件 L2 DTLB 容量，其作用是把过宽的 $B_c$ 面板在第一轮基础搜索中先裁掉。
+于是，本节使用的 TLB-aware pruning 规则为：若某个 $m_c$ 候选使 $\mathrm{pages}(A_c) > 54$，则将其从 $\mathcal{M}_{\text{cache}}$ 中剔除；若某个 $n_c$ 候选使 $\mathrm{pages}(B_c) > 192$，则将其从 $\mathcal{N}_{\text{cache}}$ 中剔除。这里的 $E_{B,\text{eff}}$ 明显小于硬件 L2 DTLB 容量，其作用是把过宽的 $B_c$ 面板在第一轮基础搜索中先裁掉。
 
 ### 5.3 综合 cache 与 TLB 约束的单线程基础候选生成
 
@@ -283,12 +276,12 @@ $$
 
 $$
 \mathcal{M}_{\text{cache}}(m_r,n_r,k_c)
-= \operatorname{Align}^{\downarrow}_{g_m}\bigl(\{\beta\, m_c^{\max}(k_c) : \beta \in \mathcal{A}_m\}\bigr),
+= \mathrm{AlignDown}_{g_m}\bigl(\{\beta\, m_c^{\max}(k_c) : \beta \in \mathcal{A}_m\}\bigr),
 $$
 
 $$
 \mathcal{N}_{\text{cache}}(m_r,n_r,k_c)
-= \operatorname{Align}^{\downarrow}_{g_n}\bigl(\{\gamma\, n_c^{\max}(k_c) : \gamma \in \mathcal{A}_n\}\bigr),
+= \mathrm{AlignDown}_{g_n}\bigl(\{\gamma\, n_c^{\max}(k_c) : \gamma \in \mathcal{A}_n\}\bigr),
 $$
 
 再由 TLB / page-footprint 做一次裁剪，得到
@@ -299,7 +292,7 @@ $$
 \mathcal{N}_{\text{pruned}} \subseteq \mathcal{N}_{\text{cache}}.
 $$
 
-为控制第一轮单线程基础搜索规模，这里取 $g_m=32$、$g_n=64$，并令 $\mathcal{A}_m=\mathcal{A}_n=\{0.5,0.75,1.0\}$。这里的 $\operatorname{Align}^{\downarrow}$ 表示向下对齐到不超过目标值的最近粒度倍数。按同一规则，可对第 4 节保留下来的全部 $(m_r,n_r,k_c)$ 组合逐项构造单线程基础候选，如表 5.1 所示。
+为控制第一轮单线程基础搜索规模，这里取 $g_m=32$、$g_n=64$，并令 $\mathcal{A}_m=\mathcal{A}_n=\{0.5,0.75,1.0\}$。这里的 $\mathrm{AlignDown}$ 表示向下对齐到不超过目标值的最近粒度倍数。按同一规则，可对第 4 节保留下来的全部 $(m_r,n_r,k_c)$ 组合逐项构造单线程基础候选，如表 5.1 所示。
 
 | $(m_r,n_r,k_c)$ | $m_c^{\max}$ | $\mathcal{M}_{\text{cache}}$ | $\mathcal{M}_{\text{pruned}}$ | $n_c^{\max}$ | $\mathcal{N}_{\text{cache}}$ | $\mathcal{N}_{\text{pruned}}$ |
 | --- | ---: | --- | --- | ---: | --- | --- |
@@ -326,13 +319,11 @@ $$
 本节关系可概括为
 
 $$
-\left\{
 \begin{aligned}
-&m_c^{\max},n_c^{\max} \text{ 由 cache 层给出基础尺度上界},\\
-&\mathcal{M}_{\text{pruned}} \subseteq \mathcal{M}_{\text{cache}},\quad \mathcal{N}_{\text{pruned}} \subseteq \mathcal{N}_{\text{cache}},\\
-&(\mathcal{M}_{\text{pruned}},\mathcal{N}_{\text{pruned}}) \text{ 构成单线程基础候选，后续再做多线程修正}.
+m_c^{\max},n_c^{\max} &\text{ 由 cache 层给出基础尺度上界},\\
+\mathcal{M}_{\text{pruned}} &\subseteq \mathcal{M}_{\text{cache}},\quad \mathcal{N}_{\text{pruned}} \subseteq \mathcal{N}_{\text{cache}},\\
+(\mathcal{M}_{\text{pruned}},\mathcal{N}_{\text{pruned}}) &\text{ 构成单线程基础候选，后续再做多线程修正}.
 \end{aligned}
-\right.
 $$
 
 ### 5.4 对单线程下候选组合性能测试的实验
@@ -433,9 +424,9 @@ $$
 二者低于第 5 节用于候选生成的 $256\text{ KiB}$ 私有 $A_c$ 预算与 $1\text{ MiB}$ 共享 $B_c$ 预算。再按 page-footprint 近似，
 
 $$
-\operatorname{pages}(A_c) \approx \frac{8 \cdot 384}{1024}=3,
+\mathrm{pages}(A_c) \approx \frac{8 \cdot 384}{1024}=3,
 \qquad
-\operatorname{pages}(B_c) \approx \frac{384 \cdot 448}{1024}=168.
+\mathrm{pages}(B_c) \approx \frac{384 \cdot 448}{1024}=168.
 $$
 
 这也低于 $E_{A,\text{eff}}=54$ 与 $E_{B,\text{eff}}=192$ 的保守 TLB pruning 口径。

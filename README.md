@@ -15,6 +15,14 @@ The primary objective of this project is to understand the internal mechanisms o
 * **Configurable Neural Network**: Support for arbitrary layer configurations, activation functions (ReLU, LeakyReLU, GELU, Sigmoid, Tanh), and weight initialization schemes (He, Xavier).
 * **Training Pipeline**: Complete training loop with SGD / MomentumSGD / AdamW, CrossEntropy loss, and mini-batch processing.
 
+## For Recruiters: Training Systems Highlights
+
+* **Training runtime**: `Trainer::runEpoch`, reverse-mode autograd, optimizers, and explicit profiling phases for `data_loader`, `forward_loss`, `backward`, `gradient_sync`, and `optimizer_step`.
+* **Distributed training**: MPI synchronous data-parallel path with `per_param`, `bucketed`, and `overlap_bucketed` gradient synchronization modes using blocking and non-blocking collectives (`MPI_Allreduce` / `MPI_Iallreduce`). The overlap path is treated as correctness-first rather than a finalized high-performance implementation.
+* **Data pipeline**: `BatchSource` abstraction for both in-memory MNIST batches and Tiny-ImageNet streaming, including per-batch JPEG decode instead of full-dataset loading.
+* **CPU backend**: OpenMP, cache blocking, packing, and GotoBLAS-style AVX2 / AVX-512 GEMM paths as replaceable compute backends.
+* **Reproducibility**: CMake build options, benchmark scripts, profiling helpers, and CSV/log outputs under `scripts/` and `output/`.
+
 ## Prerequisites
 
 The project requires a C++17 compliant compiler and CMake. OpenBLAS is recommended for optimal performance.

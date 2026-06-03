@@ -1,0 +1,245 @@
+# 集群实验日志
+
+## 记录模板
+- 时间：
+- 作业ID：
+- 脚本：
+- 节点/资源：
+- 关键环境：
+- 实验参数：
+- 结果摘要：
+- 输出路径：
+- 备注：
+
+---
+
+## 2026-05-05（首轮 IST 集群打通）
+- 时间：约 15:26 CEST 完成（以 `sacct` 为准）
+- 作业ID：`1671924`
+- 脚本：`scripts/Cluster/run_ist_test.sbatch`
+- 节点/资源：`nodes=1, ntasks-per-node=2, cpus-per-task=1`
+- 关键环境：
+  - `gcc/13.2.0`
+  - `openblas/0.3.24`
+  - `openmpi/4.1.6`
+  - `JPEG_ROOT=$HOME/local/libjpeg-turbo`
+- 实验参数：
+  - `MODE=tiny_compare`
+  - `DATASET=tiny-imagenet`
+  - `EPOCHS=1`
+  - `BATCH_SIZE=64`
+  - `SEED_LIST=42`
+  - `LR_LIST=0.01`
+  - `IST_K_LIST=1`
+  - `RUN_DENSE=0`
+  - `RUN_IST=1`
+- 结果摘要：
+  - Slurm：`COMPLETED (ExitCode 0:0, Elapsed 00:04:20)`
+  - `Epoch 1/1`: train loss `5.1410`, train acc `1.88%`, test loss `4.9269`, test acc `3.51%`
+  - `epoch_s=241.166`, `sync_total_s=0.670`
+- 输出路径：
+  - `output/cluster_ist_min/1671924/ist_test/`
+  - `summary_all.csv`
+  - `summary_grouped_means.csv`
+- 备注：
+  - 当前流程已可稳定提交并产出 IST 汇总文件，可进入正式矩阵实验。
+
+---
+
+## 2026-05-05（IST 快筛：dense vs k1/k4）
+- 时间：`sacct` 记录 `Elapsed=00:13:04`
+- 作业ID：`1671937`
+- 脚本：`scripts/Cluster/ist_fast_screen.sbatch`
+- 节点/资源：`nodes=1, ntasks-per-node=2, cpus-per-task=1`
+- 关键环境：
+  - `gcc/13.2.0`
+  - `openblas/0.3.24`
+  - `openmpi/4.1.6`
+  - `OPENBLAS_ROOT=/bxfs/softwares/openblas/0.3.24-gcc.13.2.0`
+  - `JPEG_ROOT=$HOME/local/libjpeg-turbo`
+- 实验参数：
+  - `MODE=tiny_compare`
+  - `DATASET=tiny-imagenet`
+  - `EPOCHS=1`
+  - `BATCH_SIZE=64`
+  - `SEED_LIST=42`
+  - `LR_LIST=0.01`
+  - `IST_K_LIST=1,4`
+  - `RUN_DENSE=1`
+  - `RUN_IST=1`
+- 结果摘要：
+  - Slurm：`COMPLETED (ExitCode 0:0)`
+  - `dense_k1`: test acc `3.51%`, epoch `242.944s`, sync_total `0.000s`
+  - `ist_k1`: test acc `3.51%`, epoch `242.666s`, sync_total `0.653s`
+  - `ist_k4`: test acc `4.33%`, epoch `243.661s`, sync_total `0.164s`
+  - 当前快筛结论：`k=4` 在该 seed/lr 下精度最好，通信开销低于 `k=1`。
+- 输出路径：
+  - `output/ist_fast_screen/1671937/`
+  - `summary_all.csv`
+  - `summary_grouped_means.csv`
+- 备注：
+  - 日志中存在双份进度输出（2 个 MPI rank 同时打印），属预期现象。
+
+---
+
+## 2026-05-05（IST 复验：seed=43，dense vs k4）
+- 时间：`sacct` 记录 `Elapsed=00:09:03`
+- 作业ID：`1672038`
+- 脚本：`scripts/Cluster/ist_k4_seed43_check.sbatch`
+- 节点/资源：`nodes=1, ntasks-per-node=2, cpus-per-task=1`
+- 关键环境：
+  - `gcc/13.2.0`
+  - `openblas/0.3.24`
+  - `openmpi/4.1.6`
+  - `OPENBLAS_ROOT=/bxfs/softwares/openblas/0.3.24-gcc.13.2.0`
+  - `JPEG_ROOT=$HOME/local/libjpeg-turbo`
+- 实验参数：
+  - `MODE=tiny_compare`
+  - `DATASET=tiny-imagenet`
+  - `EPOCHS=1`
+  - `BATCH_SIZE=64`
+  - `SEED_LIST=43`
+  - `LR_LIST=0.01`
+  - `IST_K_LIST=4`
+  - `RUN_DENSE=1`
+  - `RUN_IST=1`
+- 结果摘要：
+  - Slurm：`COMPLETED (ExitCode 0:0)`
+  - `dense_k1`: test acc `3.29%`, epoch `258.881s`, sync_total `0.000s`
+  - `ist_k4`: test acc `3.45%`, epoch `242.553s`, sync_total `0.167s`
+  - 相对 dense：`ist_k4` 精度 `+0.16pp`，epoch 时间约 `-6.3%`。
+- 输出路径：
+  - `output/ist_k4_seed43_check/1672038/`
+  - `summary_all.csv`
+  - `summary_grouped_means.csv`
+- 备注：
+  - 日志中进度/epoch 行双份输出（2 个 MPI rank 打印），属预期现象。
+
+---
+
+## 2026-05-05（IST 复验：seed=44，dense vs k4）
+- 时间：`sacct` 记录 `Elapsed=00:08:37`
+- 作业ID：`1672112`
+- 脚本：`scripts/Cluster/ist_k4_seed44_check.sbatch`
+- 节点/资源：`nodes=1, ntasks-per-node=2, cpus-per-task=1`
+- 关键环境：
+  - `gcc/13.2.0`
+  - `openblas/0.3.24`
+  - `openmpi/4.1.6`
+  - `OPENBLAS_ROOT=/bxfs/softwares/openblas/0.3.24-gcc.13.2.0`
+  - `JPEG_ROOT=$HOME/local/libjpeg-turbo`
+- 实验参数：
+  - `MODE=tiny_compare`
+  - `DATASET=tiny-imagenet`
+  - `EPOCHS=1`
+  - `BATCH_SIZE=64`
+  - `SEED_LIST=44`
+  - `LR_LIST=0.01`
+  - `IST_K_LIST=4`
+  - `RUN_DENSE=1`
+  - `RUN_IST=1`
+- 结果摘要：
+  - Slurm：`COMPLETED (ExitCode 0:0)`
+  - `dense_k1`: test acc `3.68%`, epoch `239.559s`, sync_total `0.000s`
+  - `ist_k4`: test acc `3.93%`, epoch `241.024s`, sync_total `0.163s`
+  - 相对 dense：`ist_k4` 精度 `+0.25pp`，训练时长接近（本次约 `+0.6%`）。
+- 输出路径：
+  - `output/ist_k4_seed44_check/1672112/`
+  - `summary_all.csv`
+  - `summary_grouped_means.csv`
+- 备注：
+  - 日志中进度/epoch 行双份输出（2 个 MPI rank 打印），属预期现象。
+
+---
+
+## 阶段性结论（seed=42/43/44，k=4 对比 dense）
+- 在本次随机选取的 3 个 seed（42/43/44）上，`IST(k=4)` 的 `test_acc` 均高于 `dense_k1`。
+- 训练时长整体与 dense 接近，并在部分 seed 上出现小幅优化。
+- 当前可作为报告中的阶段性正向结论，后续可在更长 epoch 下继续验证稳定性。
+
+---
+
+## 2026-05-05（IST 复验：2 epochs，seed=42）
+- 时间：`sacct` 记录 `Elapsed=00:21:18`
+- 作业ID：`1672123`
+- 脚本：`scripts/Cluster/ist_k4_seed42_e2.sbatch`
+- 结果摘要：
+  - `dense_k1`: test acc `7.82%`, epoch `299.137s`
+  - `ist_k4`: test acc `8.05%`, epoch `295.959s`, sync_total `0.181s`
+  - 相对 dense：精度 `+0.23pp`，时长约 `-1.1%`
+- 输出路径：`output/ist_k4_seed42_e2/1672123/`
+
+## 2026-05-05（IST 复验：2 epochs，seed=43）
+- 时间：`sacct` 记录 `Elapsed=00:21:18`
+- 作业ID：`1672124`
+- 脚本：`scripts/Cluster/ist_k4_seed43_e2.sbatch`
+- 结果摘要：
+  - `dense_k1`: test acc `7.31%`, epoch `299.155s`
+  - `ist_k4`: test acc `7.92%`, epoch `295.967s`, sync_total `0.212s`
+  - 相对 dense：精度 `+0.61pp`，时长约 `-1.1%`
+- 输出路径：`output/ist_k4_seed43_e2/1672124/`
+
+## 2026-05-05（IST 复验：2 epochs，seed=44）
+- 时间：`sacct` 记录 `Elapsed=00:21:18`
+- 作业ID：`1672125`
+- 脚本：`scripts/Cluster/ist_k4_seed44_e2.sbatch`
+- 结果摘要：
+  - `dense_k1`: test acc `8.71%`, epoch `299.137s`
+  - `ist_k4`: test acc `8.01%`, epoch `295.966s`, sync_total `0.146s`
+  - 相对 dense：精度 `-0.70pp`，时长约 `-1.1%`
+- 输出路径：`output/ist_k4_seed44_e2/1672125/`
+
+## 阶段性结论（2 epochs，seed=42/43/44）
+- `IST(k=4)` 在 2 epochs 下表现出稳定的小幅时长优化（3 个 seed 均约 `-1.1%`）。
+- 精度表现存在 seed 依赖：3 个 seed 中 2 个提升、1 个下降。
+- 可用于报告结论：IST 在当前项目设置下具有效率收益潜力，但精度收益并非对所有 seed 一致。
+
+---
+
+## 2026-05-05（IST MPI 扩展扫描：ws=1/2/4/8）
+- 时间：`sacct` 记录 `Elapsed=00:18:37`
+- 作业ID：`1672202`
+- 脚本：`scripts/Cluster/ist_mpi_scale_sweep.sbatch`
+- 节点/资源：`nodes=1, ntasks-per-node=8, cpus-per-task=1`
+- 关键环境：
+  - `gcc/13.2.0`
+  - `openblas/0.3.24`
+  - `openmpi/4.1.6`
+  - `OPENBLAS_ROOT=/bxfs/softwares/openblas/0.3.24-gcc.13.2.0`
+  - `JPEG_ROOT=$HOME/local/libjpeg-turbo`
+- 实验参数：
+  - `IST only`（`RUN_DENSE=0`, `RUN_IST=1`）
+  - `DATASET=tiny-imagenet`
+  - `EPOCHS=1`
+  - `BATCH_SIZE=64`
+  - `SEED_LIST=42`
+  - `LR_LIST=0.01`
+  - `IST_K_LIST=4`
+  - `WORLD_SIZE` 扫描：`1,2,4,8`
+- 结果摘要：
+  - `ws1`: test acc `4.33%`, epoch `254.185s`, sync_total `0.126s`
+  - `ws2`: test acc `4.33%`, epoch `245.183s`, sync_total `0.137s`
+  - `ws4`: test acc `4.33%`, epoch `238.716s`, sync_total `0.148s`
+  - `ws8`: test acc `4.33%`, epoch `301.022s`, sync_total `0.187s`
+- 结论：
+  - 精度在该扫描中保持一致（均为 `4.33%`）。
+  - 端到端时长从 `ws1 -> ws4` 持续下降（存在扩展收益），`ws4` 最优。
+  - 扩展到 `ws8` 后时长显著退化（相对 `ws1` 约 `+18.4%`），出现过并行拐点。
+  - 当前配置下可建议的并行度区间为 `ws2~ws4`，不建议直接提升到 `ws8`。
+- 输出路径：
+  - `output/ist_mpi_scale_sweep/1672202/ws1/summary_all.csv`
+  - `output/ist_mpi_scale_sweep/1672202/ws2/summary_all.csv`
+  - `output/ist_mpi_scale_sweep/1672202/ws4/summary_all.csv`
+  - `output/ist_mpi_scale_sweep/1672202/ws8/summary_all.csv`
+
+## 2026-05-05（总总结，可直接写报告）
+- IST 在本项目中“没有失败”，而是呈现出：
+  - 在固定资源（尤其 ws=2~4）下，存在可复现的小幅效率收益（epoch 时间下降）。
+  - 精度收益不是对所有 seed 一致，但在多数短程测试中有正向表现。
+- MPI 扩展结论（基于当前配置 tiny-imagenet + IST k=4 + epoch=1）：
+  - `ws1 -> ws4` 有扩展收益（速度提升）。
+  - `ws8` 出现明显退化（通信/同步与调度开销超过收益）。
+- 因此当前最稳妥结论是：
+  - IST 在“中等并行度”下有效；
+  - 不应盲目增加 world size，当前推荐区间为 `ws2~ws4`；
+  - 后续若要继续扩展，需要进一步优化通信路径（例如真正稀疏通信）后再测 ws8+。
